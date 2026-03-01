@@ -96,12 +96,14 @@ wss.on('connection', (ws, req) => {
     const Ctor = pipelineVersion === 'v1' ? AudioPipelineV1 : AudioPipelineV2;
 
     const hasWhisperOverrides = opts.whisperProvider || opts.whisperEndpointUrl || opts.whisperApiKey || opts.hfToken;
+    const ep = opts.whisperEndpointUrl || '';
+    const isModalUrl = /modal\.run|modal\.com/i.test(ep);
     const whisperOpts = hasWhisperOverrides
       ? {
           provider: opts.whisperProvider || undefined,
-          endpointUrl: opts.whisperEndpointUrl || undefined,
+          endpointUrl: ep || undefined,
           apiKey: opts.whisperApiKey || opts.hfToken || HF_TOKEN || undefined,
-          modalKey: opts.whisperProvider === 'modal' ? (opts.whisperApiKey || opts.hfToken) : undefined,
+          modalKey: isModalUrl ? (opts.whisperApiKey || opts.hfToken) : undefined,
           modalSecret: opts.whisperModalSecret || undefined,
         }
       : HF_TOKEN ? { apiKey: HF_TOKEN } : null;

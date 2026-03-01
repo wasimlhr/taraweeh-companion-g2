@@ -343,7 +343,6 @@ body {
 .mode-btn:active { transform: scale(0.98); }
 #fastModeBtn.active { background: #b45309; border-color: #b45309; color: #fff; }
 #taraweehBtn.active { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
-#demoBtn.active { background: #059669; border-color: #059669; color: #fff; }
 
 /* Taraweeh overlay — shown over verse content during ruku */
 #taraweehOverlay {
@@ -501,6 +500,27 @@ body {
 }
 .s-card input:focus { border-color: var(--tc-gold); }
 .s-status { font-size: 12px; color: var(--tc-2); padding: 10px 14px; }
+.toggle-group {
+  display: flex;
+  gap: 0;
+  border-radius: var(--r);
+  overflow: hidden;
+  border: 1px solid var(--bc-4);
+  margin-top: 4px;
+}
+.toggle-btn {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: none;
+  background: var(--bc-2);
+  color: var(--tc-2);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.toggle-btn:not(:last-child) { border-right: 1px solid var(--bc-4); }
+.toggle-btn.active { background: var(--tc-gold); color: #1a1a1a; font-weight: 600; }
+.toggle-btn:hover:not(.active) { background: var(--bc-3); color: var(--tc-1); }
 .settings-footer {
   text-align: center;
   color: var(--tc-2);
@@ -612,7 +632,6 @@ body {
     <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Speed up timers and matching for fast reciters">⚡ Fast Mode: Off</button>
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
     <button id="phoneMicBtn" class="mode-btn" onclick="togglePhoneMic()" title="Use phone mic — when G2 mic doesn't work (e.g. hosted online)">🎧 Phone mic: Off</button>
-    <button id="demoBtn" class="mode-btn" onclick="toggleDemo()" title="Demo mode — cycle sample ayahs on G2 display">🎬 G2 Demo: Off</button>
   </div>
 
   <div id="wordCloudCard">
@@ -637,7 +656,8 @@ body {
   <div class="s-card">
     <div class="s-row">
       <span class="s-label">Backend URL</span>
-      <input id="settingBackend" type="url" placeholder="wss://your-backend.example.com/ws" />
+      <span class="s-hint">Leave empty to use current host</span>
+      <input id="settingBackend" type="url" placeholder="Optional — uses same host by default" />
     </div>
     <div class="s-status" id="backendStatus">Checking...</div>
     <div class="s-row" style="margin-top:12px">
@@ -645,6 +665,11 @@ body {
         <input type="checkbox" id="settingForcePhoneMic" />
         <span>Use phone mic (force browser mic if no prompt)</span>
       </label>
+    </div>
+    <div class="s-row">
+      <span class="s-label">Microphone</span>
+      <span class="s-hint" id="micStatusHint">—</span>
+      <button type="button" id="settingMicTest" class="back-btn" style="margin-top:6px;font-size:13px">🎤 Request mic permission</button>
     </div>
   </div>
 
@@ -677,27 +702,25 @@ body {
   <div class="s-section">Whisper / ASR</div>
   <div class="s-card">
     <div class="s-row">
-      <span class="s-label">Provider</span>
-      <select id="settingWhisperProvider" onchange="toggleWhisperFields()">
-        <option value="hf-public">HF Public (default)</option>
-        <option value="hf-dedicated">HF Dedicated</option>
-        <option value="modal">Modal</option>
-        <option value="custom">Custom endpoint</option>
-      </select>
+      <span class="s-label">Endpoint</span>
+      <div class="toggle-group" role="group">
+        <button type="button" class="toggle-btn active" id="btnHfDefault" onclick="setWhisperProvider('hf-public')">HF Default</button>
+        <button type="button" class="toggle-btn" id="btnCustomDeployed" onclick="setWhisperProvider('custom')">Custom Deployed</button>
+      </div>
     </div>
     <div class="s-row" id="rowWhisperEndpoint" style="display:none">
       <span class="s-label">Endpoint URL</span>
       <span class="s-hint">HF: *.endpoints.huggingface.cloud — Modal: *.modal.run</span>
-      <input id="settingWhisperEndpoint" type="url" placeholder="https://..." autocomplete="off" />
+      <input id="settingWhisperEndpoint" type="url" placeholder="https://..." autocomplete="off" oninput="toggleWhisperFields()" />
     </div>
-    <div class="s-row">
+    <div class="s-row" id="rowWhisperApiKey" style="display:none">
       <span class="s-label">API Key</span>
-      <span class="s-hint" id="hintApiKey">HF token (hf_...) — leave empty to use backend .env</span>
+      <span class="s-hint" id="hintApiKey">HF token or Bearer — leave empty to use backend .env</span>
       <input id="settingWhisperApiKey" type="text" placeholder="hf_..." autocomplete="off" />
     </div>
     <div class="s-row" id="rowWhisperModalSecret" style="display:none">
       <span class="s-label">Modal Secret</span>
-      <span class="s-hint">Only if your Modal endpoint uses proxy auth</span>
+      <span class="s-hint">Only if Modal endpoint uses proxy auth</span>
       <input id="settingWhisperModalSecret" type="text" placeholder="Optional" autocomplete="off" />
     </div>
   </div>
@@ -1768,7 +1791,6 @@ body {
 
     // TAP (Click) → advance one ayah forward
     if (t === 0 || t === undefined) {
-      if (_simTimer || _simPaused) { _simPaused = false; _simAdvance(1); return; }
       if (S.ws && S.ws.readyState === WebSocket.OPEN) {
         S.ws.send(JSON.stringify({ type: 'manual_advance' }));
       }
@@ -1777,11 +1799,6 @@ body {
 
     // DOUBLE TAP → pause / resume
     if (t === 3) {
-      if (_simTimer || _simPaused) {
-        if (_simTimer) { clearTimeout(_simTimer); _simTimer = null; stopPageFlip(); stopCountdown(); _simPaused = true; glassesUpdate({ hdr: '\u23F8 Paused', body: 'Double tap to resume.' }); }
-        else { _simPaused = false; _simAdvance(0); }
-        return;
-      }
       if (S.ws && S.ws.readyState === WebSocket.OPEN) {
         S.ws.send(JSON.stringify({ type: S.mode === 'PAUSED' ? 'audio_return' : 'pause' }));
       }
@@ -1793,7 +1810,6 @@ body {
       var now = Date.now();
       if (now - _lastScrollTime < 400) return;
       _lastScrollTime = now;
-      if (_simTimer || _simPaused) { _simPaused = false; _simAdvance(t === 1 ? -1 : 1); return; }
       if (S.ws && S.ws.readyState === WebSocket.OPEN) {
         S.ws.send(JSON.stringify({ type: t === 1 ? 'manual_prev' : 'manual_advance' }));
       }
@@ -1802,7 +1818,6 @@ body {
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {
-    stopSimDemo();
     S.isRecording = true;
     S.displayRebuilt = false;
     S.pcmAccum = [];
@@ -1908,8 +1923,6 @@ body {
 
       // Show startup screen on glasses
       glassesStartup();
-
-      // Demo can be started manually via the G2 Demo button
     } else {
       log('No G2 — browser mic mode');
       setPill('sPillG2', '', 'PC mic');
@@ -1924,137 +1937,6 @@ body {
     }
   }
 
-  // ─── Sim demo (cycles sample ayahs on G2 when no backend) ────────────────
-  var _simTimer = null;
-  var SIM_AYAHS = [
-    { surahName: 'Al-Fatiha', surah: 1, ayah: 1, ayahTotal: 7, confidence: 0.98,
-      transliteration: 'Bismillaahir-Rahmaanir-Raheem',
-      translation: 'In the name of Allah, the Entirely Merciful, the Especially Merciful.' },
-    { surahName: 'Al-Fatiha', surah: 1, ayah: 2, ayahTotal: 7, confidence: 0.95,
-      transliteration: 'Alhamdu lillaahi Rabbil-aalameen',
-      translation: '[All] praise is [due] to Allah, Lord of the worlds.' },
-    { surahName: 'Al-Fatiha', surah: 1, ayah: 3, ayahTotal: 7, confidence: 0.97,
-      transliteration: 'Ar-Rahmaanir-Raheem',
-      translation: 'The Entirely Merciful, the Especially Merciful.' },
-    { surahName: 'Al-Fatiha', surah: 1, ayah: 4, ayahTotal: 7, confidence: 0.99,
-      transliteration: 'Maaliki yawmid-Deen',
-      translation: 'Sovereign of the Day of Recompense.' },
-    { surahName: 'Al-Fatiha', surah: 1, ayah: 5, ayahTotal: 7, confidence: 0.96,
-      transliteration: 'Iyyaaka na\'budu wa iyyaaka nasta\'een',
-      translation: 'It is You we worship and You we ask for help.' },
-    { surahName: 'Al-Fatiha', surah: 1, ayah: 6, ayahTotal: 7, confidence: 0.94,
-      transliteration: 'Ihdinas-Siraatal-Mustaqeem',
-      translation: 'Guide us to the straight path.' },
-    { surahName: 'Al-Fatiha', surah: 1, ayah: 7, ayahTotal: 7, confidence: 0.92,
-      transliteration: 'Siraatal-lazeena an\'amta \'alayhim ghayril-maghdoobi \'alayhim wa lad-daaalleen',
-      translation: 'The path of those upon whom You have bestowed favor, not of those who have earned [Your] anger or of those who are astray.' },
-    { surahName: 'Ar-Rahman', surah: 55, ayah: 1, ayahTotal: 78, confidence: 0.88,
-      transliteration: 'Ar-Rahmaan',
-      translation: 'The Most Merciful.' },
-    { surahName: 'Ar-Rahman', surah: 55, ayah: 2, ayahTotal: 78, confidence: 0.91,
-      transliteration: '\'Allamal-Qur\'aan',
-      translation: 'Taught the Quran.' },
-    { surahName: 'Ar-Rahman', surah: 55, ayah: 3, ayahTotal: 78, confidence: 0.93,
-      transliteration: 'Khalaqal-insaan',
-      translation: 'Created man.' },
-    { surahName: 'Ar-Rahman', surah: 55, ayah: 4, ayahTotal: 78, confidence: 0.90,
-      transliteration: '\'Allamahul-bayaan',
-      translation: 'Taught him eloquence.' },
-    { surahName: 'Ar-Rahman', surah: 55, ayah: 13, ayahTotal: 78, confidence: 0.85,
-      transliteration: 'Fabi ayyi aalaaa\'i Rabbikumaa tukazzibaan',
-      translation: 'So which of the favors of your Lord would you deny?' },
-    { surahName: 'Al-Ikhlas', surah: 112, ayah: 1, ayahTotal: 4, confidence: 0.99,
-      transliteration: 'Qul huwal-laahu Ahad',
-      translation: 'Say, "He is Allah, [who is] One."' },
-    { surahName: 'Al-Ikhlas', surah: 112, ayah: 2, ayahTotal: 4, confidence: 0.97,
-      transliteration: 'Allaahus-Samad',
-      translation: 'Allah, the Eternal Refuge.' },
-    { surahName: 'Al-Ikhlas', surah: 112, ayah: 3, ayahTotal: 4, confidence: 0.95,
-      transliteration: 'Lam yalid wa lam yoolad',
-      translation: 'He neither begets nor is born.' },
-    { surahName: 'Al-Ikhlas', surah: 112, ayah: 4, ayahTotal: 4, confidence: 0.98,
-      transliteration: 'Wa lam yakul-lahoo kufuwan ahad',
-      translation: 'Nor is there to Him any equivalent.' },
-    { surahName: 'Al-Baqarah', surah: 2, ayah: 255, ayahTotal: 286, confidence: 0.96,
-      transliteration: 'Allaahu laa ilaaha illaa Huwal-Hayyul-Qayyoom. Laa ta\'khuzuhoo sinatuw-wa laa nawm. Lahoo maa fis-samaawaati wa maa fil-ard. Man zal-lazee yashfa\'u \'indahooo illaa bi-iznih. Ya\'lamu maa bayna aydeehim wa maa khalfahum wa laa yuheetoona bi-shay\'im-min \'ilmihee illaa bimaa shaaa\'. Wasi\'a Kursiyyuhus-samaawaati wal-ard wa laa ya\'ooduhoo hifzuhumaa wa Huwal-\'Aliyyul-\'Azeem.',
-      translation: 'Allah - there is no deity except Him, the Ever-Living, the Sustainer of existence. Neither drowsiness overtakes Him nor sleep. To Him belongs whatever is in the heavens and whatever is on the earth. Who is it that can intercede with Him except by His permission? He knows what is before them and what will be after them, and they encompass not a thing of His knowledge except for what He wills. His Kursi extends over the heavens and the earth, and their preservation tires Him not. And He is the Most High, the Most Great.' },
-    { surahName: 'Al-Baqarah', surah: 2, ayah: 286, ayahTotal: 286, confidence: 0.93,
-      transliteration: 'Laa yukalliful-laahu nafsan illaa wus\'ahaa. Lahaa maa kasabat wa \'alayhaa mak-tasabat. Rabbanaa laa tu\'aakhiznaaa in-naseenaaa aw akhta\'naa. Rabbanaa wa laa tahmil \'alaynaaa isran kamaa hamaltahoo \'alal-lazeena min qablinaa. Rabbanaa wa laa tuhammilnaa maa laa taaqata lanaa bih. Wa\'fu \'annaa waghfir lanaa warhamnaa. Anta Mawlaanaa fansurnaa \'alal-qawmil-kaafireen.',
-      translation: 'Allah does not charge a soul except [with that within] its capacity. It will have [the consequence of] what [good] it has gained, and it will bear [the consequence of] what [evil] it has earned. "Our Lord, do not impose blame upon us if we have forgotten or erred. Our Lord, and lay not upon us a burden like that which You laid upon those before us. Our Lord, and burden us not with that which we have no ability to bear. And pardon us; and forgive us; and have mercy upon us. You are our protector, so give us victory over the disbelieving people."' },
-    { surahName: 'Al-Hashr', surah: 59, ayah: 22, ayahTotal: 24, confidence: 0.91,
-      transliteration: 'Huwal-laahul-lazee laaa ilaaha illaa Huwa. \'Aalimul-ghaybi wash-shahaadah. Huwar-Rahmaanur-Raheem.',
-      translation: 'He is Allah, other than whom there is no deity, Knower of the unseen and the witnessed. He is the Entirely Merciful, the Especially Merciful.' },
-    { surahName: 'Al-Hashr', surah: 59, ayah: 23, ayahTotal: 24, confidence: 0.89,
-      transliteration: 'Huwal-laahul-lazee laaa ilaaha illaa Huwal-Malikul-Quddoosus-Salaamul-Mu\'minul-Muhayminul-\'Azeezul-Jabbaarul-Mutakabbir. Subhaanal-laahi \'ammaa yushrikoon.',
-      translation: 'He is Allah, other than whom there is no deity, the Sovereign, the Pure, the Perfection, the Grantor of Security, the Overseer, the Exalted in Might, the Compeller, the Superior. Exalted is Allah above whatever they associate with Him.' },
-    { surahName: 'Al-Hashr', surah: 59, ayah: 24, ayahTotal: 24, confidence: 0.94,
-      transliteration: 'Huwal-laahul-Khaaliqul-Baari\'ul-Musawwir. Lahul-Asmaa\'ul-Husnaa. Yusabbihu lahoo maa fis-samaawaati wal-ard. Wa Huwal-\'Azeezul-Hakeem.',
-      translation: 'He is Allah, the Creator, the Inventor, the Fashioner; to Him belong the best names. Whatever is in the heavens and earth is exalting Him. And He is the Exalted in Might, the Wise.' },
-    { surahName: 'Ya-Sin', surah: 36, ayah: 1, ayahTotal: 83, confidence: 0.97,
-      transliteration: 'Yaaa-Seeen.',
-      translation: 'Ya, Sin.' },
-    { surahName: 'Ya-Sin', surah: 36, ayah: 2, ayahTotal: 83, confidence: 0.95,
-      transliteration: 'Wal-Qur\'aanil-Hakeem.',
-      translation: 'By the wise Quran.' },
-    { surahName: 'Ya-Sin', surah: 36, ayah: 3, ayahTotal: 83, confidence: 0.94,
-      transliteration: 'Innaka laminal-mursaleen.',
-      translation: 'Indeed you, [O Muhammad], are from among the messengers.' },
-    { surahName: 'Ya-Sin', surah: 36, ayah: 4, ayahTotal: 83, confidence: 0.92,
-      transliteration: '\'Alaa Siraatim-Mustaqeem.',
-      translation: 'On a straight path.' },
-    { surahName: 'Al-Mulk', surah: 67, ayah: 1, ayahTotal: 30, confidence: 0.96,
-      transliteration: 'Tabaarakal-lazee biyadihil-mulku wa Huwa \'alaa kulli shay\'in Qadeer.',
-      translation: 'Blessed is He in whose hand is dominion, and He is over all things competent.' },
-    { surahName: 'Al-Mulk', surah: 67, ayah: 2, ayahTotal: 30, confidence: 0.93,
-      transliteration: 'Allazee khalaqal-mawta wal-hayaata liyabluwakum ayyukum ahsanu \'amalaa. Wa Huwal-\'Azeezul-Ghafoor.',
-      translation: '[He] who created death and life to test you [as to] which of you is best in deed - and He is the Exalted in Might, the Forgiving.' },
-  ];
-
-  var _simPaused = false;
-
-  function startSimDemo() {
-    if (_simTimer) return;
-    _simPaused = false;
-    _simIdx = 0;
-    var btn = document.getElementById('demoBtn');
-    btn.textContent = '\uD83C\uDFAC G2 Demo: On';
-    btn.classList.add('active');
-    log('Demo started \u2014 tap:next  scroll:prev/next  dbl-tap:pause', 'ok');
-    _simAdvance(0);
-  }
-
-  function stopSimDemo() {
-    if (_simTimer) { clearTimeout(_simTimer); _simTimer = null; }
-    stopPageFlip(); stopCountdown();
-    _simPaused = false;
-    var btn = document.getElementById('demoBtn');
-    btn.textContent = '\uD83C\uDFAC G2 Demo: Off';
-    btn.classList.remove('active');
-  }
-
-  window.toggleDemo = function () {
-    if (_simTimer || _simPaused) { stopSimDemo(); glassesUpdate({ hdr: 'Taraweeh Companion', body: 'Ready.' }); }
-    else startSimDemo();
-  };
-
-  var _simIdx = 0;
-  var SIM_AYAH_MS = 4000;
-  function _simAdvance(dir) {
-    if (_simTimer) clearTimeout(_simTimer);
-    _simTimer = null;
-    stopPageFlip(); stopCountdown();
-    _simIdx = (_simIdx + dir + SIM_AYAHS.length) % SIM_AYAHS.length;
-    var a = SIM_AYAHS[_simIdx];
-    var wordCount = (a.arabic || '').split(/\s+/).length || 4;
-    var duration = Math.max(SIM_AYAH_MS, wordCount * 700);
-    var state = { mode: 'LOCKED', surahName: a.surahName, surah: a.surah,
-      ayah: a.ayah, ayahTotal: a.ayahTotal, confidence: a.confidence,
-      transliteration: a.transliteration, translation: a.translation };
-    var gDisplay = buildGlassesText(state);
-    startPageFlip(gDisplay, duration);
-    _simTimer = setTimeout(function () { _simAdvance(1); }, duration);
-  }
-
   // ─── Theme toggle ──────────────────────────────────────────────────────────
   window.toggleTheme = function () {
     var html = document.documentElement;
@@ -2065,22 +1947,30 @@ body {
   };
 
   // ─── Settings UI ──────────────────────────────────────────────────────────
+  window.setWhisperProvider = function (value) {
+    var isCustom = value === 'custom';
+    document.getElementById('btnHfDefault').classList.toggle('active', !isCustom);
+    document.getElementById('btnCustomDeployed').classList.toggle('active', isCustom);
+    toggleWhisperFields();
+  };
+
   window.toggleWhisperFields = function () {
-    var p = document.getElementById('settingWhisperProvider').value;
+    var isCustom = document.getElementById('btnCustomDeployed').classList.contains('active');
+    var epVal = (document.getElementById('settingWhisperEndpoint') || {}).value || '';
     var rowEp = document.getElementById('rowWhisperEndpoint');
+    var rowKey = document.getElementById('rowWhisperApiKey');
     var rowSecret = document.getElementById('rowWhisperModalSecret');
-    var hint = document.getElementById('hintApiKey');
-    rowEp.style.display = (p === 'hf-public') ? 'none' : '';
-    rowSecret.style.display = (p === 'modal') ? '' : 'none';
-    hint.textContent = p === 'hf-public' || p === 'hf-dedicated' ? 'HF token (hf_...) — leave empty to use backend .env' :
-      p === 'modal' ? 'Modal-Key (if proxy auth)' : 'Bearer token for your endpoint';
+    if (rowEp) rowEp.style.display = isCustom ? '' : 'none';
+    if (rowKey) rowKey.style.display = isCustom ? '' : 'none';
+    if (rowSecret) rowSecret.style.display = (isCustom && /modal\.run|modal\.com/i.test(epVal)) ? '' : 'none';
   };
 
   window.showSettings = function () {
     document.getElementById('mainView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'block';
     document.getElementById('settingBackend').value = S.settings.backendUrl || '';
-    document.getElementById('settingWhisperProvider').value = S.settings.whisperProvider || 'hf-public';
+    var wp = S.settings.whisperProvider || 'hf-public';
+    setWhisperProvider(wp === 'custom' ? 'custom' : 'hf-public');
     document.getElementById('settingWhisperEndpoint').value = S.settings.whisperEndpointUrl || '';
     document.getElementById('settingWhisperApiKey').value = S.settings.whisperApiKey || S.settings.hfToken || '';
     document.getElementById('settingWhisperModalSecret').value = S.settings.whisperModalSecret || '';
@@ -2091,11 +1981,13 @@ body {
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     toggleWhisperFields();
     checkBackend();
+    updateMicStatus();
+    document.getElementById('settingMicTest').onclick = requestMicFromSettings;
   };
 
   window.hideSettings = function () {
     S.settings.backendUrl = document.getElementById('settingBackend').value.trim();
-    S.settings.whisperProvider = document.getElementById('settingWhisperProvider').value;
+    S.settings.whisperProvider = document.getElementById('btnCustomDeployed').classList.contains('active') ? 'custom' : 'hf-public';
     S.settings.whisperEndpointUrl = document.getElementById('settingWhisperEndpoint').value.trim();
     S.settings.whisperApiKey = document.getElementById('settingWhisperApiKey').value.trim();
     S.settings.whisperModalSecret = document.getElementById('settingWhisperModalSecret').value.trim();
@@ -2113,11 +2005,42 @@ body {
     var url = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
     var el = document.getElementById('backendStatus');
     fetch(url + '/api/status').then(function (r) { return r.json(); }).then(function (s) {
-      el.textContent = '\u2713 Connected \u2014 ' + (s.provider || 'whisper') + (s.endpoint ? ' (' + s.endpoint + ')' : '');
+      var used = getWsUrl();
+      el.textContent = '\u2713 Connected \u2014 ' + (s.provider || 'whisper') + (s.endpoint ? ' (' + s.endpoint + ')' : '') + (used ? ' \u2022 ' + used : '');
       el.style.color = 'var(--tc-green)';
     }).catch(function () {
       el.textContent = '\u2715 Not reachable at ' + url;
       el.style.color = 'var(--tc-red)';
+    });
+  }
+
+  function updateMicStatus() {
+    var el = document.getElementById('micStatusHint');
+    if (!el) return;
+    if (!navigator.permissions || !navigator.permissions.query) {
+      el.textContent = 'Tap "Request mic" to grant permission';
+      return;
+    }
+    navigator.permissions.query({ name: 'microphone' }).then(function (r) {
+      el.textContent = r.state === 'granted' ? '\u2713 Mic granted' : r.state === 'denied' ? '\u2715 Mic denied' : 'Mic not yet requested';
+      el.style.color = r.state === 'granted' ? 'var(--tc-green)' : r.state === 'denied' ? 'var(--tc-red)' : '';
+    }).catch(function () {
+      el.textContent = 'Tap "Request mic" to grant permission';
+    });
+  }
+
+  function requestMicFromSettings() {
+    var el = document.getElementById('micStatusHint');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (el) el.textContent = 'Microphone API not available';
+      return;
+    }
+    if (el) el.textContent = 'Requesting...';
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      if (el) { el.textContent = '\u2713 Mic granted'; el.style.color = 'var(--tc-green)'; }
+    }).catch(function (err) {
+      if (el) { el.textContent = '\u2715 ' + (err.message || 'Mic denied'); el.style.color = 'var(--tc-red)'; }
     });
   }
 
