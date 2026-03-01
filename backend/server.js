@@ -90,15 +90,28 @@ wss.on('connection', (ws, req) => {
 
   let pipelineVersion = 'v2';
 
-  function createPipeline(preferredSurah = 0, hfToken, geminiKey, version) {
+  function createPipeline(preferredSurah = 0, opts = {}, version) {
     if (pipeline) pipeline.destroy();
     if (version) pipelineVersion = version;
     const Ctor = pipelineVersion === 'v1' ? AudioPipelineV1 : AudioPipelineV2;
+
+    const hasWhisperOverrides = opts.whisperProvider || opts.whisperEndpointUrl || opts.whisperApiKey || opts.hfToken;
+    const whisperOpts = hasWhisperOverrides
+      ? {
+          provider: opts.whisperProvider || undefined,
+          endpointUrl: opts.whisperEndpointUrl || undefined,
+          apiKey: opts.whisperApiKey || opts.hfToken || HF_TOKEN || undefined,
+          modalKey: opts.whisperProvider === 'modal' ? (opts.whisperApiKey || opts.hfToken) : undefined,
+          modalSecret: opts.whisperModalSecret || undefined,
+        }
+      : HF_TOKEN ? { apiKey: HF_TOKEN } : null;
+
     console.log(`[Init] Creating pipeline ${pipelineVersion.toUpperCase()}`);
     pipeline = new Ctor({
       preferredSurah,
-      hfToken: hfToken || HF_TOKEN,
-      geminiKey: geminiKey || GEMINI_KEY,
+      hfToken: opts.hfToken || HF_TOKEN,
+      whisperOpts,
+      geminiKey: opts.geminiKey || GEMINI_KEY,
       onStateUpdate: (msg) => send(msg),
       onStatus: (s) => send({ type: 'sys_status', ...s }),
       onError: (err) => send({ type: 'error', error: err }),
@@ -106,7 +119,7 @@ wss.on('connection', (ws, req) => {
     send({ type: 'pipeline_version', version: pipelineVersion });
   }
 
-  createPipeline();
+  createPipeline(0, {});
 
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
@@ -136,7 +149,7 @@ wss.on('connection', (ws, req) => {
               ? msg.preferredSurah : 0;
             const ver = msg.pipelineVersion === 'v1' ? 'v1' : 'v2';
             console.log(`[Init] preferredSurah=${surah} pipeline=${ver}`);
-            createPipeline(surah, msg.hfToken, msg.geminiKey, ver);
+            createPipeline(surah, msg, ver);
             _binaryLogged = false;
             break;
           }

@@ -1,20 +1,46 @@
 /**
  * Whisper provider
- * Supports three modes (checked in order):
- *   1. LOCAL  — Python whisper_server.py on localhost:8000 (USE_LOCAL_WHISPER=true)
- *   2. DEDICATED — HuggingFace Inference Endpoint (WHISPER_ENDPOINT_URL set)
+ * Supports (checked in order):
+ *   1. LOCAL  — Python whisper_server.py (USE_LOCAL_WHISPER=true)
+ *   2. DEDICATED — HF/Modal/Custom endpoint (env or client opts)
  *   3. FALLBACK — HuggingFace public API: wasimlhr/whisper-quran-v1
+ *
+ * Client can override via opts: { provider, endpointUrl, apiKey, modalSecret }
+ * provider: 'hf-public' | 'hf-dedicated' | 'modal' | 'custom'
  */
 import { pcmToWav } from './pcmToWav.js';
 
 const USE_LOCAL     = process.env.USE_LOCAL_WHISPER === 'true';
 const LOCAL_URL     = process.env.LOCAL_WHISPER_URL || 'http://localhost:8000/transcribe';
-const DEDICATED_URL = process.env.WHISPER_ENDPOINT_URL;
 const FALLBACK_URL  = 'https://router.huggingface.co/hf-inference/models/wasimlhr/whisper-quran-v1';
 
-const IS_MODAL = DEDICATED_URL && /modal\.run|modal\.com/i.test(DEDICATED_URL);
-const MODAL_KEY    = process.env.MODAL_KEY;
-const MODAL_SECRET = process.env.MODAL_SECRET;
+function getWhisperConfig(opts = {}) {
+  opts = opts || {};
+  const envUrl = process.env.WHISPER_ENDPOINT_URL;
+  const envModalKey = process.env.MODAL_KEY;
+  const envModalSecret = process.env.MODAL_SECRET;
+  const envToken = process.env.HUGGINGFACE_TOKEN;
+
+  const provider = opts.provider || (envUrl ? (envUrl.match(/modal\.run|modal\.com/i) ? 'modal' : 'hf-dedicated') : 'hf-public');
+  const endpointUrl = (opts.endpointUrl || '').trim() || envUrl || null;
+  const apiKey = (opts.apiKey || '').trim() || envToken || null;
+  const modalKey = (opts.modalKey || '').trim() || envModalKey || null;
+  const modalSecret = (opts.modalSecret || '').trim() || envModalSecret || null;
+
+  const isModal = provider === 'modal' || (endpointUrl && /modal\.run|modal\.com/i.test(endpointUrl));
+  const isCustom = provider === 'custom';
+
+  return {
+    provider: provider,
+    endpointUrl,
+    apiKey,
+    modalKey,
+    modalSecret,
+    isModal,
+    isCustom,
+    useModalAuth: isModal && !!(modalKey && modalSecret),
+  };
+}
 
 /** Call the local Python Whisper server (multipart form or raw WAV) */
 async function callLocal(wavBuffer, emit = null) {
@@ -96,15 +122,15 @@ async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) 
 }
 
 /** Call Modal web endpoint (no HF Bearer; optional Modal proxy auth; language=ar) */
-async function callModal(url, wavBuffer, emit = null) {
+async function callModal(url, wavBuffer, modalKey, modalSecret, emit = null) {
   const fullUrl = url.includes('?') ? url : url + '?language=ar&task=transcribe';
 
   emit?.({ component: 'model', status: 'pending' });
 
   const headers = { 'Content-Type': 'audio/wav' };
-  if (MODAL_KEY && MODAL_SECRET) {
-    headers['Modal-Key'] = MODAL_KEY;
-    headers['Modal-Secret'] = MODAL_SECRET;
+  if (modalKey && modalSecret) {
+    headers['Modal-Key'] = modalKey;
+    headers['Modal-Secret'] = modalSecret;
   }
 
   const response = await fetch(fullUrl, {
@@ -119,7 +145,7 @@ async function callModal(url, wavBuffer, emit = null) {
     console.log(`[Whisper] Modal cold-start, retrying in ${retryIn}s...`);
     emit?.({ component: 'model', status: 'loading', retryIn });
     await new Promise((r) => setTimeout(r, retryIn * 1000));
-    return callModal(url, wavBuffer, emit);
+    return callModal(url, wavBuffer, modalKey, modalSecret, emit);
   }
 
   const body = await response.text();
@@ -144,33 +170,32 @@ async function callModal(url, wavBuffer, emit = null) {
 /**
  * Proactive health check — called on WS connect so the frontend immediately
  * knows which provider is configured and whether the endpoint is reachable.
- * Does NOT send audio; just pings the URL with a lightweight request.
+ * opts: { provider, endpointUrl, apiKey, modalKey, modalSecret } — from client or env
  */
-export async function probeWhisperEndpoint(hfToken, emit) {
-  const token = hfToken || process.env.HUGGINGFACE_TOKEN;
+export async function probeWhisperEndpoint(optsOrToken, emit) {
+  const opts = typeof optsOrToken === 'object' ? optsOrToken : { apiKey: optsOrToken };
+  const cfg = getWhisperConfig(opts);
 
-  // Determine which provider will be used
   let provider, url;
   if (USE_LOCAL) {
     provider = 'local'; url = LOCAL_URL;
-  } else if (DEDICATED_URL) {
-    provider = 'dedicated'; url = DEDICATED_URL;
+  } else if (cfg.endpointUrl) {
+    provider = cfg.isModal ? 'modal' : cfg.isCustom ? 'custom' : 'dedicated';
+    url = cfg.endpointUrl;
   } else {
     provider = 'fallback'; url = FALLBACK_URL;
   }
 
-  emit({ component: 'model', status: 'probing', provider, url: url.replace(/\/\/.*@/, '//***@') });
+  emit({ component: 'model', status: 'probing', provider, url: (url || '').replace(/\/\/.*@/, '//***@') });
   console.log(`[Whisper] Probing ${provider} → ${url}`);
 
   try {
     const headers = { 'Content-Type': 'audio/wav' };
-    if (provider === 'dedicated' && IS_MODAL) {
-      if (MODAL_KEY && MODAL_SECRET) {
-        headers['Modal-Key'] = MODAL_KEY;
-        headers['Modal-Secret'] = MODAL_SECRET;
-      }
-    } else if (provider !== 'local' && token) {
-      headers.Authorization = `Bearer ${token}`;
+    if (cfg.useModalAuth) {
+      headers['Modal-Key'] = cfg.modalKey;
+      headers['Modal-Secret'] = cfg.modalSecret;
+    } else if (provider !== 'local' && cfg.apiKey) {
+      headers.Authorization = `Bearer ${cfg.apiKey}`;
     }
 
     const t0 = Date.now();
@@ -189,7 +214,6 @@ export async function probeWhisperEndpoint(hfToken, emit) {
       return;
     }
 
-    // Any response (even 400/422 for empty body) means the endpoint is alive
     emit({ component: 'model', status: 'standby', provider, latencyMs, httpStatus: res.status });
     console.log(`[Whisper] Probe: ${provider} reachable (HTTP ${res.status}, ${latencyMs}ms)`);
   } catch (err) {
@@ -211,10 +235,12 @@ function isNoise(text) {
   return false;
 }
 
-export async function transcribeWithWhisper(pcmBuffer, hfToken, emit = null) {
+export async function transcribeWithWhisper(pcmBuffer, optsOrToken, emit = null) {
+  const opts = typeof optsOrToken === 'object' ? optsOrToken : { apiKey: optsOrToken };
+  const cfg = getWhisperConfig(opts);
   const wavBuffer = pcmToWav(pcmBuffer, 16000);
 
-  // ── Mode 1: Local Python Whisper server (fastest, no rate limits) ──────────
+  // ── Mode 1: Local Python Whisper server ─────────────────────────────────────
   if (USE_LOCAL) {
     try {
       console.log(`[Whisper] Local → ${wavBuffer.length}B`);
@@ -227,15 +253,14 @@ export async function transcribeWithWhisper(pcmBuffer, hfToken, emit = null) {
     }
   }
 
-  const token = hfToken || process.env.HUGGINGFACE_TOKEN;
-
-  // ── Mode 2: Dedicated endpoint (HF or Modal) ─────────────────────────────────
-  if (DEDICATED_URL) {
+  // ── Mode 2: Dedicated endpoint (HF / Modal / Custom) ────────────────────────
+  if (cfg.endpointUrl) {
     try {
-      console.log(`[Whisper] Dedicated (${IS_MODAL ? 'Modal' : 'HF'}) → ${wavBuffer.length}B`);
-      const result = IS_MODAL
-        ? await callModal(DEDICATED_URL, wavBuffer, emit)
-        : await callRaw(DEDICATED_URL, wavBuffer, token, false, emit);
+      const label = cfg.isModal ? 'Modal' : cfg.isCustom ? 'Custom' : 'HF';
+      console.log(`[Whisper] Dedicated (${label}) → ${wavBuffer.length}B`);
+      const result = cfg.isModal
+        ? await callModal(cfg.endpointUrl, wavBuffer, cfg.modalKey, cfg.modalSecret, emit)
+        : await callRaw(cfg.endpointUrl, wavBuffer, cfg.apiKey, false, emit);
       if (!isNoise(result.text)) return result;
       console.log(`[Whisper] Dedicated noise/empty — trying fallback`);
       emit?.({ component: 'model', status: 'fallback', message: 'Dedicated returned noise' });
@@ -246,7 +271,7 @@ export async function transcribeWithWhisper(pcmBuffer, hfToken, emit = null) {
   }
 
   // ── Mode 3: HuggingFace public fallback ────────────────────────────────────
-  if (!token) throw new Error('HUGGINGFACE_TOKEN required for HF fallback');
+  if (!cfg.apiKey) throw new Error('API key required for HF public fallback');
   console.log(`[Whisper] Fallback → ${wavBuffer.length}B`);
-  return await callRaw(FALLBACK_URL, wavBuffer, token, true, emit);
+  return await callRaw(FALLBACK_URL, wavBuffer, cfg.apiKey, true, emit);
 }

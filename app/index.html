@@ -674,12 +674,31 @@ body {
     </div>
   </div>
 
-  <div class="s-section">API Keys (override .env)</div>
+  <div class="s-section">Whisper / ASR</div>
   <div class="s-card">
     <div class="s-row">
-      <span class="s-label">HuggingFace Token</span>
-      <span class="s-hint">Leave empty to use backend .env</span>
-      <input id="settingHF" type="text" placeholder="hf_..." autocomplete="off" />
+      <span class="s-label">Provider</span>
+      <select id="settingWhisperProvider" onchange="toggleWhisperFields()">
+        <option value="hf-public">HF Public (default)</option>
+        <option value="hf-dedicated">HF Dedicated</option>
+        <option value="modal">Modal</option>
+        <option value="custom">Custom endpoint</option>
+      </select>
+    </div>
+    <div class="s-row" id="rowWhisperEndpoint" style="display:none">
+      <span class="s-label">Endpoint URL</span>
+      <span class="s-hint">HF: *.endpoints.huggingface.cloud — Modal: *.modal.run</span>
+      <input id="settingWhisperEndpoint" type="url" placeholder="https://..." autocomplete="off" />
+    </div>
+    <div class="s-row">
+      <span class="s-label">API Key</span>
+      <span class="s-hint" id="hintApiKey">HF token (hf_...) — leave empty to use backend .env</span>
+      <input id="settingWhisperApiKey" type="text" placeholder="hf_..." autocomplete="off" />
+    </div>
+    <div class="s-row" id="rowWhisperModalSecret" style="display:none">
+      <span class="s-label">Modal Secret</span>
+      <span class="s-hint">Only if your Modal endpoint uses proxy auth</span>
+      <input id="settingWhisperModalSecret" type="text" placeholder="Optional" autocomplete="off" />
     </div>
   </div>
 
@@ -895,7 +914,7 @@ body {
   var _modelProvider = '';
 
   function _providerLabel(p) {
-    return p === 'local' ? 'Local' : p === 'dedicated' ? 'whisper-quran' : 'HF Public';
+    return p === 'local' ? 'Local' : p === 'modal' ? 'Modal' : p === 'custom' ? 'Custom' : p === 'dedicated' ? 'whisper-quran' : 'HF Public';
   }
 
   function handleSysStatus(s) {
@@ -1381,7 +1400,11 @@ body {
       S.ws.send(JSON.stringify({
         type: 'init',
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
-        hfToken: (S.settings.hfToken || '').trim() || null,
+        hfToken: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
+        whisperProvider: S.settings.whisperProvider || null,
+        whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
+        whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
+        whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v2',
       }));
       if (_fastMode)     S.ws.send(JSON.stringify({ type: 'set_fast_mode',     enabled: true }));
@@ -1796,7 +1819,11 @@ body {
       S.ws.send(JSON.stringify({
         type: 'init',
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
-        hfToken: (S.settings.hfToken || '').trim() || null,
+        hfToken: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
+        whisperProvider: S.settings.whisperProvider || null,
+        whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
+        whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
+        whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v2',
       }));
       S.ws.send(JSON.stringify({ type: 'start' }));
@@ -2038,22 +2065,41 @@ body {
   };
 
   // ─── Settings UI ──────────────────────────────────────────────────────────
+  window.toggleWhisperFields = function () {
+    var p = document.getElementById('settingWhisperProvider').value;
+    var rowEp = document.getElementById('rowWhisperEndpoint');
+    var rowSecret = document.getElementById('rowWhisperModalSecret');
+    var hint = document.getElementById('hintApiKey');
+    rowEp.style.display = (p === 'hf-public') ? 'none' : '';
+    rowSecret.style.display = (p === 'modal') ? '' : 'none';
+    hint.textContent = p === 'hf-public' || p === 'hf-dedicated' ? 'HF token (hf_...) — leave empty to use backend .env' :
+      p === 'modal' ? 'Modal-Key (if proxy auth)' : 'Bearer token for your endpoint';
+  };
+
   window.showSettings = function () {
     document.getElementById('mainView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'block';
     document.getElementById('settingBackend').value = S.settings.backendUrl || '';
-    document.getElementById('settingHF').value = S.settings.hfToken || '';
+    document.getElementById('settingWhisperProvider').value = S.settings.whisperProvider || 'hf-public';
+    document.getElementById('settingWhisperEndpoint').value = S.settings.whisperEndpointUrl || '';
+    document.getElementById('settingWhisperApiKey').value = S.settings.whisperApiKey || S.settings.hfToken || '';
+    document.getElementById('settingWhisperModalSecret').value = S.settings.whisperModalSecret || '';
     document.getElementById('settingLang').value = S.settings.lang || '';
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = S.settings.pipelineVersion || 'v2';
     document.getElementById('settingForcePhoneMic').checked = !!S.settings.forcePhoneMic;
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
+    toggleWhisperFields();
     checkBackend();
   };
 
   window.hideSettings = function () {
     S.settings.backendUrl = document.getElementById('settingBackend').value.trim();
-    S.settings.hfToken = document.getElementById('settingHF').value.trim();
+    S.settings.whisperProvider = document.getElementById('settingWhisperProvider').value;
+    S.settings.whisperEndpointUrl = document.getElementById('settingWhisperEndpoint').value.trim();
+    S.settings.whisperApiKey = document.getElementById('settingWhisperApiKey').value.trim();
+    S.settings.whisperModalSecret = document.getElementById('settingWhisperModalSecret').value.trim();
+    S.settings.hfToken = S.settings.whisperApiKey;
     S.settings.lang = document.getElementById('settingLang').value;
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = document.getElementById('settingPipeline').value;

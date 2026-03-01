@@ -31,7 +31,8 @@ async function test() {
 
   // 1. Probe
   console.log('1. Probing endpoint...');
-  await probeWhisperEndpoint(token, (msg) => {
+  const opts = ep ? { endpointUrl: ep, apiKey: token, provider: isModal ? 'modal' : 'hf-dedicated', modalKey: process.env.MODAL_KEY, modalSecret: process.env.MODAL_SECRET } : { apiKey: token };
+  await probeWhisperEndpoint(opts, (msg) => {
     if (msg.status === 'standby') console.log('   ✓ Reachable (HTTP', msg.httpStatus + ',', msg.latencyMs + 'ms)');
     if (msg.status === 'loading') console.log('   ⏳ Cold start, retry in', msg.retryIn + 's');
     if (msg.status === 'error') console.log('   ✗ Error:', msg.message);
@@ -53,7 +54,7 @@ async function test() {
 
   try {
     console.log('\n3. Transcribing...');
-    const result = await transcribeWithWhisper(wavBuffer, token, (msg) => {
+    const result = await transcribeWithWhisper(wavBuffer, opts, (msg) => {
       if (msg.status === 'loading') process.stdout.write('   Loading... ');
       if (msg.status === 'ready') process.stdout.write('done\n');
     });

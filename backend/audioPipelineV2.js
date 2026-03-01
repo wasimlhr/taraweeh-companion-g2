@@ -131,12 +131,12 @@ function isTakbeer(text) {
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, hfToken }) {
+  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, hfToken, whisperOpts }) {
     this.onStateUpdate  = onStateUpdate;
     this.onStatus       = onStatus || (() => {});
     this.onError        = onError  || (() => {});
     this.preferredSurah = preferredSurah;
-    this.hfToken        = hfToken;
+    this.whisperOpts    = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
 
     this.state     = createState();
     this.active    = false;
@@ -194,7 +194,7 @@ export class AudioPipeline {
     this._preRukuSurah   = 0;
     this._preRukuAyah    = 0;
 
-    probeWhisperEndpoint(this.hfToken, this.onStatus).catch(() => {});
+    probeWhisperEndpoint(this.whisperOpts, this.onStatus).catch(() => {});
   }
 
   get _maxDisplayLead() {
@@ -398,7 +398,7 @@ export class AudioPipeline {
       let text = '';
       try {
         const audioToSend = applyClipGuard(this._searchBuf, rms);
-        const result = await transcribe(audioToSend, this.hfToken, this.onStatus);
+        const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         if (stale()) { console.log('[Pipeline] Stale search result discarded'); return; }
         console.log(`[Pipeline] Whisper (${bufMs}ms): "${text.substring(0, 80)}"`);
@@ -595,7 +595,7 @@ export class AudioPipeline {
       let text = '';
       try {
         const audioToSend = applyClipGuard(chunk, rms);
-        const result = await transcribe(audioToSend, this.hfToken, this.onStatus);
+        const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));

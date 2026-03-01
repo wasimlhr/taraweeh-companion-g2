@@ -12,16 +12,17 @@ console.log(`[Transcription] Using provider: ${PROVIDER}`);
 /**
  * Transcribe a PCM audio chunk to Arabic text.
  * @param {Buffer} pcmBuffer - Raw PCM S16LE 16kHz mono
- * @param {string} [hfToken] - HuggingFace token override (whisper only)
+ * @param {object|string} [whisperOpts] - { provider, endpointUrl, apiKey, modalKey, modalSecret } or legacy hfToken string
+ * @param {Function} [emit] - Status callback
  * @returns {Promise<{text: string, provider: string}>}
  */
-export async function transcribe(pcmBuffer, hfToken, emit = null) {
+export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
   switch (PROVIDER) {
     case 'gemini':
       return transcribeWithGemini(pcmBuffer);
     case 'whisper':
     default:
-      return transcribeWithWhisper(pcmBuffer, hfToken, emit);
+      return transcribeWithWhisper(pcmBuffer, whisperOpts, emit);
   }
 }
 

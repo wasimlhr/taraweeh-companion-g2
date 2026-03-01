@@ -191,12 +191,12 @@ function isTakbeer(text) {
 
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, hfToken }) {
+  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, hfToken, whisperOpts }) {
     this.onStateUpdate = onStateUpdate;
     this.onStatus      = onStatus || (() => {});
     this.onError       = onError  || (() => {});
     this.preferredSurah = preferredSurah;
-    this.hfToken       = hfToken;
+    this.whisperOpts   = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
 
     this.state     = createState();
     this.active    = false;   // set true only when user presses Start
@@ -266,7 +266,7 @@ export class AudioPipeline {
     this._preRukuAyah    = 0;
 
     // Proactive model health check — fires immediately so frontend knows what's going on
-    probeWhisperEndpoint(this.hfToken, this.onStatus).catch(() => {});
+    probeWhisperEndpoint(this.whisperOpts, this.onStatus).catch(() => {});
   }
 
   /** Toggle fast mode — speeds up reading timer and pause detection */
@@ -448,7 +448,7 @@ export class AudioPipeline {
       let text = '';
       try {
         const audioToSend = applyClipGuard(this._searchBuf, rms);
-        const result = await transcribe(audioToSend, this.hfToken, this.onStatus);
+        const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         if (stale()) { console.log('[Pipeline] Stale search result discarded'); return; }
         console.log(`[Pipeline] Whisper (${bufMs}ms): "${text.substring(0, 80)}"`);
@@ -608,7 +608,7 @@ export class AudioPipeline {
       let text = '';
       try {
         const audioToSend = applyClipGuard(chunk, rms);
-        const result = await transcribe(audioToSend, this.hfToken, this.onStatus);
+        const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
