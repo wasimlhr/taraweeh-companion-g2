@@ -151,6 +151,8 @@ The server starts on:
 3. Scan the QR code — the app loads on your glasses
 4. Tap the record button and start reciting
 
+**G2 mic when hosted online:** The Even Hub app may not stream G2 microphone audio when the app is loaded from a remote URL (e.g. Railway). This can be due to WebView or bridge restrictions for external origins. **Workaround:** Enable **Phone mic** (main screen or Settings) to use the phone's microphone instead.
+
 ### Phone-Only Mode
 
 Open `https://<your-lan-ip>:3443` in your phone browser (accept the self-signed cert warning). The full UI works without glasses connected.

@@ -248,31 +248,31 @@ body {
 /* ── System Status Bar ─────────────────────────────────────────────────── */
 #statusBar {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   align-items: center;
-  padding: 6px 10px;
+  padding: 4px 8px;
   background: var(--bc-3);
   border-radius: var(--r);
-  margin-bottom: 10px;
-  font-size: 11px;
+  margin-bottom: 8px;
+  font-size: 10px;
   color: var(--tc-2);
-  flex-wrap: wrap;
   transition: background 0.2s;
 }
 .s-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 20px;
-  font-size: 11px;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 10px;
   font-weight: 500;
   background: var(--bc-4);
   color: var(--tc-2);
   white-space: nowrap;
 }
 .s-pill .s-dot {
-  width: 7px; height: 7px;
+  width: 5px; height: 5px;
   border-radius: 50%;
   background: #aaa;
   flex-shrink: 0;
@@ -386,27 +386,6 @@ body {
 
 .btn-group { margin-bottom: 10px; }
 
-/* Surah select */
-.surah-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.surah-row select {
-  flex: 1;
-  padding: 10px 12px;
-  border: 1px solid var(--bc-4);
-  border-radius: var(--r);
-  background: var(--bc-1);
-  box-shadow: var(--shadow);
-  font-size: 14px;
-  color: var(--tc-1);
-  appearance: none;
-  outline: none;
-  transition: background 0.2s, border-color 0.2s, color 0.2s;
-}
-.surah-row select:focus { border-color: var(--tc-gold); }
-
 /* Live transcript */
 /* Word Cloud */
 #wordCloudCard {
@@ -505,6 +484,8 @@ body {
   padding: 10px 14px;
 }
 .s-row + .s-row { border-top: 1px solid var(--bc-3); }
+.s-check { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.s-check input { width: 18px; height: 18px; }
 .s-label { font-size: 12px; color: var(--tc-2); }
 .s-hint { font-size: 11px; color: var(--tc-2); font-style: italic; }
 .s-card input, .s-card select {
@@ -564,12 +545,6 @@ body {
     <div class="s-pill info" id="sPillEndpoint" style="display:none">
       <span class="s-dot"></span><span class="s-label">Fallback</span>
     </div>
-  </div>
-
-  <div class="surah-row">
-    <select id="surahSelect">
-      <option value="0">Any Surah</option>
-    </select>
   </div>
 
   <div id="verseCard">
@@ -636,6 +611,7 @@ body {
   <div class="btn-group">
     <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Speed up timers and matching for fast reciters">⚡ Fast Mode: Off</button>
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
+    <button id="phoneMicBtn" class="mode-btn" onclick="togglePhoneMic()" title="Use phone mic — when G2 mic doesn't work (e.g. hosted online)">🎧 Phone mic: Off</button>
     <button id="demoBtn" class="mode-btn" onclick="toggleDemo()" title="Demo mode — cycle sample ayahs on G2 display">🎬 G2 Demo: Off</button>
   </div>
 
@@ -664,6 +640,12 @@ body {
       <input id="settingBackend" type="url" placeholder="wss://your-backend.example.com/ws" />
     </div>
     <div class="s-status" id="backendStatus">Checking...</div>
+    <div class="s-row" style="margin-top:12px">
+      <label class="s-check">
+        <input type="checkbox" id="settingForcePhoneMic" />
+        <span>Use phone mic (force browser mic if no prompt)</span>
+      </label>
+    </div>
   </div>
 
   <div class="s-section">Recitation</div>
@@ -821,7 +803,14 @@ body {
       S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: _taraweehMode }));
     }
     _updateTaraweehOverlay(_taraweehPos, _rakatCount);
-    log('Taraweeh mode ' + (_taraweehMode ? 'ON' : 'OFF'), _taraweehMode ? 'ok' : 'info');
+  };
+  window.togglePhoneMic = function () {
+    S.settings.forcePhoneMic = !S.settings.forcePhoneMic;
+    saveSettings();
+    var btn = document.getElementById('phoneMicBtn');
+    btn.textContent = '\uD83D\uDCF1 Phone mic: ' + (S.settings.forcePhoneMic ? 'On' : 'Off');
+    btn.classList.toggle('active', S.settings.forcePhoneMic);
+    log('Phone mic ' + (S.settings.forcePhoneMic ? 'ON — use browser mic (G2 mic may not work when hosted)' : 'OFF'), S.settings.forcePhoneMic ? 'ok' : 'info');
   };
 
   window.resetRakat = function () {
@@ -964,7 +953,7 @@ body {
   const SURAHS = ['','Al-Fatiha','Al-Baqarah','Ali Imran','An-Nisa','Al-Maida','Al-Anam','Al-Araf','Al-Anfal','At-Tawbah','Yunus','Hud','Yusuf','Ar-Rad','Ibrahim','Al-Hijr','An-Nahl','Al-Isra','Al-Kahf','Maryam','Ta-Ha','Al-Anbiya','Al-Hajj','Al-Muminun','An-Nur','Al-Furqan','Ash-Shuara','An-Naml','Al-Qasas','Al-Ankabut','Ar-Rum','Luqman','As-Sajda','Al-Ahzab','Saba','Fatir','Ya-Sin','As-Saffat','Sad','Az-Zumar','Ghafir','Fussilat','Ash-Shura','Az-Zukhruf','Ad-Dukhan','Al-Jathiya','Al-Ahqaf','Muhammad','Al-Fath','Al-Hujurat','Qaf','Adh-Dhariyat','At-Tur','An-Najm','Al-Qamar','Ar-Rahman','Al-Waqia','Al-Hadid','Al-Mujadila','Al-Hashr','Al-Mumtahina','As-Saf','Al-Jumuah','Al-Munafiqun','At-Taghabun','At-Talaq','At-Tahrim','Al-Mulk','Al-Qalam','Al-Haqqa','Al-Maarij','Nuh','Al-Jinn','Al-Muzzammil','Al-Muddaththir','Al-Qiyama','Al-Insan','Al-Mursalat','An-Naba','An-Naziat','Abasa','At-Takwir','Al-Infitar','Al-Mutaffifin','Al-Inshiqaq','Al-Buruj','At-Tariq','Al-Ala','Al-Ghashiya','Al-Fajr','Al-Balad','Ash-Shams','Al-Layl','Ad-Duha','Ash-Sharh','At-Tin','Al-Alaq','Al-Qadr','Al-Bayyina','Az-Zalzala','Al-Adiyat','Al-Qaria','At-Takathur','Al-Asr','Al-Humaza','Al-Fil','Quraysh','Al-Maun','Al-Kawthar','Al-Kafirun','An-Nasr','Al-Masad','Al-Ikhlas','Al-Falaq','An-Nas'];
 
   function populateSurahs() {
-    ['surahSelect', 'settingSurah'].forEach(function (id) {
+    ['settingSurah'].forEach(function (id) {
       var el = document.getElementById(id);
       if (!el || el.options.length > 1) return;
       for (var i = 1; i <= 114; i++) {
@@ -1391,7 +1380,7 @@ body {
       log('WS connected', 'ok');
       S.ws.send(JSON.stringify({
         type: 'init',
-        preferredSurah: parseInt(document.getElementById('surahSelect').value || '0'),
+        preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         hfToken: (S.settings.hfToken || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v2',
       }));
@@ -1721,7 +1710,10 @@ body {
           sendPcm(new Uint8Array(i16.buffer));
         };
       })
-      .catch(function (err) { log('Mic denied: ' + err.message, 'err'); });
+      .catch(function (err) {
+        log('Mic denied: ' + err.message, 'err');
+        log('Tip: Check browser Settings → Site → Microphone, or try "Use phone mic" in Settings', 'info');
+      });
   }
 
   function stopBrowserMic() {
@@ -1803,7 +1795,7 @@ body {
       // Already connected — just re-init pipeline and activate
       S.ws.send(JSON.stringify({
         type: 'init',
-        preferredSurah: parseInt(document.getElementById('surahSelect').value || '0'),
+        preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         hfToken: (S.settings.hfToken || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v2',
       }));
@@ -1812,8 +1804,9 @@ body {
     }
 
     acquireWakeLock();
-    if (S.isG2) { startG2Mic(); showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); }
-    else startBrowserMic();
+    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+    if (useBrowserMic) { startBrowserMic(); if (S.isG2) showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); }
+    else { startG2Mic(); showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); }
 
     // Show matching panel, hide idle state
     document.getElementById('matchIdle').style.display = 'none';
@@ -1831,8 +1824,9 @@ body {
     _cancelReconnect();
     if (S.ws && S.ws.readyState === WebSocket.OPEN)
       S.ws.send(JSON.stringify({ type: 'stop' }));
-    if (S.isG2) stopG2Mic();
-    else stopBrowserMic();
+    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+    if (useBrowserMic) stopBrowserMic();
+    else stopG2Mic();
     _closeWsSilently(S.ws);   // close without triggering reconnect loop
     S.ws = null;
     S.pcmAccum = [];
@@ -1894,6 +1888,12 @@ body {
       setPill('sPillG2', '', 'PC mic');
       btn.textContent = 'Start Listening';
       btn.disabled = false;
+    }
+    var pmBtn = document.getElementById('phoneMicBtn');
+    if (pmBtn) {
+      pmBtn.textContent = '\uD83D\uDCF1 Phone mic: ' + (S.settings.forcePhoneMic ? 'On' : 'Off');
+      pmBtn.classList.toggle('active', !!S.settings.forcePhoneMic);
+      pmBtn.title = S.isG2 ? 'Use phone mic — G2 mic may not work when hosted online' : 'Use phone mic (already using browser mic)';
     }
   }
 
@@ -2046,6 +2046,7 @@ body {
     document.getElementById('settingLang').value = S.settings.lang || '';
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = S.settings.pipelineVersion || 'v2';
+    document.getElementById('settingForcePhoneMic').checked = !!S.settings.forcePhoneMic;
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     checkBackend();
   };
@@ -2056,6 +2057,7 @@ body {
     S.settings.lang = document.getElementById('settingLang').value;
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = document.getElementById('settingPipeline').value;
+    S.settings.forcePhoneMic = document.getElementById('settingForcePhoneMic').checked;
     saveSettings();
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('mainView').style.display = 'block';
@@ -2088,9 +2090,6 @@ body {
     S.settings = loadSettings();
     document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v2').toUpperCase();
     populateSurahs();
-    if (S.settings.defaultSurah) {
-      document.getElementById('surahSelect').value = S.settings.defaultSurah;
-    }
     initWave();
 
     document.getElementById('recordBtn').addEventListener('click', function () {
