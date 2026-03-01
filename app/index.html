@@ -543,7 +543,7 @@ body {
       <span class="s-dot"></span><span class="s-label">Pace: --</span>
     </div>
     <div class="s-pill info" id="sPillEndpoint" style="display:none">
-      <span class="s-dot"></span><span class="s-label">Fallback</span>
+      <span class="s-dot"></span><span class="s-label">Using HF Public</span>
     </div>
   </div>
 
@@ -895,7 +895,7 @@ body {
   var _modelProvider = '';
 
   function _providerLabel(p) {
-    return p === 'local' ? 'Local' : p === 'dedicated' ? 'HF Endpoint' : 'HF Fallback';
+    return p === 'local' ? 'Local' : p === 'dedicated' ? 'whisper-quran' : 'HF Public';
   }
 
   function handleSysStatus(s) {
@@ -919,7 +919,7 @@ body {
           document.getElementById('sPillEndpoint').style.display = 'none'; break;
         case 'fallback':
           _modelProvider = 'fallback';
-          setPill('sPillModel', 'info', 'Model: fallback (HF Public)');
+          setPill('sPillModel', 'info', 'Model: HF Public (dedicated unavailable)');
           var fe = document.getElementById('sPillEndpoint');
           fe.style.display = '';
           fe.querySelector('.s-label').textContent = 'whisper-v3';

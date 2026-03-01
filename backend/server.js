@@ -34,12 +34,16 @@ app.get('/', (req, res) => {
   res.sendFile(join(rootDir, 'app', 'index.html'));
 });
 app.get('/api/status', (req, res) => {
+  const ep = process.env.WHISPER_ENDPOINT_URL || '';
+  const isModal = /modal\.run|modal\.com/i.test(ep);
+  const isHF = /huggingface\.cloud|endpoints\.huggingface/i.test(ep);
+  const modelName = ep ? (isModal ? 'whisper-quran (Modal)' : isHF ? 'whisper-quran-v1 (HF)' : 'whisper-quran') : 'whisper-quran-v1 (HF Public)';
   res.json({
     hfConfigured: !!HF_TOKEN,
     geminiConfigured: !!GEMINI_KEY,
     provider: PROVIDER,
-    model: 'whisper-large-v3-Tarteel',
-    endpoint: process.env.WHISPER_ENDPOINT_URL ? 'dedicated' : 'public-api',
+    model: modelName,
+    endpoint: ep ? 'dedicated' : 'public-api',
   });
 });
 app.use(express.static(rootDir));
