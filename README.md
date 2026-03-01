@@ -183,18 +183,20 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 |--------|-------|---------|------|
 | **HF public API** (default) | Set `HUGGINGFACE_TOKEN` | ~2–5 s/chunk | Free (rate-limited) |
 | **HF Inference Endpoint** | Deploy [whisper-quran-v1](https://huggingface.co/wasimlhr/whisper-quran-v1) → set `WHISPER_ENDPOINT_URL` | ~2–3 s/chunk | ~$0.60/hr GPU |
+| **Modal** | Deploy Whisper on [Modal](https://modal.com) → set `WHISPER_ENDPOINT_URL` to `*.modal.run` | ~2–4 s/chunk | Pay-per-use GPU |
 | **Local Python server** | Run `whisper_server.py` → set `USE_LOCAL_WHISPER=true` | ~1–2 s/chunk | Hardware only |
 
 **Recommended model:** [wasimlhr/whisper-quran-v1](https://huggingface.co/wasimlhr/whisper-quran-v1) — fine-tuned on Quran recitation (5.35% WER). The app uses this model by default via the HF public API when `WHISPER_ENDPOINT_URL` is not set.
 
-For production or higher traffic, deploy a [HuggingFace Inference Endpoint](https://huggingface.co/inference-endpoints) for `wasimlhr/whisper-quran-v1` and set `WHISPER_ENDPOINT_URL` to your endpoint URL.
+For production or higher traffic, deploy a [HuggingFace Inference Endpoint](https://huggingface.co/inference-endpoints) for `wasimlhr/whisper-quran-v1` and set `WHISPER_ENDPOINT_URL` to your endpoint URL. Alternatively, deploy Whisper on [Modal](https://modal.com) — your endpoint must accept `POST` with raw `audio/wav` body and return JSON with `text` or `transcription` (or `[{text: "..."}]`).
 
 ### 3. Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `HUGGINGFACE_TOKEN` | Yes | [Get token](https://huggingface.co/settings/tokens) — for HF API or Inference Endpoint |
-| `WHISPER_ENDPOINT_URL` | No | Your HF Inference Endpoint URL (e.g. `https://xxx.us-east-1.aws.endpoints.huggingface.cloud`) |
+| `HUGGINGFACE_TOKEN` | Yes* | [Get token](https://huggingface.co/settings/tokens) — for HF API or fallback. *Not needed if using Modal-only (no fallback). |
+| `WHISPER_ENDPOINT_URL` | No | Dedicated endpoint URL — HF (`*.endpoints.huggingface.cloud`) or Modal (`*.modal.run`) |
+| `MODAL_KEY` / `MODAL_SECRET` | No | Modal proxy auth (only if your endpoint uses `requires_proxy_auth`) |
 | `PORT` | No | Default 3001 |
 
 ---
@@ -253,8 +255,9 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 
 | Variable | Default | Description |
 |---|---|---|
-| `HUGGINGFACE_TOKEN` | — | HuggingFace API token (required) |
-| `WHISPER_ENDPOINT_URL` | — | Dedicated Whisper endpoint URL |
+| `HUGGINGFACE_TOKEN` | — | HuggingFace API token (required for HF fallback) |
+| `WHISPER_ENDPOINT_URL` | — | Dedicated Whisper endpoint (HF or Modal URL) |
+| `MODAL_KEY` / `MODAL_SECRET` | — | Modal proxy auth (optional) |
 | `GEMINI_API_KEY` | — | Google Gemini API key (alternative provider) |
 | `TRANSCRIPTION_PROVIDER` | `whisper` | `whisper` or `gemini` |
 | `PORT` | `3001` | HTTP server port |

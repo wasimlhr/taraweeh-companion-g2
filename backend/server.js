@@ -179,7 +179,8 @@ const LAN_IP = getLanIp();
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`HTTP  → http://localhost:${PORT}`);
   if (LAN_IP !== 'localhost') console.log(`HTTP  → http://${LAN_IP}:${PORT}`);
-  if (PROVIDER === 'whisper' && !HF_TOKEN) console.warn('HUGGINGFACE_TOKEN not set');
+  const hasModalDedicated = /modal\.run|modal\.com/i.test(process.env.WHISPER_ENDPOINT_URL || '');
+  if (PROVIDER === 'whisper' && !HF_TOKEN && !hasModalDedicated) console.warn('HUGGINGFACE_TOKEN not set (required for HF fallback)');
 });
 if (httpsServer) {
   httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {

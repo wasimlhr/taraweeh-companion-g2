@@ -12,6 +12,10 @@ const LOCAL_URL     = process.env.LOCAL_WHISPER_URL || 'http://localhost:8000/tr
 const DEDICATED_URL = process.env.WHISPER_ENDPOINT_URL;
 const FALLBACK_URL  = 'https://router.huggingface.co/hf-inference/models/wasimlhr/whisper-quran-v1';
 
+const IS_MODAL = DEDICATED_URL && /modal\.run|modal\.com/i.test(DEDICATED_URL);
+const MODAL_KEY    = process.env.MODAL_KEY;
+const MODAL_SECRET = process.env.MODAL_SECRET;
+
 /** Call the local Python Whisper server (multipart form or raw WAV) */
 async function callLocal(wavBuffer, emit = null) {
   emit?.({ component: 'model', status: 'pending' });
@@ -33,6 +37,19 @@ async function callLocal(wavBuffer, emit = null) {
   return { text, provider: 'local' };
 }
 
+/** Parse transcription from various response formats (HF, Modal, transformers pipeline) */
+function parseTranscription(result) {
+  if (!result || typeof result !== 'object') return '';
+  const text =
+    result.text ??
+    result.transcription ??
+    (Array.isArray(result) ? result[0]?.text : undefined) ??
+    result.chunks?.[0]?.text ??
+    result.segments?.[0]?.text ??
+    '';
+  return String(text).trim();
+}
+
 async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) {
   const fullUrl = forceArabic && !url.includes('?')
     ? url + '?language=ar&task=transcribe'
@@ -40,17 +57,17 @@ async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) 
 
   emit?.({ component: 'model', status: 'pending' });
 
+  const headers = { 'Content-Type': 'audio/wav' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
   const response = await fetch(fullUrl, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'audio/wav',
-    },
+    headers,
     body: wavBuffer,
     signal: AbortSignal.timeout(35000),
   });
 
-  // HF cold-start: emit loading status, wait, then retry
+  // HF/Modal cold-start: emit loading status, wait, then retry
   if (response.status === 503) {
     const retryIn = parseInt(response.headers.get('retry-after') || '20', 10);
     console.log(`[Whisper] Model loading, retrying in ${retryIn}s...`);
@@ -71,15 +88,56 @@ async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) 
     throw new Error(`Non-JSON response: ${body.slice(0, 100)}`);
   }
 
-  const text = (
-    result.text ??
-    result.transcription ??
-    (Array.isArray(result) ? result[0]?.text : undefined) ??
-    ''
-  ).trim();
+  const text = parseTranscription(result);
 
   emit?.({ component: 'model', status: 'ready' });
   console.log(`[Whisper] "${text.substring(0, 80)}"`);
+  return { text, provider: 'whisper' };
+}
+
+/** Call Modal web endpoint (no HF Bearer; optional Modal proxy auth; language=ar) */
+async function callModal(url, wavBuffer, emit = null) {
+  const fullUrl = url.includes('?') ? url : url + '?language=ar&task=transcribe';
+
+  emit?.({ component: 'model', status: 'pending' });
+
+  const headers = { 'Content-Type': 'audio/wav' };
+  if (MODAL_KEY && MODAL_SECRET) {
+    headers['Modal-Key'] = MODAL_KEY;
+    headers['Modal-Secret'] = MODAL_SECRET;
+  }
+
+  const response = await fetch(fullUrl, {
+    method: 'POST',
+    headers,
+    body: wavBuffer,
+    signal: AbortSignal.timeout(35000),
+  });
+
+  if (response.status === 503) {
+    const retryIn = parseInt(response.headers.get('retry-after') || '20', 10);
+    console.log(`[Whisper] Modal cold-start, retrying in ${retryIn}s...`);
+    emit?.({ component: 'model', status: 'loading', retryIn });
+    await new Promise((r) => setTimeout(r, retryIn * 1000));
+    return callModal(url, wavBuffer, emit);
+  }
+
+  const body = await response.text();
+
+  if (!response.ok) {
+    emit?.({ component: 'model', status: 'error', message: `HTTP ${response.status}` });
+    throw new Error(`HTTP ${response.status}: ${body.slice(0, 200)}`);
+  }
+
+  let result;
+  try { result = JSON.parse(body); } catch (_) {
+    throw new Error(`Non-JSON response: ${body.slice(0, 100)}`);
+  }
+
+  const text = parseTranscription(result);
+
+  emit?.({ component: 'model', status: 'ready' });
+  console.log(`[Whisper] Modal: "${text.substring(0, 80)}"`);
   return { text, provider: 'whisper' };
 }
 
@@ -105,13 +163,20 @@ export async function probeWhisperEndpoint(hfToken, emit) {
   console.log(`[Whisper] Probing ${provider} → ${url}`);
 
   try {
-    const headers = {};
-    if (provider !== 'local' && token) headers.Authorization = `Bearer ${token}`;
+    const headers = { 'Content-Type': 'audio/wav' };
+    if (provider === 'dedicated' && IS_MODAL) {
+      if (MODAL_KEY && MODAL_SECRET) {
+        headers['Modal-Key'] = MODAL_KEY;
+        headers['Modal-Secret'] = MODAL_SECRET;
+      }
+    } else if (provider !== 'local' && token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
 
     const t0 = Date.now();
     const res = await fetch(url, {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'audio/wav' },
+      headers,
       body: Buffer.alloc(0),
       signal: AbortSignal.timeout(15000),
     });
@@ -163,13 +228,14 @@ export async function transcribeWithWhisper(pcmBuffer, hfToken, emit = null) {
   }
 
   const token = hfToken || process.env.HUGGINGFACE_TOKEN;
-  if (!token) throw new Error('HUGGINGFACE_TOKEN required for HF fallback');
 
-  // ── Mode 2: HuggingFace dedicated endpoint ──────────────────────────────────
+  // ── Mode 2: Dedicated endpoint (HF or Modal) ─────────────────────────────────
   if (DEDICATED_URL) {
     try {
-      console.log(`[Whisper] Dedicated → ${wavBuffer.length}B`);
-      const result = await callRaw(DEDICATED_URL, wavBuffer, token, false, emit);
+      console.log(`[Whisper] Dedicated (${IS_MODAL ? 'Modal' : 'HF'}) → ${wavBuffer.length}B`);
+      const result = IS_MODAL
+        ? await callModal(DEDICATED_URL, wavBuffer, emit)
+        : await callRaw(DEDICATED_URL, wavBuffer, token, false, emit);
       if (!isNoise(result.text)) return result;
       console.log(`[Whisper] Dedicated noise/empty — trying fallback`);
       emit?.({ component: 'model', status: 'fallback', message: 'Dedicated returned noise' });
@@ -180,6 +246,7 @@ export async function transcribeWithWhisper(pcmBuffer, hfToken, emit = null) {
   }
 
   // ── Mode 3: HuggingFace public fallback ────────────────────────────────────
+  if (!token) throw new Error('HUGGINGFACE_TOKEN required for HF fallback');
   console.log(`[Whisper] Fallback → ${wavBuffer.length}B`);
   return await callRaw(FALLBACK_URL, wavBuffer, token, true, emit);
 }
