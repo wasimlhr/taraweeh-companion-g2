@@ -4,6 +4,7 @@
   "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {
+    "postinstall": "cd backend && npm install",
     "start": "cd backend && npm run start",
     "backend:dev": "cd backend && npm run dev",
     "qr": "evenhub qr --http --port 3001",

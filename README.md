@@ -167,7 +167,7 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 | Platform | Notes |
 |----------|-------|
-| **Railway** | Add `HUGGINGFACE_TOKEN` in Variables, deploy from GitHub |
+| **Railway** | One-click from GitHub. Add `HUGGINGFACE_TOKEN` in Variables. Uses `railway.json` for build/start. |
 | **Render** | Web Service, set env vars in dashboard |
 | **Fly.io** | `fly launch` then `fly secrets set HUGGINGFACE_TOKEN=...` |
 
