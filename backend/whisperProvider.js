@@ -45,6 +45,7 @@ function getWhisperConfig(opts = {}) {
 /** Call the local Python Whisper server (multipart form or raw WAV) */
 async function callLocal(wavBuffer, emit = null) {
   emit?.({ component: 'model', status: 'pending' });
+  const t0 = Date.now();
   const response = await fetch(LOCAL_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'audio/wav' },
@@ -58,8 +59,9 @@ async function callLocal(wavBuffer, emit = null) {
   }
   const data = await response.json();
   const text = (data.text || '').trim();
+  const latencyMs = Date.now() - t0;
   emit?.({ component: 'model', status: 'ready' });
-  console.log(`[Whisper] Local: "${text.substring(0, 80)}"`);
+  console.log(`[Whisper] Local: "${text.substring(0, 80)}" (${latencyMs}ms)`);
   return { text, provider: 'local' };
 }
 
@@ -86,6 +88,7 @@ async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) 
   const headers = { 'Content-Type': 'audio/wav' };
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  const t0 = Date.now();
   const response = await fetch(fullUrl, {
     method: 'POST',
     headers,
@@ -115,9 +118,10 @@ async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) 
   }
 
   const text = parseTranscription(result);
+  const latencyMs = Date.now() - t0;
 
   emit?.({ component: 'model', status: 'ready' });
-  console.log(`[Whisper] "${text.substring(0, 80)}"`);
+  console.log(`[Whisper] "${text.substring(0, 80)}" (${latencyMs}ms)`);
   return { text, provider: 'whisper' };
 }
 
@@ -133,6 +137,7 @@ async function callModal(url, wavBuffer, modalKey, modalSecret, emit = null) {
     headers['Modal-Secret'] = modalSecret;
   }
 
+  const t0 = Date.now();
   const response = await fetch(fullUrl, {
     method: 'POST',
     headers,
@@ -161,9 +166,10 @@ async function callModal(url, wavBuffer, modalKey, modalSecret, emit = null) {
   }
 
   const text = parseTranscription(result);
+  const latencyMs = Date.now() - t0;
 
   emit?.({ component: 'model', status: 'ready' });
-  console.log(`[Whisper] Modal: "${text.substring(0, 80)}"`);
+  console.log(`[Whisper] Modal: "${text.substring(0, 80)}" (${latencyMs}ms)`);
   return { text, provider: 'whisper' };
 }
 

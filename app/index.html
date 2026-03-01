@@ -726,18 +726,19 @@ body {
     <div class="s-row">
       <span class="s-label">Endpoint</span>
       <div class="toggle-group" role="group">
-        <button type="button" class="toggle-btn active" id="btnHfDefault" onclick="setWhisperProvider('hf-public')">HF Default</button>
-        <button type="button" class="toggle-btn" id="btnCustomDeployed" onclick="setWhisperProvider('custom')">Custom Deployed</button>
+        <button type="button" class="toggle-btn active" id="btnHfDefault" onclick="setWhisperProvider('hf-public')">HF</button>
+        <button type="button" class="toggle-btn" id="btnCustomDeployed" onclick="setWhisperProvider('custom')">Custom</button>
       </div>
     </div>
+    <p class="s-hint" style="margin:0 0 10px 0;font-size:12px;color:var(--tc-2)">HF needs token + endpoint URL (backend .env). Custom = another HF cluster, CTranslate local, or Modal.</p>
     <div class="s-row" id="rowWhisperEndpoint" style="display:none">
       <span class="s-label">Endpoint URL</span>
-      <span class="s-hint">HF: *.endpoints.huggingface.cloud — Modal: *.modal.run</span>
+      <span class="s-hint">HF: *.endpoints.huggingface.cloud — Modal: *.modal.run — Local: http://localhost:...</span>
       <input id="settingWhisperEndpoint" type="url" placeholder="https://..." autocomplete="off" oninput="toggleWhisperFields()" />
     </div>
     <div class="s-row" id="rowWhisperApiKey" style="display:none">
       <span class="s-label">API Key</span>
-      <span class="s-hint" id="hintApiKey">HF token or Bearer — leave empty to use backend .env</span>
+      <span class="s-hint" id="hintApiKey">HF token (required for HF) — leave empty to use backend .env</span>
       <input id="settingWhisperApiKey" type="text" placeholder="hf_..." autocomplete="off" />
     </div>
     <div class="s-row" id="rowWhisperModalSecret" style="display:none">

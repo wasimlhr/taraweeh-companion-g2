@@ -955,7 +955,7 @@ export class AudioPipeline {
     const floorMs = Math.max(dynamicFloor, READ_ADVANCE_MIN_MS);
     const minMs   = Math.max(floorMs, afterPauseMinMs);
     const baseDurationMs = Math.min(Math.max(rawMs, minMs), READ_ADVANCE_MAX_MS);
-    const durationMs = Math.round(baseDurationMs * this._driftMult);
+    const durationMs = Math.min(Math.round(baseDurationMs * this._driftMult), READ_ADVANCE_MAX_MS);
 
     const trendTag = this._paceTrend !== 0 ? ` trend=${this._paceTrend > 0 ? '+' : '-'}` : '';
     const driftTag = this._driftMult > 1.01 ? ` drift=${this._driftMult.toFixed(2)}x` : '';
