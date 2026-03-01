@@ -245,6 +245,19 @@ body {
 }
 #confPct { font-size: 11px; color: var(--tc-2); min-width: 32px; text-align: right; }
 
+/* Manual ayah nav arrows */
+.verse-nav-row {
+  display: flex; gap: 12px; justify-content: center; margin-top: 12px; padding-top: 8px;
+  border-top: 1px solid var(--bc-4);
+}
+.nav-arrow-btn {
+  flex: 1; max-width: 120px; padding: 10px 14px; font-size: 14px; font-weight: 600;
+  background: var(--bc-3); color: var(--tc-1); border: 1px solid var(--bc-4);
+  border-radius: var(--r); cursor: pointer; transition: background 0.2s;
+}
+.nav-arrow-btn:hover { background: var(--bc-4); }
+.nav-arrow-btn:active { transform: scale(0.98); }
+
 /* ── System Status Bar ─────────────────────────────────────────────────── */
 #statusBar {
   display: flex;
@@ -562,6 +575,9 @@ body {
     <div class="s-pill" id="sPillPace" style="display:none">
       <span class="s-dot"></span><span class="s-label">Pace: --</span>
     </div>
+    <div class="s-pill info" id="sPillTimer" style="display:none">
+      <span class="s-dot"></span><span class="s-label">Next: --</span>
+    </div>
     <div class="s-pill info" id="sPillEndpoint" style="display:none">
       <span class="s-dot"></span><span class="s-label">Using HF Public</span>
     </div>
@@ -616,6 +632,10 @@ body {
       <div class="verse-translit" id="verseTranslit"></div>
       <div class="verse-divider"></div>
       <div class="verse-translation" id="verseTrans"></div>
+    </div>
+    <div id="verseNavRow" class="verse-nav-row" style="display:none">
+      <button type="button" class="nav-arrow-btn" onclick="manualPrevAyah()" title="Previous ayah">← Prev</button>
+      <button type="button" class="nav-arrow-btn" onclick="manualNextAyah()" title="Next ayah">Next →</button>
     </div>
   </div>
 
@@ -869,6 +889,10 @@ body {
     if (overlay)  overlay.classList.toggle('visible', inRuku);
     // Show searching/locked content normally when not in ruku
     if (inRuku && locked)   locked.style.display = 'none';
+    if (inRuku) {
+      var nr = document.getElementById('verseNavRow');
+      if (nr) nr.style.display = 'none';
+    }
 
     var disp = TW_DISPLAY[_taraweehPos] || TW_DISPLAY.QIYAM;
     var arEl = document.getElementById('twPositionAr');
@@ -1082,9 +1106,9 @@ body {
   }
 
   // ─── Glasses text helpers (from g2-quran-app reference) ─────────────────
-  var G2_CHARS = 36;   // approx chars per line at default font size on 576px wide display
-  var G2_BODY_LINES = 12; // ~256px body / ~20px per line
-  var G2_DIV = '\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500';
+  var G2_CHARS = 55;   // chars per line — use full 576px width
+  var G2_BODY_LINES = 11; // lines per page — use full body area
+  var G2_DIV = '-'.repeat(G2_CHARS);  // single line — hyphen renders as one line (box char looked double)
 
   function clip(s, n) { return (s || '').length > n ? s.slice(0, n - 1) + '\u2026' : (s || ''); }
 
@@ -1099,35 +1123,30 @@ body {
     return lines.length ? lines : [''];
   }
 
-  // Paginate translation + transliteration into screen-sized pages.
-  // Translation gets full priority. Transliteration goes on the last page if it fits,
-  // otherwise it gets its own final page.
+  // Paginate translation first, then transliteration. Translation fills the screen;
+  // when user scrolls to next page, transliteration appears (on last page if it fits, else its own page).
   function buildPages(translation, transliteration) {
     var transLines = wrapText(translation || '', G2_CHARS);
     var tlitLines  = transliteration ? wrapText(transliteration, G2_CHARS) : [];
     var tlitBlock  = tlitLines.length > 0 ? [G2_DIV].concat(tlitLines) : [];
-    var tlitCost   = tlitBlock.length; // lines needed for divider + transliteration
+    var tlitCost   = tlitBlock.length;
 
-    // Does everything fit in one page?
     if (transLines.length + tlitCost <= G2_BODY_LINES) {
       return [transLines.concat(tlitBlock).join('\n')];
     }
 
-    // Paginate translation across full-screen pages
     var pages = [];
     for (var i = 0; i < transLines.length; i += G2_BODY_LINES) {
-      pages.push(transLines.slice(i, i + G2_BODY_LINES));
+      pages.push(transLines.slice(i, i + G2_BODY_LINES).join('\n'));
     }
 
-    // Try to fit transliteration on the last page
-    var last = pages[pages.length - 1];
+    var last = pages[pages.length - 1].split('\n');
     if (last.length + tlitCost <= G2_BODY_LINES) {
-      pages[pages.length - 1] = last.concat(tlitBlock);
+      pages[pages.length - 1] = pages[pages.length - 1] + '\n' + tlitBlock.join('\n');
     } else if (tlitCost > 0) {
-      pages.push(tlitBlock);
+      pages.push(tlitBlock.join('\n'));
     }
-
-    return pages.map(function (p) { return p.join('\n'); });
+    return pages;
   }
 
   // ─── Countdown timer (updates header with remaining seconds) ─────────────
@@ -1157,11 +1176,20 @@ body {
     if (S.bridge) {
       try { S.bridge.textContainerUpgrade({ containerID: 1, containerName: 'hdr', content: padded.slice(0, 500) }); } catch (_) {}
     }
+    // Update app timer pill
+    var pill = document.getElementById('sPillTimer');
+    if (pill) {
+      pill.style.display = secs > 0 ? '' : 'none';
+      var lbl = pill.querySelector('.s-label');
+      if (lbl) lbl.textContent = 'Next: ' + (secs > 0 ? secs + 's' : '');
+    }
     if (remaining <= 0) stopCountdown();
   }
 
   function stopCountdown() {
     if (_cdTimer) { clearInterval(_cdTimer); _cdTimer = null; }
+    var pill = document.getElementById('sPillTimer');
+    if (pill) pill.style.display = 'none';
   }
 
   // ─── Glasses text builder ─────────────────────────────────────────────────
@@ -1176,11 +1204,11 @@ body {
         if (state.isCandidate && state.translation) {
           var cName = state.surahName ? clip(state.surahName, 14) : 'Quran';
           var cRef  = cName + ' ' + state.surah + ':' + state.ayah;
-          var cPct  = (state.candidateScore || 0) + '%';
+          var cPct  = 'Match: ' + (state.candidateScore || 0) + '%';
           var cPad  = Math.max(1, G2_CHARS - cRef.length - cPct.length - 3);
           var cHdr  = '\u25CB ' + cRef + ' '.repeat(cPad) + cPct;
           var cPages = buildPages(state.translation, state.transliteration);
-          cPages[cPages.length - 1] += '\n\nconfirming\u2026';
+          cPages[cPages.length - 1] += '\nconfirming\u2026';
           return { hdr: cHdr, pages: cPages };
         }
         if (state.completedSurah) {
@@ -1192,7 +1220,7 @@ body {
       case 'LOCKED': {
         var lName = state.surahName ? clip(state.surahName, 14) : 'Quran';
         var lRef  = lName + ' ' + state.surah + ':' + state.ayah;
-        var lPct  = Math.round((state.confidence || 0) * 100) + '%';
+        var lPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
         var lPad  = Math.max(1, G2_CHARS - lRef.length - lPct.length - 3);
         var lHdr  = '\u25CF ' + lRef + ' '.repeat(lPad) + lPct;
         return { hdr: lHdr, pages: buildPages(state.translation, state.transliteration) };
@@ -1284,6 +1312,8 @@ body {
     if (_taraweehMode && _taraweehPos === 'RUKU') {
       searching.style.display = 'none';
       locked.style.display = 'none';
+      var navRow = document.getElementById('verseNavRow');
+      if (navRow) navRow.style.display = 'none';
       return;
     }
     // Coming out of ruku — hide overlay
@@ -1297,6 +1327,8 @@ body {
       locked.style.display = 'flex';
       locked.style.flexDirection = 'column';
       locked.style.gap = '10px';
+      var navRow = document.getElementById('verseNavRow');
+      if (navRow) navRow.style.display = 'flex';
 
       // Visual indicator: candidate vs locked
       var versePosEl = document.getElementById('versePos');
@@ -1328,6 +1360,8 @@ body {
       setStatus(statusLabel, isCandidate ? '' : 'result');
     } else {
       locked.style.display = 'none';
+      var navRow = document.getElementById('verseNavRow');
+      if (navRow) navRow.style.display = 'none';
       searching.style.display = 'flex';
       confRow.style.display = 'none';
 
@@ -1811,6 +1845,17 @@ body {
       }
     }
   }
+
+  window.manualPrevAyah = function () {
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      S.ws.send(JSON.stringify({ type: 'manual_prev' }));
+    }
+  };
+  window.manualNextAyah = function () {
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      S.ws.send(JSON.stringify({ type: 'manual_advance' }));
+    }
+  };
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {

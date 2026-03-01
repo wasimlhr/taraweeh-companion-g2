@@ -420,8 +420,14 @@ export class AudioPipeline {
 
       const cleaned = stripBismillahPrefix(cleanWhisperText(text.trim()));
 
+      if (this.taraweehMode) {
+        if (isTakbeer(cleaned)) {
+          console.log(`[Pipeline] Taraweeh takbeer detected (pos=${this._taraweehPos})`);
+        } else if (/الله|اكبر|أكبر|اكبر/i.test(cleaned) && cleaned.length < 80) {
+          console.log(`[Pipeline] Taraweeh: Whisper has Allah/Akbar but no takbeer match: "${cleaned.slice(0, 60)}"`);
+        }
+      }
       if (this.taraweehMode && isTakbeer(cleaned)) {
-        console.log(`[Pipeline] Taraweeh takbeer detected (pos=${this._taraweehPos})`);
         if (!stale()) {
           if (this._taraweehPos === 'QIYAM') {
             if (this.state.lastLockedSurah > 1) {
@@ -620,12 +626,18 @@ export class AudioPipeline {
 
       const cleaned = stripBismillahPrefix(cleanWhisperText(text.trim()));
 
-      if (this.taraweehMode && isTakbeer(cleaned)) {
-        if (this.state.surah > 1) {
-          this._preRukuSurah = this.state.surah;
-          this._preRukuAyah  = this.state.ayah;
+      if (this.taraweehMode) {
+        if (isTakbeer(cleaned)) {
+          if (this.state.surah > 1) {
+            this._preRukuSurah = this.state.surah;
+            this._preRukuAyah  = this.state.ayah;
+          }
+          console.log(`[Pipeline] Taraweeh takbeer (LOCKED→RUKU) saved=${this._preRukuSurah}:${this._preRukuAyah}`);
+        } else if (/الله|اكبر|أكبر|اكبر/i.test(cleaned) && cleaned.length < 80) {
+          console.log(`[Pipeline] Taraweeh LOCKED: Whisper has Allah/Akbar but no takbeer: "${cleaned.slice(0, 60)}"`);
         }
-        console.log(`[Pipeline] Taraweeh takbeer (LOCKED→RUKU) saved=${this._preRukuSurah}:${this._preRukuAyah}`);
+      }
+      if (this.taraweehMode && isTakbeer(cleaned)) {
         this._taraweehPos = 'RUKU';
         this._rakatCount++;
         this._cancelReadAdvance();
@@ -1089,6 +1101,8 @@ export class AudioPipeline {
       this.state.lastLockedSurah = this._preRukuSurah;
       this.state.lastLockedAyah  = this._preRukuAyah;
       console.log(`[Pipeline] Taraweeh: Fatiha done → resuming from ${this._preRukuSurah}:${this._preRukuAyah}`);
+    } else if (this.taraweehMode && completedSurah === 1) {
+      console.log(`[Pipeline] Taraweeh: Fatiha done but preRuku not set (${this._preRukuSurah}:${this._preRukuAyah}) — anchor will search`);
     }
   }
 
