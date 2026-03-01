@@ -123,16 +123,25 @@ function computeRms(pcm) {
 // Only activates for abnormally loud input (speaker/headphone bleed).
 const CLIP_THRESHOLD = parseFloat(process.env.CLIP_THRESHOLD || '0.10');
 const CLIP_TARGET    = parseFloat(process.env.CLIP_TARGET    || '0.04');
+const QUIET_BOOST_THRESHOLD = 0.008;  // G2 mic often 0.001–0.002 — HF soundfile fails on near-silence
+const QUIET_BOOST_TARGET   = 0.03;   // boost to usable level
 function applyClipGuard(pcm, rms) {
-  if (rms <= CLIP_THRESHOLD) return pcm;
-  const gain = CLIP_TARGET / rms;
-  const out  = Buffer.alloc(pcm.length);
-  const n    = Math.floor(pcm.length / 2);
+  let gain = 1;
+  if (rms > 0 && rms < QUIET_BOOST_THRESHOLD) {
+    gain = QUIET_BOOST_TARGET / rms;
+    console.log(`[Pipeline] G2 quiet boost: rms=${rms.toFixed(4)} → ${QUIET_BOOST_TARGET} (gain=${gain.toFixed(0)})`);
+  } else if (rms > CLIP_THRESHOLD) {
+    gain = CLIP_TARGET / rms;
+    console.log(`[Pipeline] Audio normalize: rms=${rms.toFixed(3)} → ${CLIP_TARGET} (gain=${gain.toFixed(3)})`);
+  } else {
+    return pcm;
+  }
+  const out = Buffer.alloc(pcm.length);
+  const n = Math.floor(pcm.length / 2);
   for (let i = 0; i < n * 2; i += 2) {
     const s = pcm.readInt16LE(i);
     out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(s * gain))), i);
   }
-  console.log(`[Pipeline] Audio normalize: rms=${rms.toFixed(3)} → ${CLIP_TARGET} (gain=${gain.toFixed(3)})`);
   return out;
 }
 

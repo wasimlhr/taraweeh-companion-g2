@@ -1379,8 +1379,8 @@ body {
   }
 
   function updateWave(rms) {
-    // G2 mic is quieter than PC/phone mic — boost for similar visual response
-    var gain = S.isG2 ? 6 : 3;
+    // G2 mic RMS ~0.001–0.002 vs PC ~0.05–0.3 — need strong boost for visible meter
+    var gain = S.isG2 ? 120 : 3;
     S.waveLevel = Math.max(S.waveLevel * 0.7, Math.min(1, rms * gain));
     var h = Math.max(4, Math.round(4 + S.waveLevel * 44));
     var ph = Date.now() / 80;
@@ -1677,6 +1677,7 @@ body {
   var MAX_ACCUM_SAMPLES = 16000 * 5;  // cap at 5s to prevent burst on reconnect
 
   function sendPcm(u8) {
+    if (!S.isRecording) return;   // ignore mic until user clicks Start
     if (S.isG2) updateWave(rmsInt16(u8));
     if (S.mode === 'PAUSED') return;
     var now = Date.now();

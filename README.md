@@ -177,24 +177,25 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 **Custom backend URL:** If users connect to a different backend, they enter the WebSocket URL in **Settings → Backend URL** (e.g. `wss://your-app.railway.app/ws`).
 
-### 2. Whisper transcription (choose one)
+### 2. Whisper transcription (custom endpoint only)
+
+The app is designed to use a **custom Whisper endpoint**. Choose one:
 
 | Option | Setup | Latency | Cost |
 |--------|-------|---------|------|
-| **HF public API** (default) | Set `HUGGINGFACE_TOKEN` | ~2–5 s/chunk | Free (rate-limited) |
 | **HF Inference Endpoint** | Deploy [whisper-quran-v1](https://huggingface.co/wasimlhr/whisper-quran-v1) → set `WHISPER_ENDPOINT_URL` | ~2–3 s/chunk | ~$0.60/hr GPU |
 | **Modal** | Deploy Whisper on [Modal](https://modal.com) → set `WHISPER_ENDPOINT_URL` to `*.modal.run` | ~2–4 s/chunk | Pay-per-use GPU |
 | **Local Python server** | Run `whisper_server.py` → set `USE_LOCAL_WHISPER=true` | ~1–2 s/chunk | Hardware only |
 
-**Recommended model:** [wasimlhr/whisper-quran-v1](https://huggingface.co/wasimlhr/whisper-quran-v1) — fine-tuned on Quran recitation (5.35% WER). The app uses this model by default via the HF public API when `WHISPER_ENDPOINT_URL` is not set.
+**HF token:** Required when using an **HF Inference Endpoint** — set `HUGGINGFACE_TOKEN` for authentication. Not needed for Modal or local server.
 
-For production or higher traffic, deploy a [HuggingFace Inference Endpoint](https://huggingface.co/inference-endpoints) for `wasimlhr/whisper-quran-v1` and set `WHISPER_ENDPOINT_URL` to your endpoint URL. Alternatively, deploy Whisper on [Modal](https://modal.com) — your endpoint must accept `POST` with raw `audio/wav` body and return JSON with `text` or `transcription` (or `[{text: "..."}]`).
+**Recommended model:** [wasimlhr/whisper-quran-v1](https://huggingface.co/wasimlhr/whisper-quran-v1) — fine-tuned on Quran recitation (5.35% WER). Your endpoint must accept `POST` with raw `audio/wav` body and return JSON with `text` or `transcription` (or `[{text: "..."}]`).
 
 ### 3. Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `HUGGINGFACE_TOKEN` | Yes* | [Get token](https://huggingface.co/settings/tokens) — for HF API or fallback. *Not needed if using Modal-only (no fallback). |
+| `HUGGINGFACE_TOKEN` | Yes (HF endpoint) | [Get token](https://huggingface.co/settings/tokens) — required for HF Inference Endpoint. Not needed for Modal or local. |
 | `WHISPER_ENDPOINT_URL` | No | Dedicated endpoint URL — HF (`*.endpoints.huggingface.cloud`) or Modal (`*.modal.run`) |
 | `MODAL_KEY` / `MODAL_SECRET` | No | Modal proxy auth (only if your endpoint uses `requires_proxy_auth`) |
 | `PORT` | No | Default 3001 |
