@@ -398,59 +398,6 @@ body {
 
 .btn-group { margin-bottom: 10px; }
 
-/* Live transcript */
-/* Word Cloud */
-#wordCloudCard {
-  background: var(--bc-1);
-  border: 1px solid var(--bc-4);
-  border-radius: var(--r);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-  margin-bottom: 10px;
-  transition: background 0.2s, border-color 0.2s;
-}
-.wc-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 7px 12px;
-  background: var(--bc-2);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--tc-2);
-  border-bottom: 1px solid var(--bc-4);
-  user-select: none;
-}
-#wordCloudBody {
-  min-height: 40px;
-  max-height: 120px;
-  overflow-y: auto;
-  padding: 8px 12px;
-  direction: rtl;
-  text-align: right;
-}
-.whisper-line {
-  font-family: 'Amiri', serif;
-  font-size: 14px;
-  color: var(--tc-2);
-  line-height: 1.6;
-  opacity: 1;
-  transition: opacity 3s ease;
-  margin-bottom: 2px;
-}
-.whisper-line.fading { opacity: 0.3; }
-.whisper-line .wl-time {
-  font-family: var(--ff);
-  font-size: 9px;
-  color: var(--tc-3);
-  margin-left: 6px;
-  direction: ltr;
-  unicode-bidi: embed;
-}
-@keyframes wc-pop {
-  from { transform: scale(0.7); opacity: 0; }
-  to   { transform: scale(1);   opacity: 1; }
-}
 
 /* Settings view */
 #settingsView {
@@ -550,7 +497,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.7.2</span>
+      <span class="version" id="versionEl">v2.7.10</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -653,14 +600,6 @@ body {
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
   </div>
 
-  <div id="wordCloudCard">
-    <div class="wc-header">
-      <span>Whisper Live</span>
-      <span id="wcCount" style="color:var(--tc-3);font-size:10px">—</span>
-    </div>
-    <div id="wordCloudBody"></div>
-  </div>
-
 </div>
 
 <!-- Settings view -->
@@ -718,6 +657,7 @@ body {
         <option value="id">Indonesian</option>
         <option value="tr">Turkish</option>
       </select>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Arabic, Urdu, Farsi: phone only — G2 glasses show Latin-script translations.</span>
     </div>
   </div>
 
@@ -756,7 +696,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.7.2';
+  const APP_VERSION = 'v2.7.10';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -857,6 +797,7 @@ body {
   var TW_DISPLAY = {
     QIYAM: { ar: 'قِيَام', latin: 'QIYAM — Reciting' },
     RUKU:  { ar: 'رُكُوع', latin: 'RUKU — Bowing'    },
+    SAJDA: { ar: 'سُجُود', latin: 'SAJDA — Prostration' },
   };
 
   window.toggleTaraweeh = function () {
@@ -884,13 +825,13 @@ body {
     var locked   = document.getElementById('lockedContent');
     var searching = document.getElementById('matchPanel');
 
-    var inRuku = _taraweehMode && _taraweehPos === 'RUKU';
+    var inPrayerPos = _taraweehMode && (_taraweehPos === 'RUKU' || _taraweehPos === 'SAJDA');
 
-    // Show overlay only in ruku; hide verse content
-    if (overlay)  overlay.classList.toggle('visible', inRuku);
-    // Show searching/locked content normally when not in ruku
-    if (inRuku && locked)   locked.style.display = 'none';
-    if (inRuku) {
+    // Show overlay in ruku or sajda; hide verse content
+    if (overlay)  overlay.classList.toggle('visible', inPrayerPos);
+    // Show searching/locked content normally when not in prayer position
+    if (inPrayerPos && locked)   locked.style.display = 'none';
+    if (inPrayerPos) {
       var nr = document.getElementById('verseNavRow');
       if (nr) nr.style.display = 'none';
     }
@@ -1200,15 +1141,16 @@ body {
   // transliteration goes on the last page.
   // Header: surah/ayah left, confidence % right.
   function buildGlassesText(state) {
+    var transForGlasses = state.translationGlasses ?? state.translation;
     switch (state.mode) {
       case 'SEARCHING':
-        if (state.isCandidate && state.translation) {
+        if (state.isCandidate && (state.translation || state.translationGlasses)) {
           var cName = state.surahName ? clip(state.surahName, 14) : 'Quran';
           var cRef  = cName + ' ' + state.surah + ':' + state.ayah;
           var cPct  = 'Match: ' + (state.candidateScore || 0) + '%';
           var cPad  = Math.max(1, G2_CHARS - cRef.length - cPct.length - 3);
           var cHdr  = '\u25CB ' + cRef + ' '.repeat(cPad) + cPct;
-          var cPages = buildPages(state.translation, state.transliteration);
+          var cPages = buildPages(transForGlasses, state.transliteration);
           cPages[cPages.length - 1] += '\nconfirming\u2026';
           return { hdr: cHdr, pages: cPages };
         }
@@ -1224,7 +1166,7 @@ body {
         var lPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
         var lPad  = Math.max(1, G2_CHARS - lRef.length - lPct.length - 3);
         var lHdr  = '\u25CF ' + lRef + ' '.repeat(lPad) + lPct;
-        return { hdr: lHdr, pages: buildPages(state.translation, state.transliteration) };
+        return { hdr: lHdr, pages: buildPages(transForGlasses, state.transliteration) };
       }
 
       case 'PAUSED': {
@@ -1236,11 +1178,11 @@ body {
 
       case 'RESUMING': {
         // Keep showing the last verse — don't flash "Resynchronizing" on the glasses
-        if (state.translation || state.transliteration) {
+        if (state.translation || state.translationGlasses || state.transliteration) {
           var rName = state.surahName ? clip(state.surahName, 14) : 'Quran';
           var rRef  = rName + ' ' + state.surah + ':' + state.ayah;
           var rHdr  = '\u21BB ' + rRef;
-          return { hdr: rHdr, pages: buildPages(state.translation, state.transliteration) };
+          return { hdr: rHdr, pages: buildPages(transForGlasses, state.transliteration) };
         }
         var rName2 = state.surahName ? clip(state.surahName, 14) : 'Quran';
         return { hdr: '\u21BB ' + rName2, pages: ['Listening\u2026'] };
@@ -1309,15 +1251,15 @@ body {
     var showVerse = state.mode === 'LOCKED' || state.mode === 'RESUMING'
       || (state.isCandidate && state.arabic);
 
-    // In taraweeh ruku, hide verse content (overlay takes over)
-    if (_taraweehMode && _taraweehPos === 'RUKU') {
+    // In taraweeh ruku/sajda, hide verse content (overlay takes over)
+    if (_taraweehMode && (_taraweehPos === 'RUKU' || _taraweehPos === 'SAJDA')) {
       searching.style.display = 'none';
       locked.style.display = 'none';
       var navRow = document.getElementById('verseNavRow');
       if (navRow) navRow.style.display = 'none';
       return;
     }
-    // Coming out of ruku — hide overlay
+    // Coming out of ruku/sajda — hide overlay
     var twOverlay = document.getElementById('taraweehOverlay');
     if (twOverlay) twOverlay.classList.remove('visible');
 
@@ -1453,6 +1395,7 @@ body {
       S.ws.send(JSON.stringify({
         type: 'init',
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
+        lang: (S.settings.lang || '').trim() || null,
         hfToken: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
         whisperProvider: S.settings.whisperProvider || null,
         whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
@@ -1569,7 +1512,6 @@ body {
       if (S.isRecording) updateMatchPanel(msg);
     } else if (msg.type === 'state') {
       if (msg.whisperText) {
-        try { addWordBubbles(msg.whisperText, msg.candidates); } catch(e) { /* non-critical */ }
         log('Heard: ' + msg.whisperText.slice(0, 60), 'w');
       }
       // Update confidence pill
@@ -1629,67 +1571,6 @@ body {
     } else if (msg.type === 'error') {
       log('Backend error: ' + msg.error, 'err');
     }
-  }
-
-  // ─── Word Cloud ───────────────────────────────────────────────────────────
-  var _wcBubbles = [];
-  // Short noise words to skip (by length or common filler)
-  var WC_NOISE_WORDS = new Set([
-    '\u0634\u0643\u0631\u0627',    // شكرا
-    '\u0634\u0643\u0631\u064b\u0627', // شكرًا
-    '\u0645\u0648\u0633\u064a\u0642\u0649', // موسيقى
-    '\u0645\u0648\u0633\u064a\u0642\u0627', // موسيقا
-    '\u0628\u0633\u0645',          // بسم
-    '\u0633\u0628\u062d\u0627\u0646', // سبحان
-    '\u0622\u0645\u064a\u0646',    // آمين
-  ]);
-
-  function extractArabicWords(text) {
-    if (!text) return [];
-    // Strip diacritics (harakat) using Unicode range
-    var stripped = text.replace(/[\u064b-\u065f\u0610-\u061a\u06d4-\u06ed]/g, '');
-    return stripped.split(/\s+/).filter(function (w) {
-      if (w.length < 2) return false;
-      if (!/[\u0600-\u06ff]/.test(w)) return false; // must have Arabic chars
-      if (/[a-zA-Z0-9]/.test(w)) return false;       // skip Latin/digits
-      if (WC_NOISE_WORDS.has(w)) return false;
-      return true;
-    });
-  }
-
-  // Normalize away diacritics for matchedWords comparison
-  function stripDiacritics(w) {
-    return (w || '').replace(/[\u064b-\u065f\u0610-\u061a\u06d4-\u06ed]/g, '');
-  }
-
-  function addWordBubbles(whisperText, candidates) {
-    var body = document.getElementById('wordCloudBody');
-    if (!body) return;
-    var text = (whisperText || '').trim();
-    if (!text || !/[\u0600-\u06ff]/.test(text)) return;
-
-    var el = document.createElement('div');
-    el.className = 'whisper-line';
-    var timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    el.innerHTML = text + ' <span class="wl-time">' + timeStr + '</span>';
-    body.insertBefore(el, body.firstChild);
-
-    _wcBubbles.push({ el: el, born: Date.now() });
-
-    setTimeout(function () { if (el.parentNode) el.classList.add('fading'); }, 15000);
-    setTimeout(function () {
-      if (el.parentNode) el.remove();
-      _wcBubbles = _wcBubbles.filter(function (b) { return b.el !== el; });
-    }, 20000);
-
-    while (_wcBubbles.length > 8) {
-      var oldest = _wcBubbles.shift();
-      if (oldest.el.parentNode) oldest.el.remove();
-    }
-
-    S.chunkCount++;
-    var cntEl = document.getElementById('wcCount');
-    if (cntEl) cntEl.textContent = S.chunkCount + ' chunks';
   }
 
   // ─── Audio ────────────────────────────────────────────────────────────────
@@ -1876,6 +1757,7 @@ body {
       S.ws.send(JSON.stringify({
         type: 'init',
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
+        lang: (S.settings.lang || '').trim() || null,
         hfToken: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
         whisperProvider: S.settings.whisperProvider || null,
         whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,

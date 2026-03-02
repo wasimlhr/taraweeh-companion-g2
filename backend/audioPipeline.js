@@ -200,12 +200,13 @@ function isTakbeer(text) {
 
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, hfToken, whisperOpts }) {
-    this.onStateUpdate = onStateUpdate;
-    this.onStatus      = onStatus || (() => {});
-    this.onError       = onError  || (() => {});
-    this.preferredSurah = preferredSurah;
-    this.whisperOpts   = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
+  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, translationLang = '', hfToken, whisperOpts }) {
+    this.onStateUpdate   = onStateUpdate;
+    this.onStatus        = onStatus || (() => {});
+    this.onError         = onError  || (() => {});
+    this.preferredSurah   = preferredSurah;
+    this.translationLang = (translationLang && String(translationLang).trim()) || '';
+    this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
 
     this.state     = createState();
     this.active    = false;   // set true only when user presses Start
@@ -721,7 +722,7 @@ export class AudioPipeline {
             const toAyah   = Math.max(this._whisperLastConfirmAyah, confirmedAyah);
             let totalWords = 0;
             for (let a = fromAyah; a <= toAyah; a++) {
-              const v = getVerseData(confirmedSurah, a);
+              const v = getVerseData(confirmedSurah, a, this.translationLang);
               totalWords += v?.transliteration
                 ? v.transliteration.split(/\s+/).length
                 : (v?.arabic ? v.arabic.split(/\s+/).length : 4);
@@ -901,7 +902,7 @@ export class AudioPipeline {
 
     const verseSource = isDisplayable ? this.state : (isCandidate ? topMatch : null);
     const lockedVerse = verseSource
-      ? getVerseData(verseSource.surah ?? verseSource.surah, verseSource.ayah ?? verseSource.ayah)
+      ? getVerseData(verseSource.surah ?? verseSource.surah, verseSource.ayah ?? verseSource.ayah, this.translationLang)
       : null;
 
     if (this.state.mode === 'LOCKED') {
@@ -1054,7 +1055,7 @@ export class AudioPipeline {
       return;
     }
 
-    const verse     = getVerseData(this.state.surah, this.state.ayah);
+    const verse     = getVerseData(this.state.surah, this.state.ayah, this.translationLang);
     const wordCount = verse?.transliteration
       ? verse.transliteration.split(/\s+/).length
       : (verse?.arabic ? verse.arabic.split(/\s+/).length : 8);

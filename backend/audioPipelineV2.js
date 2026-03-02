@@ -21,6 +21,7 @@ const READ_ADVANCE_CONFIDENCE  = parseInt(process.env.READ_ADVANCE_CONFIDENCE   
 const READ_WORDS_PER_SEC       = parseFloat(process.env.READ_WORDS_PER_SEC       || '1.5');
 const READ_ADVANCE_MIN_MS      = parseInt(process.env.READ_ADVANCE_MIN_MS        || '4000',  10);
 const READ_ADVANCE_MAX_MS      = parseInt(process.env.READ_ADVANCE_MAX_MS        || '15000', 10);
+const READ_ADVANCE_CONFIRM_BUMP_MS = parseInt(process.env.READ_ADVANCE_CONFIRM_BUMP_MS || '2500', 10);
 const SMOOTH_ADVANCE_STEP_MS   = parseInt(process.env.SMOOTH_ADVANCE_STEP_MS     || '1200',  10);
 
 const PAUSE_ANALYSIS_MS    = parseInt(process.env.PAUSE_ANALYSIS_MS   || '250',  10);
@@ -28,6 +29,7 @@ const PAUSE_ANALYSIS_BYTES = Math.floor(BYTES_PER_MS * PAUSE_ANALYSIS_MS);
 const PAUSE_THRESHOLD      = parseFloat(process.env.PAUSE_THRESHOLD   || '0.005');
 const PAUSE_ADVANCE_MS     = parseInt(process.env.PAUSE_ADVANCE_MS    || '2500', 10);
 const PAUSE_COOLDOWN_MS    = parseInt(process.env.PAUSE_COOLDOWN_MS   || '6000', 10);
+const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '30000', 10);
 
 const BASE_DISPLAY_LEAD = 2;
 
@@ -54,7 +56,7 @@ const ISTI_ADHA_PATTERNS = [
   /أعوذ\s+بالله/,
   /اعوذ\s+ب/,
   /الشيطان\s+الرجيم/,
-  /^بسم\s+الله\s+الرحمن\s+الرحيم/,
+  // Bismillah handled separately by isBismillahOnly — always skip, never lock on Fatiha
 ];
 
 const AMEEN_RE = /^(آمين|أمين|امين)(\s+(آمين|أمين|امين))*$/;
@@ -117,6 +119,16 @@ function stripBismillahPrefix(text) {
   console.log(`[Pipeline] Stripped bismillah prefix → "${remainder.substring(0, 60)}"`);
   return remainder;
 }
+// Bismillah alone appears before every surah (except 9) — never lock on Fatiha from it.
+// Treat as generic: skip, advance window, wait for distinguishing content (الحمد, الم, etc).
+function isBismillahOnly(text) {
+  if (!text || !text.trim()) return false;
+  const norm = text.replace(QURAN_MARKS_RE, '').replace(/\s+/g, ' ').trim();
+  const match = norm.match(BISMILLAH_NORM_RE);
+  if (!match) return false;
+  const remainder = norm.slice(match[0].length).trim();
+  return remainder.length < 5;
+}
 
 function isNoise(text) {
   if (!text || text.trim().length < 2) return true;
@@ -140,12 +152,13 @@ function isTakbeer(text) {
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, hfToken, whisperOpts }) {
-    this.onStateUpdate  = onStateUpdate;
-    this.onStatus       = onStatus || (() => {});
-    this.onError        = onError  || (() => {});
-    this.preferredSurah = preferredSurah;
-    this.whisperOpts    = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
+  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, translationLang = '', hfToken, whisperOpts }) {
+    this.onStateUpdate   = onStateUpdate;
+    this.onStatus        = onStatus || (() => {});
+    this.onError         = onError  || (() => {});
+    this.preferredSurah  = preferredSurah;
+    this.translationLang = (translationLang && String(translationLang).trim()) || '';
+    this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
 
     this.state     = createState();
     this.active    = false;
@@ -199,6 +212,8 @@ export class AudioPipeline {
 
     this.taraweehMode    = false;
     this._taraweehPos    = 'QIYAM';
+    this._taraweehLastFrom = 'reciting';  // 'reciting' | 'ruku' | 'sajda1' | 'sajda2'
+    this._sajdaCount     = 0;              // 1 or 2 when in SAJDA
     this._rakatCount     = 0;
     this._preRukuSurah   = 0;
     this._preRukuAyah    = 0;
@@ -222,7 +237,12 @@ export class AudioPipeline {
 
   setTaraweehMode(enabled) {
     this.taraweehMode = !!enabled;
-    if (!this.taraweehMode) { this._taraweehPos = 'QIYAM'; this._rakatCount = 0; }
+    if (!this.taraweehMode) {
+      this._taraweehPos = 'QIYAM';
+      this._taraweehLastFrom = 'reciting';
+      this._sajdaCount = 0;
+      this._rakatCount = 0;
+    }
     console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}`);
     this.onStatus({ type: 'taraweeh_mode', enabled: this.taraweehMode,
       position: this._taraweehPos, rakat: this._rakatCount });
@@ -231,6 +251,8 @@ export class AudioPipeline {
   resetRakat() {
     this._rakatCount = 0;
     this._taraweehPos = 'QIYAM';
+    this._taraweehLastFrom = 'reciting';
+    this._sajdaCount = 0;
     this._emitTaraweeh();
   }
 
@@ -272,7 +294,7 @@ export class AudioPipeline {
 
   manualAdvance() {
     this._cancelReadAdvance();
-    const nextAyahData = getVerseData(this._displaySurah, this._displayAyah + 1);
+    const nextAyahData = getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
     if (!nextAyahData) {
       const prevSurah = this._displaySurah;
       this._completedSurah = prevSurah;
@@ -429,27 +451,7 @@ export class AudioPipeline {
       }
       if (this.taraweehMode && isTakbeer(cleaned)) {
         if (!stale()) {
-          if (this._taraweehPos === 'QIYAM') {
-            if (this.state.lastLockedSurah > 1) {
-              this._preRukuSurah = this.state.lastLockedSurah;
-              this._preRukuAyah  = this.state.lastLockedAyah;
-              console.log(`[Pipeline] Saved pre-ruku position: ${this._preRukuSurah}:${this._preRukuAyah}`);
-            }
-            this._taraweehPos = 'RUKU';
-            this._rakatCount++;
-            this._cancelReadAdvance();
-            this._displaySurah = 0;
-            this._displayAyah  = 0;
-            this._whisperSurah = 0;
-            this._whisperAyah  = 0;
-            this._driftMult    = 1.0;
-            this.state = { ...createState(), lastLockedSurah: 0, lastLockedAyah: 0 };
-            this._resetSearchBuf();
-          } else {
-            this._taraweehPos = 'QIYAM';
-            this._resetSearchBuf();
-          }
-          this._emitTaraweeh();
+          this._handleTaraweehTakbeer(true);
           this.processing = false;
         }
         return;
@@ -474,6 +476,15 @@ export class AudioPipeline {
         return;
       }
 
+      // In RUKU we expect Fatiha — allow bismillah to reach matcher so we can lock on 1:2+.
+      // Otherwise bismillah-only is generic (could be any surah) — skip.
+      if (isBismillahOnly(cleaned) && this._taraweehPos !== 'RUKU') {
+        console.log(`[Pipeline] Bismillah only — treating as generic, skipping (not locking on Fatiha)`);
+        this.onStatus({ component: 'search', status: 'noise', audioSec: bufMs / 1000 });
+        if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
+        return;
+      }
+
       if (isPreRecitationPhrase(cleaned)) {
         this._preRecitSkips = (this._preRecitSkips || 0) + 1;
         if (this._preRecitSkips <= 2) {
@@ -487,7 +498,8 @@ export class AudioPipeline {
         this._preRecitSkips = 0;
       }
 
-      this.state = processWhisperResult(cleaned, this.state, { preferredSurah: this.preferredSurah, fastMode: this.fastMode });
+      const preferredSurah = (this.taraweehMode && this._taraweehPos === 'RUKU') ? 1 : this.preferredSurah;
+      this.state = processWhisperResult(cleaned, this.state, { preferredSurah, fastMode: this.fastMode });
 
       this._emitMatchProgress(text, rms, bufMs);
 
@@ -522,6 +534,14 @@ export class AudioPipeline {
         this._whisperLastConfirmAyah = this.state.ayah;
         this._whisperLastConfirmSurah = this.state.surah;
 
+        // Locked on verse during RUKU/SAJDA → show verse, hide overlay
+        if (this.taraweehMode && (this._taraweehPos === 'RUKU' || this._taraweehPos === 'SAJDA')) {
+          this._taraweehPos = 'QIYAM';
+          this._emitTaraweeh();
+        }
+        // Locked on verse = reciting (next takbeer goes to RUKU)
+        if (this.taraweehMode) this._taraweehLastFrom = 'reciting';
+
         this._scheduleReadAdvance(this.state.confidence);
         this._emitState(text, rms);
         return;
@@ -535,7 +555,12 @@ export class AudioPipeline {
         const uniqueWords = new Set(topMatch?.matchedWords || []).size;
         const secondScore = this.state._matches?.[1]?.score ?? 0;
         const margin = Math.round((pendingScore - secondScore) * 100);
-        if (pending && pendingScore >= 0.40 && uniqueWords >= 3 && margin >= 10 && this._displayAyah === 0) {
+        // In RUKU/SAJDA: lower bar so recitation can recover from missed takbeers (sound/distortion)
+        const inPrayerPos = this.taraweehMode && (this._taraweehPos === 'RUKU' || this._taraweehPos === 'SAJDA');
+        const minScore = inPrayerPos ? 0.35 : 0.40;
+        const minWords = inPrayerPos ? 2 : 3;
+        const minMargin = inPrayerPos ? 5 : 10;
+        if (pending && pendingScore >= minScore && uniqueWords >= minWords && margin >= minMargin && this._displayAyah === 0) {
           console.log(`[Pipeline] Strong candidate ${pending.surah}:${pending.ayah} (score=${(pendingScore*100).toFixed(0)}%, ${uniqueWords}uw, margin=${margin}) — starting display`);
           this._displaySurah = pending.surah;
           this._displayAyah  = pending.ayah;
@@ -546,6 +571,11 @@ export class AudioPipeline {
           this._whisperLastConfirmMs = Date.now();
           this._whisperLastConfirmAyah = pending.ayah;
           this._whisperLastConfirmSurah = pending.surah;
+          if (this.taraweehMode && (this._taraweehPos === 'RUKU' || this._taraweehPos === 'SAJDA')) {
+            this._taraweehPos = 'QIYAM';
+            this._emitTaraweeh();
+          }
+          if (this.taraweehMode) this._taraweehLastFrom = 'reciting';
           this._scheduleReadAdvance(Math.round(pendingScore * 100));
         }
         if (!stale()) this._emitState(text, rms);
@@ -632,23 +662,13 @@ export class AudioPipeline {
             this._preRukuSurah = this.state.surah;
             this._preRukuAyah  = this.state.ayah;
           }
-          console.log(`[Pipeline] Taraweeh takbeer (LOCKED→RUKU) saved=${this._preRukuSurah}:${this._preRukuAyah}`);
+          console.log(`[Pipeline] Taraweeh takbeer (LOCKED) pos=${this._taraweehPos} saved=${this._preRukuSurah}:${this._preRukuAyah}`);
         } else if (/الله|اكبر|أكبر|اكبر/i.test(cleaned) && cleaned.length < 80) {
           console.log(`[Pipeline] Taraweeh LOCKED: Whisper has Allah/Akbar but no takbeer: "${cleaned.slice(0, 60)}"`);
         }
       }
       if (this.taraweehMode && isTakbeer(cleaned)) {
-        this._taraweehPos = 'RUKU';
-        this._rakatCount++;
-        this._cancelReadAdvance();
-        this._displaySurah = 0;
-        this._displayAyah  = 0;
-        this._whisperSurah = 0;
-        this._whisperAyah  = 0;
-        this._driftMult    = 1.0;
-        this.state = { ...createState(), lastLockedSurah: 0, lastLockedAyah: 0 };
-        this._resetSearchBuf();
-        this._emitTaraweeh();
+        this._handleTaraweehTakbeer(true);
         this.processing = false;
         return;
       }
@@ -665,6 +685,11 @@ export class AudioPipeline {
         }
         this.processing = false;
         return;
+      }
+
+      if (isBismillahOnly(cleaned)) {
+        this.processing = false;
+        return;  // generic — don't use to re-anchor or jump
       }
 
       // Hallucination guard: same text 3x in a row → skip
@@ -707,6 +732,9 @@ export class AudioPipeline {
           anchorResult = { ...anchorResult, ayah: minAnchorAyah };
         }
         this.state = anchorResult;
+        // Always route to _onWhisperConfirm — no immediate back-correct.
+        // When behind: gradual drift (slow timer) lets reciter catch up; only
+        // back-correct on strong repeat evidence (4× same ayah, high conf).
         this._onWhisperConfirm(anchorResult.surah, anchorResult.ayah, anchorResult.confidence, text, rms);
       }
     } catch (err) {
@@ -728,21 +756,29 @@ export class AudioPipeline {
     }
 
     // ── Rule 1: Whisper behind display ─────────────────────────────────
-    // Gradually slow the timer so the reciter catches up — no snapping.
-    // Repeat detection (3x same ayah, non-refrain) for genuine repeats.
+    // Prefer wait/catch-up: slow the timer (drift) so reciter catches up.
+    // Only back-correct on strong repeat evidence (4× same ayah, conf≥55%).
+    // Skip entirely if user recently manual-advanced to catch up — don't snap back.
     if (sameSurah && confirmedAyah < this._displayAyah) {
+      if (this._lastManualAdjustMs && (Date.now() - this._lastManualAdjustMs) < MANUAL_ADJUST_COOLDOWN_MS) {
+        console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} — ignoring (manual adjust cooldown)`);
+        this._emitState(text, rms);
+        return;
+      }
       const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
       const lag = this._displayAyah - confirmedAyah;
+      const REPEAT_BACK_CORRECT_WINS = 4;
+      const REPEAT_BACK_CORRECT_MIN_CONF = 55;
 
-      // ── Repeat tracking (genuine reciter repeats, not stale audio) ───
-      if (!refrainVerse && confirmedAyah === this._behindRepeatAyah && score >= READ_ADVANCE_CONFIDENCE) {
+      // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
+      if (!refrainVerse && confirmedAyah === this._behindRepeatAyah && score >= REPEAT_BACK_CORRECT_MIN_CONF) {
         this._behindRepeatCount++;
       } else {
         this._behindRepeatAyah  = confirmedAyah;
         this._behindRepeatCount = refrainVerse ? 0 : 1;
       }
 
-      if (this._behindRepeatCount >= 3) {
+      if (this._behindRepeatCount >= REPEAT_BACK_CORRECT_WINS) {
         this._cancelReadAdvance();
         this._displayAyah  = confirmedAyah;
         this._driftMult    = 1.0;
@@ -757,15 +793,14 @@ export class AudioPipeline {
         return;
       }
 
-      // ── Gradual slow-down: increase drift multiplier each time ───────
-      // Each behind-report bumps the multiplier by 15%, making subsequent
-      // timers progressively longer. This lets the reciter catch up without
-      // any jarring snap. Caps at 2.0× (double the normal timer).
-      if (score >= READ_ADVANCE_CONFIDENCE) {
+      // ── Gradual slow-down: increase drift multiplier when confident ────
+      // Slower timer lets reciter catch up. Only bump when conf≥55% to avoid
+      // slowing on mishears. Caps at 2.5×.
+      if (score >= REPEAT_BACK_CORRECT_MIN_CONF) {
         this._driftMult = Math.min(2.5, this._driftMult + 0.15);
       }
 
-      console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} (lag=${lag}, conf=${score}%, drift=${this._driftMult.toFixed(2)}x, repeat=${this._behindRepeatCount}/3${refrainVerse ? ', refrain' : ''})`);
+      console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} (lag=${lag}, conf=${score}%, drift=${this._driftMult.toFixed(2)}x, repeat=${this._behindRepeatCount}/${REPEAT_BACK_CORRECT_WINS}${refrainVerse ? ', refrain' : ''})`);
       return;
     }
 
@@ -785,15 +820,64 @@ export class AudioPipeline {
       return;
     }
 
-    // ── Rule 3: Whisper at display position → confirm, keep timer running ──
-    // Display is already advancing on its timer. Whisper catching up just
-    // confirms we're on track. Reset drift — we're synced.
+    // ── Rule 3: Whisper at display position → confirm, bump timer ─────────
+    // Whisper confirms reciter is in start/middle of ayah — add a bit more
+    // time so display stays in sync with reciter.
     if (confirmedAyah === this._displayAyah) {
       this._driftMult = 1.0;
       console.log(`[Pipeline] Whisper confirms :${confirmedAyah} = display (conf=${score}%) — on track`);
-      if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
+      if (this._displayAdvanceTimer && this._timerStartedAt && this._nextAdvanceMs > 0) {
+        const elapsed = Date.now() - this._timerStartedAt;
+        const remaining = Math.max(0, this._nextAdvanceMs - elapsed);
+        // Skip bump when 1–2s left — no need to realign, advance is imminent
+        if (remaining < 2500) {
+          this._emitState(text, rms);
+          return;
+        }
+        const bumped = Math.min(remaining + READ_ADVANCE_CONFIRM_BUMP_MS, READ_ADVANCE_MAX_MS);
+        if (bumped > remaining) {
+          this._cancelReadAdvance();
+          this._nextAdvanceMs  = bumped;
+          this._timerStartedAt = Date.now();
+          this._displayAdvanceTimer = setTimeout(() => {
+            this._displayAdvanceTimer = null;
+            this._nextAdvanceMs  = 0;
+            this._timerStartedAt = 0;
+            if (!this._canDisplayAdvance()) return;
+            const nextAyahData = getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
+            if (!nextAyahData) {
+              const prevSurah = this._displaySurah;
+              const prevAyah  = this._displayAyah;
+              this._completedSurah = prevSurah;
+              this._displaySurah = 0;
+              this._displayAyah  = 0;
+              this._whisperSurah = 0;
+              this._whisperAyah  = 0;
+              this._driftMult    = 1.0;
+              this._measuredWps  = READ_WORDS_PER_SEC;
+              this._behindRepeatCount = 0;
+              this._behindRepeatAyah  = 0;
+              this.state = { ...createState(), mode: 'SEARCHING',
+                lastLockedSurah: prevSurah, lastLockedAyah: prevAyah };
+              this._restorePreRukuIfNeeded(prevSurah);
+              this._resetSearchBuf();
+              console.log(`[Pipeline] Read-advance: end of surah ${prevSurah} — soft reset, searching for next`);
+            } else {
+              this._displayAyah++;
+              this._ayahStartTime = Date.now();
+              this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
+                lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
+              console.log(`[Pipeline] Read-advance → ${this._displaySurah}:${this._displayAyah}`);
+              this._scheduleReadAdvance(this.state.confidence);
+            }
+            this._emitState(null, null);
+          }, bumped);
+          console.log(`[Pipeline] Timer bumped +${READ_ADVANCE_CONFIRM_BUMP_MS}ms (${Math.round(remaining/1000)}s → ${Math.round(bumped/1000)}s)`);
+        }
+      } else if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
         this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
       }
+      this._emitState(text, rms);
       return;
     }
 
@@ -803,6 +887,12 @@ export class AudioPipeline {
     // Large gap (7+): anchor likely confused — ignore.
     const gap = confirmedAyah - this._displayAyah;
     if (gap <= 6) {
+      // Already in smooth catch-up — don't restart; rapid Whisper results would
+      // otherwise cancel the timer and advance immediately, causing a 3-ayah jump.
+      if (this._smoothAdvanceTimer) {
+        this._emitState(text, rms);
+        return;
+      }
       this._cancelReadAdvance();
       this._lastManualAdjustMs = 0;
       console.log(`[Pipeline] Whisper :${confirmedAyah} ahead of display :${this._displayAyah} — catch-up (${gap} steps)`);
@@ -827,7 +917,7 @@ export class AudioPipeline {
         const toAyah   = Math.max(this._whisperLastConfirmAyah, confirmedAyah);
         let totalWords = 0;
         for (let a = fromAyah; a <= toAyah; a++) {
-          const v = getVerseData(confirmedSurah, a);
+          const v = getVerseData(confirmedSurah, a, this.translationLang);
           totalWords += v?.transliteration
             ? v.transliteration.split(/\s+/).length
             : (v?.arabic ? v.arabic.split(/\s+/).length : 4);
@@ -926,7 +1016,7 @@ export class AudioPipeline {
       confidence = READ_ADVANCE_CONFIDENCE;
     }
 
-    const verse = getVerseData(this._displaySurah, this._displayAyah);
+    const verse = getVerseData(this._displaySurah, this._displayAyah, this.translationLang);
     const translit = verse?.transliteration || '';
     const charCount = translit.length || (verse?.arabic ? verse.arabic.length : 30);
     const wordCount = translit ? translit.split(/\s+/).length : (verse?.arabic ? verse.arabic.split(/\s+/).length : 4);
@@ -970,7 +1060,7 @@ export class AudioPipeline {
       this._timerStartedAt = 0;
       if (!this._canDisplayAdvance()) return;
 
-      const nextAyahData = getVerseData(this._displaySurah, this._displayAyah + 1);
+      const nextAyahData = getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
       if (!nextAyahData) {
         const prevSurah = this._displaySurah;
         const prevAyah  = this._displayAyah;
@@ -996,9 +1086,12 @@ export class AudioPipeline {
         this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
           lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
         console.log(`[Pipeline] Read-advance → ${this._displaySurah}:${this._displayAyah}`);
+      }
+      // Emit immediately so display updates snappily; schedule next timer after.
+      this._emitState(null, null);
+      if (nextAyahData) {
         this._scheduleReadAdvance(this.state.confidence);
       }
-      this._emitState(null, null);
     }, durationMs);
   }
 
@@ -1016,7 +1109,7 @@ export class AudioPipeline {
     this._cancelReadAdvance();
     this._ayahStartTime = Date.now();
 
-    const nextAyahData = getVerseData(this._displaySurah, this._displayAyah + 1);
+    const nextAyahData = getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
     if (!nextAyahData) {
       const prevSurah = this._displaySurah;
       const prevAyah  = this._displayAyah;
@@ -1095,6 +1188,79 @@ export class AudioPipeline {
     });
   }
 
+  // Taraweeh takbeer state machine: QIYAM → RUKU → up → SAJDA → up → SAJDA → up → resume
+  // Sound/distortion may cause missed takbeers — recitation (lock/candidate) always wins and
+  // transitions to QIYAM. Takbeer advances best-effort; we never block verse display.
+  _handleTaraweehTakbeer(fromLocked = false) {
+    const savePreRuku = (surah, ayah) => {
+      if (surah > 1) {
+        this._preRukuSurah = surah;
+        this._preRukuAyah  = ayah;
+        console.log(`[Pipeline] Saved pre-ruku position: ${this._preRukuSurah}:${this._preRukuAyah}`);
+      }
+    };
+
+    if (this._taraweehPos === 'RUKU') {
+      this._taraweehPos = 'QIYAM';
+      this._taraweehLastFrom = 'ruku';
+      console.log(`[Pipeline] Taraweeh takbeer: RUKU → up (QIYAM)`);
+      this._resetSearchBuf();
+    } else if (this._taraweehPos === 'SAJDA') {
+      this._taraweehPos = 'QIYAM';
+      if (this._sajdaCount === 1) {
+        this._taraweehLastFrom = 'sajda1';
+        console.log(`[Pipeline] Taraweeh takbeer: SAJDA (1st) → up (QIYAM)`);
+      } else {
+        this._taraweehLastFrom = 'sajda2';
+        this._sajdaCount = 0;
+        // Restore pre-ruku so anchor searches for continuation (resume same surah)
+        if (this._preRukuSurah > 1) {
+          this.state = { ...this.state, lastLockedSurah: this._preRukuSurah, lastLockedAyah: this._preRukuAyah };
+          console.log(`[Pipeline] Taraweeh takbeer: SAJDA (2nd) → up, ready for resume from ${this._preRukuSurah}:${this._preRukuAyah}`);
+        } else {
+          console.log(`[Pipeline] Taraweeh takbeer: SAJDA (2nd) → up (QIYAM), ready for new surah`);
+        }
+      }
+      this._resetSearchBuf();
+    } else if (this._taraweehPos === 'QIYAM') {
+      // ruku/sajda1 → next is SAJDA; reciting/sajda2/unknown → next is RUKU
+      // (unknown = missed takbeers; assume we were reciting)
+      const nextIsSajda = this._taraweehLastFrom === 'ruku' || this._taraweehLastFrom === 'sajda1';
+      if (nextIsSajda) {
+        this._taraweehPos = 'SAJDA';
+        this._sajdaCount = this._taraweehLastFrom === 'ruku' ? 1 : 2;
+        this._taraweehLastFrom = null;
+        console.log(`[Pipeline] Taraweeh takbeer: QIYAM → SAJDA (${this._sajdaCount}/2)`);
+        this._cancelReadAdvance();
+        this._displaySurah = 0;
+        this._displayAyah  = 0;
+        this._whisperSurah = 0;
+        this._whisperAyah  = 0;
+        this._driftMult    = 1.0;
+        this.state = { ...createState(), lastLockedSurah: 0, lastLockedAyah: 0 };
+        this._resetSearchBuf();
+      } else {
+        // reciting or sajda2 or unknown → RUKU
+        const surah = fromLocked ? this.state.surah : this.state.lastLockedSurah;
+        const ayah  = fromLocked ? this.state.ayah  : this.state.lastLockedAyah;
+        savePreRuku(surah, ayah);
+        this._taraweehPos = 'RUKU';
+        this._rakatCount++;
+        this._taraweehLastFrom = null;
+        console.log(`[Pipeline] Taraweeh takbeer: QIYAM → RUKU (rakat ${this._rakatCount})`);
+        this._cancelReadAdvance();
+        this._displaySurah = 0;
+        this._displayAyah  = 0;
+        this._whisperSurah = 0;
+        this._whisperAyah  = 0;
+        this._driftMult    = 1.0;
+        this.state = { ...createState(), lastLockedSurah: 0, lastLockedAyah: 0 };
+        this._resetSearchBuf();
+      }
+    }
+    this._emitTaraweeh();
+  }
+
   _restorePreRukuIfNeeded(completedSurah) {
     if (this.taraweehMode && completedSurah === 1
         && this._preRukuSurah > 1) {
@@ -1150,7 +1316,7 @@ export class AudioPipeline {
     const displaySurah = isDisplayable ? this._displaySurah : (isCandidate ? topMatch.surah : 0);
     const displayAyah  = isDisplayable ? this._displayAyah  : (isCandidate ? topMatch.ayah  : 0);
     const lockedVerse   = (displaySurah && displayAyah)
-      ? getVerseData(displaySurah, displayAyah)
+      ? getVerseData(displaySurah, displayAyah, this.translationLang)
       : null;
 
     if (this.state.mode === 'LOCKED') {
@@ -1181,6 +1347,7 @@ export class AudioPipeline {
         arabic:          lockedVerse?.arabic,
         transliteration: lockedVerse?.transliteration,
         translation:     lockedVerse?.translation,
+        translationGlasses: lockedVerse?.translationGlasses ?? lockedVerse?.translation,
         confidence: this.state.confidence <= 1
           ? this.state.confidence
           : (this.state.confidence || 0) / 100,
@@ -1190,7 +1357,7 @@ export class AudioPipeline {
         candidateMargin: isCandidate ? topMargin : undefined,
         completedSurah:     this._completedSurah || undefined,
         completedSurahName: this._completedSurah
-          ? (getVerseData(this._completedSurah, 1)?.surahName ?? `Surah ${this._completedSurah}`)
+          ? (getVerseData(this._completedSurah, 1, this.translationLang)?.surahName ?? `Surah ${this._completedSurah}`)
           : undefined,
         nonQuranText:    this.state.nonQuranText,
         nonQuranMeaning: this.state.nonQuranMeaning,

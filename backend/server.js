@@ -108,9 +108,11 @@ wss.on('connection', (ws, req) => {
         }
       : HF_TOKEN ? { apiKey: HF_TOKEN } : null;
 
-    console.log(`[Init] Creating pipeline ${pipelineVersion.toUpperCase()}`);
+    const translationLang = (opts.lang && String(opts.lang).trim()) || '';
+    console.log(`[Init] Creating pipeline ${pipelineVersion.toUpperCase()} translationLang=${translationLang || '(built-in)'}`);
     pipeline = new Ctor({
       preferredSurah,
+      translationLang,
       hfToken: opts.hfToken || HF_TOKEN,
       whisperOpts,
       geminiKey: opts.geminiKey || GEMINI_KEY,

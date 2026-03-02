@@ -1,6 +1,7 @@
 /**
  * Build lockedVerse display object from surah/ayah.
- * Uses fuzzyMatcher for arabic text, optional verses-display.json for transliteration/translation.
+ * Uses verses-display.json for built-in English (lang='').
+ * Uses quran-json (quran_{lang}.json + quran_transliteration.json) for other languages.
  */
 import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
@@ -8,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { getAyah, loadQuran } from './keywordMatcher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const QURAN_JSON_DIR = join(__dirname, 'data', 'quran-json');
 
 const SURAH_AYAH_COUNTS = [
   7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111,
@@ -33,7 +35,12 @@ const SURAH_NAMES = [
   'Al-Masad', 'Al-Ikhlas', 'Al-Falaq', 'An-Nas',
 ];
 
+const QURAN_JSON_LANGS = new Set(['en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+/** Languages that don't render on G2 glasses (Arabic script, etc.) — glasses fallback to English */
+const GLASSES_UNSUPPORTED_LANGS = new Set(['ur', 'ar', 'fa', 'bn']);
+
 let versesDisplay = null;
+const quranJsonCache = new Map(); // lang -> { translation: [...], transliteration: [...] }
 
 function loadVersesDisplay() {
   if (versesDisplay !== null) return versesDisplay;
@@ -43,13 +50,28 @@ function loadVersesDisplay() {
   return versesDisplay;
 }
 
+function loadQuranJson(lang) {
+  if (quranJsonCache.has(lang)) return quranJsonCache.get(lang);
+  const transPath = join(QURAN_JSON_DIR, `quran_${lang}.json`);
+  const translitPath = join(QURAN_JSON_DIR, 'quran_transliteration.json');
+  if (!existsSync(transPath)) return null;
+  const translation = JSON.parse(readFileSync(transPath, 'utf8'));
+  const transliteration = existsSync(translitPath)
+    ? JSON.parse(readFileSync(translitPath, 'utf8'))
+    : null;
+  const data = { translation, transliteration };
+  quranJsonCache.set(lang, data);
+  return data;
+}
+
 /**
  * Build lockedVerse object for state payload.
  * @param {number} surah - 1-114
  * @param {number} ayah - verse number
+ * @param {string} [lang] - '' = built-in English (verses-display), else quran-json lang code (en, ur, fr, es, id, tr, bn, zh, ru, sv)
  * @returns {object|null} { surah, ayah, surahName, ayahTotal, arabic, transliteration, translation }
  */
-export function getVerseData(surah, ayah) {
+export function getVerseData(surah, ayah, lang = '') {
   loadQuran();
   const ayahData = getAyah(surah, ayah);
   if (!ayahData) return null;
@@ -60,14 +82,32 @@ export function getVerseData(surah, ayah) {
   let transliteration = '';
   let translation = '';
 
-  const display = loadVersesDisplay();
-  if (display) {
-    const key = `${surah}:${ayah}`;
-    const d = display[key];
-    if (d) {
-      transliteration = d.transliteration || '';
-      translation = d.translation || '';
+  if (lang && QURAN_JSON_LANGS.has(lang)) {
+    const qj = loadQuranJson(lang);
+    if (qj) {
+      const ch = qj.translation?.[surah - 1];
+      const verse = ch?.verses?.[ayah - 1];
+      if (verse) translation = verse.translation || '';
+      const chTranslit = qj.transliteration?.[surah - 1];
+      const verseTranslit = chTranslit?.verses?.[ayah - 1];
+      if (verseTranslit) transliteration = verseTranslit.transliteration || '';
     }
+  } else {
+    const display = loadVersesDisplay();
+    if (display) {
+      const key = `${surah}:${ayah}`;
+      const d = display[key];
+      if (d) {
+        transliteration = d.transliteration || '';
+        translation = d.translation || '';
+      }
+    }
+  }
+
+  let translationGlasses = translation;
+  if (lang && GLASSES_UNSUPPORTED_LANGS.has(lang)) {
+    const enVerse = getVerseData(surah, ayah, '');
+    translationGlasses = enVerse?.translation || translation;
   }
 
   return {
@@ -78,5 +118,6 @@ export function getVerseData(surah, ayah) {
     arabic: ayahData.text,
     transliteration,
     translation,
+    translationGlasses,
   };
 }
