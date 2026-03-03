@@ -2,6 +2,7 @@
  * Build lockedVerse display object from surah/ayah.
  * Uses verses-display.json for built-in English (lang='').
  * Uses quran-json (quran_{lang}.json + quran_transliteration.json) for other languages.
+ * Uses quran-db (translator-specific JSON from github.com/faisalill/quran_db) for db:xxx.
  */
 import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
@@ -10,6 +11,7 @@ import { getAyah, loadQuran } from './keywordMatcher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const QURAN_JSON_DIR = join(__dirname, 'data', 'quran-json');
+const QURAN_DB_DIR = join(__dirname, 'data', 'quran-db');
 
 const SURAH_AYAH_COUNTS = [
   7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111,
@@ -37,10 +39,32 @@ const SURAH_NAMES = [
 
 const QURAN_JSON_LANGS = new Set(['en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
 /** Languages that don't render on G2 glasses (Arabic script, etc.) — glasses fallback to English */
-const GLASSES_UNSUPPORTED_LANGS = new Set(['ur', 'ar', 'fa', 'bn']);
+const GLASSES_UNSUPPORTED_LANGS = new Set(['ur', 'ar', 'fa', 'bn', 'hi']);
 
 let versesDisplay = null;
 const quranJsonCache = new Map(); // lang -> { translation: [...], transliteration: [...] }
+const quranDbCache = new Map();   // filename -> parsed JSON
+
+function decodeHtmlEntities(str) {
+  if (!str || typeof str !== 'string') return str;
+  return str
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&mdash;/g, '—')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function loadQuranDb(filename) {
+  if (quranDbCache.has(filename)) return quranDbCache.get(filename);
+  const path = join(QURAN_DB_DIR, `${filename}.json`);
+  if (!existsSync(path)) return null;
+  const data = JSON.parse(readFileSync(path, 'utf8'));
+  quranDbCache.set(filename, data);
+  return data;
+}
 
 function loadVersesDisplay() {
   if (versesDisplay !== null) return versesDisplay;
@@ -68,7 +92,7 @@ function loadQuranJson(lang) {
  * Build lockedVerse object for state payload.
  * @param {number} surah - 1-114
  * @param {number} ayah - verse number
- * @param {string} [lang] - '' = built-in English (verses-display), else quran-json lang code (en, ur, fr, es, id, tr, bn, zh, ru, sv)
+ * @param {string} [lang] - '' = built-in English (verses-display), else quran-json lang code (en, ur, fr, ...) or db:filename (quran_db)
  * @returns {object|null} { surah, ayah, surahName, ayahTotal, arabic, transliteration, translation }
  */
 export function getVerseData(surah, ayah, lang = '') {
@@ -82,7 +106,25 @@ export function getVerseData(surah, ayah, lang = '') {
   let transliteration = '';
   let translation = '';
 
-  if (lang && QURAN_JSON_LANGS.has(lang)) {
+  if (lang && lang.startsWith('db:')) {
+    const filename = lang.slice(3);
+    const db = loadQuranDb(filename);
+    if (db) {
+      const surahObj = db[String(surah)];
+      const ayahObj = surahObj?.Ayahs?.[String(ayah)];
+      if (ayahObj && typeof ayahObj === 'object') {
+        const val = Object.values(ayahObj)[0];
+        if (val) translation = decodeHtmlEntities(val);
+      }
+      // Use built-in transliteration (quran_db has no transliteration)
+      const display = loadVersesDisplay();
+      if (display) {
+        const key = `${surah}:${ayah}`;
+        const d = display[key];
+        if (d) transliteration = d.transliteration || '';
+      }
+    }
+  } else if (lang && QURAN_JSON_LANGS.has(lang)) {
     const qj = loadQuranJson(lang);
     if (qj) {
       const ch = qj.translation?.[surah - 1];
@@ -121,3 +163,18 @@ export function getVerseData(surah, ayah, lang = '') {
     translationGlasses,
   };
 }
+
+/** Quran DB translations (from github.com/faisalill/quran_db) — value = lang param (db:filename) */
+export const QURAN_DB_TRANSLATIONS = [
+  { value: 'db:yahiyaemerick', label: 'Yahiya Emerick', desc: 'A translator offering a modern and relatable interpretation.' },
+  { value: 'db:ummmuhammadsahihinternational', label: 'Umm Muhammad (Sahih International)', desc: 'A widely used modern English translation.' },
+  { value: 'db:wahiduddinkhan', label: 'Wahiduddin Khan', desc: 'Known for presenting the Qur\'an\'s message of peace and universal harmony.' },
+  { value: 'db:wordbyword2021', label: 'Word by Word (2021)', desc: 'Provides a detailed word-by-word translation for study.' },
+  { value: 'db:wordforword2020', label: 'Word for Word (2020)', desc: 'Provides a detailed word-by-word translation for study.' },
+  { value: 'db:talalitani2012', label: 'Talal Itani (2012)', desc: 'Modern translation emphasizing clarity and readability.' },
+  { value: 'db:talalitaniampampai2024', label: 'Talal Itani (2024)', desc: 'Modern translation emphasizing clarity and readability.' },
+  { value: 'db:muhammadmarmadukepickthall', label: 'Muhammad Marmaduke Pickthall', desc: 'A highly regarded literary English translation.' },
+  { value: 'db:mfarookmalik', label: 'M. Farook Malik', desc: 'Focused on clarity and easy comprehension for English readers.' },
+  { value: 'db:abdulhye', label: 'Abdul Hye', desc: 'Known for providing traditional Islamic perspectives in translation.' },
+  { value: 'db:mustafakhattab2018', label: 'Mustafa Khattab (Clear Quran)', desc: 'Known for "The Clear Quran," a simple and accurate translation.' },
+];

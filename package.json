@@ -14,7 +14,8 @@
     "test-pipeline": "cd backend && node testPipeline.js",
     "sim": "node node_modules/@evenrealities/evenhub-simulator/bin/index.js http://localhost:3001",
     "simulator": "npm run sim",
-    "live-monitor": "powershell -ExecutionPolicy Bypass -File scripts/live-monitor.ps1"
+    "live-monitor": "powershell -ExecutionPolicy Bypass -File scripts/live-monitor.ps1",
+    "download-quran-db": "node scripts/download-quran-db.js"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.7",

@@ -5,14 +5,13 @@
  * LOCKED → auto-advance + spot-check every N ayahs → RESUMING on fail
  * RESUMING → resync ±6 ayahs → full surah → SEARCHING
  */
-import { findAnchor, spotCheck, resyncInSurah, extractKeywords } from './keywordMatcher.js';
+import { findAnchor, spotCheck, resyncInSurah, extractKeywords, isRefrain } from './keywordMatcher.js';
 
 const SPOT_CHECK_INTERVAL    = 4;   // spot-check every N ayahs
-// With 10s locked chunks, each miss = ~10s of silence.
-// 3 misses → ~30s of silence before RESUMING (reasonable pause between surahs/sections)
-const MISSED_BEFORE_RESUMING = 3;
-// 4 misses in RESUMING (~40s) → global re-search
-const MISSED_BEFORE_LOST     = 4;
+// With 10s locked chunks, each miss = ~10s. 4 misses → ~40s before RESUMING.
+// With 3s chunks (V3), 4 misses = ~12s — too fast. Options.missBeforeResuming/Lost override.
+const MISSED_BEFORE_RESUMING = parseInt(process.env.MISSED_BEFORE_RESUMING || '4', 10);
+const MISSED_BEFORE_LOST     = parseInt(process.env.MISSED_BEFORE_LOST || '4', 10);
 
 // Backward correction guard — keeps the display flowing forward.
 // The reading-timer + pause-detection drive forward progress; Whisper corrects.
@@ -43,14 +42,14 @@ const SURAH_AYAH_COUNTS = [
   8, 19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6,
 ];
 
-function getNextAyah(surah, ayah) {
+export function getNextAyah(surah, ayah) {
   const count = SURAH_AYAH_COUNTS[surah - 1] ?? 0;
   if (ayah < count) return { surah, ayah: ayah + 1 };
   // End of surah — don't cross to next surah
   return null;
 }
 
-function getPrevAyah(surah, ayah) {
+export function getPrevAyah(surah, ayah) {
   if (ayah > 1) return { surah, ayah: ayah - 1 };
   if (surah <= 1) return null;
   const prevCount = SURAH_AYAH_COUNTS[surah - 2] ?? 0;
@@ -89,21 +88,32 @@ export function createState() {
  * @returns {object} new state
  */
 export function processWhisperResult(whisperText, state, options = {}) {
-  const { preferredSurah = 0, fastMode = false } = options;
+  const { preferredSurah = 0, fastMode = false, missBeforeResuming, missBeforeLost } = options;
+  const opts = { ...options, missBeforeResuming: missBeforeResuming ?? MISSED_BEFORE_RESUMING, missBeforeLost: missBeforeLost ?? MISSED_BEFORE_LOST };
 
   switch (state.mode) {
     case 'SEARCHING':
-      return handleSearching(whisperText, state, preferredSurah);
+      return handleSearching(whisperText, state, preferredSurah, opts);
     case 'LOCKED':
-      return handleLocked(whisperText, state, fastMode);
+      return handleLocked(whisperText, state, fastMode, opts);
     case 'RESUMING':
-      return handleResuming(whisperText, state);
+      return handleResuming(whisperText, state, opts);
     default:
-      return handleSearching(whisperText, state, preferredSurah);
+      return handleSearching(whisperText, state, preferredSurah, opts);
   }
 }
 
-function handleSearching(whisperText, state, preferredSurah) {
+function handleSearching(whisperText, state, preferredSurah, opts = {}) {
+  // User manually browsing: focus search on display position for faster auto-lock
+  const { preferredDisplaySurah, preferredDisplayAyah } = opts;
+  let seqHint;
+  if (preferredDisplaySurah > 0 && preferredDisplayAyah > 0) {
+    const fromAyah = Math.max(1, preferredDisplayAyah - 2);
+    const surahSize = SURAH_AYAH_COUNTS[preferredDisplaySurah - 1] ?? 286;
+    const toAyah = Math.min(surahSize, preferredDisplayAyah + 2);
+    seqHint = { surah: preferredDisplaySurah, fromAyah, toAyah };
+  }
+
   // After a surah completes, bias toward the NEXT surah (sequential order in Quran)
   // e.g. after Luqman (31) ends, boost As-Sajdah (32) ayah 1-10
   const lastSurah = state.lastLockedSurah;
@@ -112,7 +122,7 @@ function handleSearching(whisperText, state, preferredSurah) {
   const surahJustCompleted = lastSurah > 0 && lastAyah >= lastSurahSize;
   const postFatiha = lastSurah === 1 && surahJustCompleted;
 
-  let seqHint;
+  if (!seqHint) {
   if (surahJustCompleted && lastSurah < 114 && lastSurah !== 1) {
     // Point to first ayahs of the NEXT surah (but NOT after Fatiha — in prayer Fatiha is
     // always followed by a different surah chosen by the imam, not necessarily surah 2).
@@ -123,13 +133,16 @@ function handleSearching(whisperText, state, preferredSurah) {
   } else {
     seqHint = null;
   }
+  }
 
   // Mid-surah resync: always try same surah first, then fall back to global.
   // When surah just completed, also try the same surah — the display may have raced ahead.
   // EXCEPTION: after Fatiha (surah 1), skip the same-surah search entirely — the imam
   // will recite a completely different surah, so searching surah 1 is pure waste.
   let matches, keywords;
-  if (lastSurah > 0 && !postFatiha) {
+  if (preferredDisplaySurah > 0 && preferredDisplayAyah > 0 && seqHint) {
+    ({ matches, keywords } = findAnchor(whisperText, preferredDisplaySurah, seqHint));
+  } else if (lastSurah > 0 && !postFatiha) {
     const sameSurahResult = findAnchor(whisperText, lastSurah, seqHint);
     matches  = sameSurahResult.matches;
     keywords = sameSurahResult.keywords;
@@ -253,18 +266,31 @@ function handleSearching(whisperText, state, preferredSurah) {
     && second.score >= 0.30
     && !isHighConfidenceBypass
     && !postFatiha;
-  if (isPrefixAmbiguous) {
+  // Refrain bypass: Ar-Rahman (55) and similar surahs repeat the same verse many times.
+  // Top and second share identical text → no exclusive word is ever possible. Requiring
+  // 2 wins would never help — the next chunk is also the refrain. So when both are
+  // known refrain verses in the same surah, allow lock on the first plausible instance.
+  const isRefrainPair = second && top.surah === second.surah
+    && isRefrain(top.surah, top.ayah) && isRefrain(second.surah, second.ayah);
+  const refrainBypass = isPrefixAmbiguous && isRefrainPair;
+
+  if (isPrefixAmbiguous && !refrainBypass) {
     console.log(`[Anchor] Prefix-ambiguous: [${top.surah}:${top.ayah}] vs [${second.surah}:${second.ayah}] — top has no exclusive words yet, require 2 wins`);
+  } else if (refrainBypass) {
+    console.log(`[Anchor] Refrain bypass: [${top.surah}:${top.ayah}] vs [${second.surah}:${second.ayah}] — identical refrain, locking on first instance`);
   } else if (!topHasExclusiveWord && isHighConfidenceBypass) {
     console.log(`[Anchor] High-confidence bypass: [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)} cov=${(coverage*100).toFixed(0)}% — treating as unambiguous`);
   }
+
+  // Prefix-ambiguous blocks lock unless it's a refrain (identical repeated verse).
+  const prefixBlocksLock = isPrefixAmbiguous && !refrainBypass;
 
   // Fast-lock: unmistakably high confidence
   const isFastLock = top.score >= FAST_LOCK_SCORE && margin >= 30
     && hasEnoughWords
     && (!isUnexpectedSurah || wins >= 2)
     && !isBismillahAmbiguous   // bismillah alone never fast-locks
-    && !isPrefixAmbiguous;     // ambiguous prefix never fast-locks
+    && !prefixBlocksLock;      // ambiguous prefix never fast-locks (refrain bypass ok)
 
   // Single-win lock: solid score + clear gap to #2 on first chunk
   const isSingleWinLock = top.score >= Math.max(SINGLE_WIN_SCORE, crossSurahPenalty.minScore)
@@ -273,7 +299,7 @@ function handleSearching(whisperText, state, preferredSurah) {
     && hasEnoughWords
     && wins     >= Math.max(1, crossSurahPenalty.minWins)
     && !isBismillahAmbiguous   // bismillah alone never single-win-locks
-    && !isPrefixAmbiguous;     // ambiguous prefix never single-win-locks
+    && !prefixBlocksLock;      // ambiguous prefix never single-win-locks (refrain bypass ok)
 
   // High-margin lock: very large gap to #2 → no need for 2 wins.
   // With a margin ≥ 50, even 2 matched words are enough — the 50-point gap to #2 makes
@@ -286,7 +312,7 @@ function handleSearching(whisperText, state, preferredSurah) {
     && matchedWordCount >= highMarginMinWords
     && !isUnexpectedSurah      // don't allow high-margin cross-surah hop
     && !isBismillahAmbiguous   // bismillah alone never high-margin-locks
-    && !isPrefixAmbiguous;     // ambiguous prefix never high-margin-locks
+    && !prefixBlocksLock;      // ambiguous prefix never high-margin-locks (refrain bypass ok)
 
   // Sequential lock: candidate is in the expected next-verse range — only need 1 win
   const isSeqLock = top.seqBoosted
@@ -339,7 +365,20 @@ function handleSearching(whisperText, state, preferredSurah) {
     console.log(`[Anchor] Same-surah unanimous: all top-3 in ${top.surah}, locking on closest (${top.surah}:${top.ayah})`);
   }
 
-  if (isFastLock || isSingleWinLock || isHighMarginLock || isConsistentLock || isHighScoreLock || isSeqLock || isSeqCarryLock || isSameSurahLock) {
+  // Refrain lock: when top and second are identical refrain verses (e.g. Ar-Rahman 55),
+  // margin is always 0 and no exclusive word ever appears. Lock on the first instance
+  // (lowest ayah) once we have 2+ wins — the timer will advance; corrections follow.
+  // G2 mic garbles transcription → scores often 0.10–0.35. Use lower threshold when
+  // we have high coverage (refrain words matched) so we don't wait half the surah.
+  const REFRAIN_LOCK_SCORE = 0.25;  // lower than SINGLE_WIN_SCORE for G2 garbled
+  const isRefrainLock = refrainBypass
+    && wins >= LOCK_WINS_REQUIRED
+    && top.score >= REFRAIN_LOCK_SCORE
+    && coverage >= 0.50  // at least half the refrain words matched
+    && matchedWordCount >= 2
+    && !isBismillahAmbiguous;
+
+  if (isFastLock || isSingleWinLock || isHighMarginLock || isConsistentLock || isHighScoreLock || isSeqLock || isSeqCarryLock || isSameSurahLock || isRefrainLock) {
     const reason = isFastLock       ? `fast-lock score=${top.score.toFixed(2)}`
                  : isSingleWinLock  ? `single-win score=${top.score.toFixed(2)} margin=${margin.toFixed(1)}`
                  : isHighMarginLock ? `margin-lock margin=${margin.toFixed(1)} score=${top.score.toFixed(2)}`
@@ -347,6 +386,7 @@ function handleSearching(whisperText, state, preferredSurah) {
                  : isSeqCarryLock   ? `seq-carry-lock wins=${wins} score=${top.score.toFixed(2)}`
                  : isSeqLock        ? `seq-lock wins=${wins} raw=${(top.rawScore??top.score).toFixed(2)}`
                  : isSameSurahLock  ? `same-surah-lock wins=${wins} score=${top.score.toFixed(2)}`
+                 : isRefrainLock    ? `refrain-lock wins=${wins} score=${top.score.toFixed(2)} (Ar-Rahman-style)`
                  : `wins=${wins} margin=${margin.toFixed(1)} cov=${(coverage*100).toFixed(0)}%`;
     console.log(`[Anchor] LOCKED on ${top.surah}:${top.ayah} (${reason})`);
     return {
@@ -375,11 +415,12 @@ function handleSearching(whisperText, state, preferredSurah) {
 }
 
 
-function handleLocked(whisperText, state, fastMode = false) {
+function handleLocked(whisperText, state, fastMode = false, opts = {}) {
+  const { missBeforeResuming = MISSED_BEFORE_RESUMING } = opts;
   const keywords = extractKeywords(whisperText);
   if (keywords.length === 0) {
     const missed = state.missedChunks + 1;
-    if (missed >= MISSED_BEFORE_RESUMING) {
+    if (missed >= missBeforeResuming) {
       console.log(`[Anchor] Too many misses (${missed}), entering RESUMING`);
       return { ...state, mode: 'RESUMING', missedChunks: 0, _matches: [], _locked: false,
                lastLockedSurah: state.surah, lastLockedAyah: state.ayah };
@@ -440,17 +481,32 @@ function handleLocked(whisperText, state, fastMode = false) {
   if (wideCheck.found && wideCheck.score >= scanThreshold) {
     if (wideCheck.ayah !== state.ayah) {
       const isBack = wideCheck.ayah < state.ayah;
-      if (isBack && wideCheck.score < backThreshold) {
-        // Weak backward match — treat as same-position confirmation instead of back-correcting
-        console.log(`[Anchor] Weak back-match ignored: :${wideCheck.ayah} score=${wideCheck.score.toFixed(2)} < ${backThreshold} — holding :${state.ayah}`);
-        return {
-          ...state,
-          confidence: Math.max(Math.round(wideCheck.score * 100), state.confidence),
-          missedChunks: 0,
-          lastKeywords: keywords,
-          _matches: [{ surah: state.surah, ayah: state.ayah, score: wideCheck.score, matchedWords: wideCheck.matchedWords }],
-          _locked: true,
-        };
+      if (isBack) {
+        // Never back-correct when we're on a refrain verse — Ar-Rahman (55) etc. repeat
+        // identical text; Whisper often garbles and matches the wrong instance. Trust the timer.
+        if (isRefrain(state.surah, state.ayah)) {
+          console.log(`[Anchor] Back-match ignored: on refrain :${state.ayah}, holding (no back-correct on refrains)`);
+          return {
+            ...state,
+            confidence: Math.max(Math.round(wideCheck.score * 100), state.confidence),
+            missedChunks: 0,
+            lastKeywords: keywords,
+            _matches: [{ surah: state.surah, ayah: state.ayah, score: wideCheck.score, matchedWords: wideCheck.matchedWords }],
+            _locked: true,
+          };
+        }
+        if (wideCheck.score < backThreshold) {
+          // Weak backward match — treat as same-position confirmation instead of back-correcting
+          console.log(`[Anchor] Weak back-match ignored: :${wideCheck.ayah} score=${wideCheck.score.toFixed(2)} < ${backThreshold} — holding :${state.ayah}`);
+          return {
+            ...state,
+            confidence: Math.max(Math.round(wideCheck.score * 100), state.confidence),
+            missedChunks: 0,
+            lastKeywords: keywords,
+            _matches: [{ surah: state.surah, ayah: state.ayah, score: wideCheck.score, matchedWords: wideCheck.matchedWords }],
+            _locked: true,
+          };
+        }
       }
       return applyBack(wideCheck, wideCheck.ayah > state.ayah ? 'Advanced' : 'Back-corrected');
     }
@@ -470,6 +526,10 @@ function handleLocked(whisperText, state, fastMode = false) {
   if (state.ayahsSinceCheck >= SPOT_CHECK_INTERVAL || state.missedChunks >= 2) {
     const check = spotCheck(whisperText, state.surah, state.ayah, wideRadius);
     if (check.found && check.score >= wideThreshold) {
+      if (check.ayah < state.ayah && isRefrain(state.surah, state.ayah)) {
+        console.log(`[Anchor] Wide-scan back-match ignored: on refrain :${state.ayah}`);
+        return { ...state, confidence: Math.max(Math.round(check.score * 100), state.confidence), missedChunks: 0, lastKeywords: keywords, _matches: [{ surah: state.surah, ayah: state.ayah, score: check.score }], _locked: true };
+      }
       return applyBack(check, 'Wide-scan');
     }
   }
@@ -513,7 +573,7 @@ function handleLocked(whisperText, state, fastMode = false) {
 
   // No match — increment missed
   const missed = state.missedChunks + 1;
-  if (missed >= MISSED_BEFORE_RESUMING) {
+  if (missed >= missBeforeResuming) {
     console.log(`[Anchor] Lost position after ${missed} misses, entering RESUMING`);
     return { ...state, mode: 'RESUMING', missedChunks: 0, _matches: [], _locked: false,
              lastLockedSurah: state.surah, lastLockedAyah: state.ayah };
@@ -521,30 +581,39 @@ function handleLocked(whisperText, state, fastMode = false) {
   return { ...state, missedChunks: missed, _matches: [], _locked: false };
 }
 
-function handleResuming(whisperText, state) {
+function handleResuming(whisperText, state, options = {}) {
   const lastSurah = state.lastLockedSurah || state.surah;
   const lastAyah  = state.lastLockedAyah  || state.ayah;
+  const { displaySurah = 0, displayAyah = 0, missBeforeLost = MISSED_BEFORE_LOST } = options;
 
-  // Try ±10 ayahs from last known position (wider than before).
-  // For same-surah re-locks (e.g. Ar-Rahman refrain) use a lower threshold (0.15)
-  // because we already KNOW which surah we're in — any reasonable match confirms it.
-  const check = spotCheck(whisperText, lastSurah, lastAyah, 10);
-  const resumeThreshold = (check.found && check.surah === lastSurah) ? 0.15 : 0.22;
-  if (check.found && check.score >= resumeThreshold) {
-    console.log(`[Anchor] Resync nearby: ${check.surah}:${check.ayah} score=${check.score.toFixed(2)}`);
-    return {
-      ...state,
-      mode: 'LOCKED',
-      surah: check.surah,
-      ayah: check.ayah,
-      confidence: Math.round(check.score * 100),
-      missedChunks: 0,
-      ayahsSinceCheck: 0,
-      lastLockedSurah: check.surah,
-      lastLockedAyah: check.ayah,
-      _matches: [{ surah: check.surah, ayah: check.ayah, score: check.score }],
-      _locked: true,
-    };
+  // Try ±10 ayahs. When display ran ahead (timer kept going), reciter is likely
+  // near display — try that center first, then lastLocked.
+  const tryCenters = [];
+  if (displaySurah > 0 && displayAyah > 0
+      && (displaySurah !== lastSurah || displayAyah > lastAyah + 2)) {
+    tryCenters.push({ surah: displaySurah, ayah: displayAyah });
+  }
+  tryCenters.push({ surah: lastSurah, ayah: lastAyah });
+
+  for (const { surah: cS, ayah: cA } of tryCenters) {
+    const check = spotCheck(whisperText, cS, cA, 10);
+    const resumeThreshold = (check.found && check.surah === cS) ? 0.15 : 0.22;
+    if (check.found && check.score >= resumeThreshold) {
+      console.log(`[Anchor] Resync nearby: ${check.surah}:${check.ayah} score=${check.score.toFixed(2)}`);
+      return {
+        ...state,
+        mode: 'LOCKED',
+        surah: check.surah,
+        ayah: check.ayah,
+        confidence: Math.round(check.score * 100),
+        missedChunks: 0,
+        ayahsSinceCheck: 0,
+        lastLockedSurah: check.surah,
+        lastLockedAyah: check.ayah,
+        _matches: [{ surah: check.surah, ayah: check.ayah, score: check.score }],
+        _locked: true,
+      };
+    }
   }
 
   // Try full surah resync — lower threshold to 0.25
@@ -571,7 +640,7 @@ function handleResuming(whisperText, state) {
 
   // Still lost — go back to SEARCHING but preserve last known surah for seq hint
   const missed = (state.missedChunks || 0) + 1;
-  if (missed >= MISSED_BEFORE_LOST) {
+  if (missed >= missBeforeLost) {
     console.log(`[Anchor] Lost — back to SEARCHING (seq hint: ${lastSurah}:${lastAyah})`);
     return {
       ...createState(),

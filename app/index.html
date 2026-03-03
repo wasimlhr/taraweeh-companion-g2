@@ -355,6 +355,7 @@ body {
 }
 .mode-btn:active { transform: scale(0.98); }
 #fastModeBtn.active { background: #b45309; border-color: #b45309; color: #fff; }
+#slowModeBtn.active { background: #059669; border-color: #059669; color: #fff; }
 #taraweehBtn.active { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
 
 /* Taraweeh overlay — shown over verse content during ruku */
@@ -462,21 +463,23 @@ body {
 .s-status { font-size: 12px; color: var(--tc-2); padding: 10px 14px; }
 .toggle-group {
   display: flex;
-  gap: 0;
   border-radius: var(--r);
   overflow: hidden;
   border: 1px solid var(--bc-4);
   margin-top: 4px;
+  width: 100%;
 }
 .toggle-btn {
   flex: 1;
-  padding: 10px 14px;
+  min-width: 0;
+  padding: 10px 16px;
   font-size: 14px;
   border: none;
   background: var(--bc-2);
   color: var(--tc-2);
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
+  text-align: center;
 }
 .toggle-btn:not(:last-child) { border-right: 1px solid var(--bc-4); }
 .toggle-btn.active { background: var(--tc-gold); color: #1a1a1a; font-weight: 600; }
@@ -596,7 +599,8 @@ body {
   <button id="recordBtn" disabled>Detecting glasses...</button>
 
   <div class="btn-group">
-    <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Speed up timers and matching for fast reciters">⚡ Fast Mode: Off</button>
+    <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Faster display for quick reciters">⚡ Fast</button>
+    <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Slower display for measured reciters">🐢 Slow</button>
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
   </div>
 
@@ -619,18 +623,17 @@ body {
     </div>
     <div class="s-status" id="backendStatus">Checking...</div>
     <div class="s-row" style="margin-top:12px">
-      <label class="s-check">
-        <input type="checkbox" id="settingForcePhoneMic" />
-        <span>Use phone mic (force browser mic if no prompt)</span>
-      </label>
+      <span class="s-label">Microphone</span>
+      <div class="toggle-group" role="group">
+        <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">G2 mic</button>
+        <button type="button" class="toggle-btn" id="btnPhoneMic" onclick="setMicSource('phone')">Phone mic</button>
+      </div>
+      <span class="s-hint" style="margin-top:4px;display:block">G2 = glasses mic. Phone = force browser mic if no prompt.</span>
+      <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">—</span>
+      <button type="button" id="settingMicTest" class="back-btn" style="margin-top:6px;font-size:13px">🎤 Request mic permission</button>
     </div>
     <div class="s-warn" style="margin-top:8px;padding:10px 14px;background:var(--bc-accent);border-radius:var(--r);font-size:12px;color:var(--tc-1)">
       <strong>Note:</strong> The Even G2 app may not allow phone mic permission. Use G2 mic when running in the app.
-    </div>
-    <div class="s-row">
-      <span class="s-label">Microphone</span>
-      <span class="s-hint" id="micStatusHint">—</span>
-      <button type="button" id="settingMicTest" class="back-btn" style="margin-top:6px;font-size:13px">🎤 Request mic permission</button>
     </div>
   </div>
 
@@ -639,7 +642,8 @@ body {
     <div class="s-row">
       <span class="s-label">Pipeline Engine</span>
       <select id="settingPipeline">
-        <option value="v2">V2 (new — cap-based)</option>
+        <option value="v3">V3 (half-timer prev, bump cap, re-lock)</option>
+        <option value="v2">V2 (cap-based)</option>
         <option value="v1">V1 (legacy — penalty-based)</option>
       </select>
     </div>
@@ -648,16 +652,36 @@ body {
       <select id="settingSurah"><option value="0">Any Surah</option></select>
     </div>
     <div class="s-row">
-      <span class="s-label">Translation Language</span>
-      <select id="settingLang">
-        <option value="">English (built-in)</option>
-        <option value="ur">Urdu</option>
-        <option value="fr">French</option>
-        <option value="es">Spanish</option>
-        <option value="id">Indonesian</option>
-        <option value="tr">Turkish</option>
+      <span class="s-label">Translation</span>
+      <select id="settingLang" onchange="updateTranslationDesc()">
+        <optgroup label="Languages">
+          <option value="">English (built-in)</option>
+          <option value="bn">Bengali</option>
+          <option value="zh">Chinese</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="id">Indonesian</option>
+          <option value="ru">Russian</option>
+          <option value="sv">Swedish</option>
+          <option value="tr">Turkish</option>
+          <option value="ur">Urdu</option>
+        </optgroup>
+        <optgroup label="English (Quran DB)">
+          <option value="db:yahiyaemerick" title="A translator offering a modern and relatable interpretation.">Yahiya Emerick</option>
+          <option value="db:ummmuhammadsahihinternational" title="A widely used modern English translation.">Umm Muhammad (Sahih International)</option>
+          <option value="db:wahiduddinkhan" title="Known for presenting the Qur'an's message of peace and universal harmony.">Wahiduddin Khan</option>
+          <option value="db:wordbyword2021" title="Provides a detailed word-by-word translation for study.">Word by Word (2021)</option>
+          <option value="db:wordforword2020" title="Provides a detailed word-by-word translation for study.">Word for Word (2020)</option>
+          <option value="db:talalitani2012" title="Modern translation emphasizing clarity and readability.">Talal Itani (2012)</option>
+          <option value="db:talalitaniampampai2024" title="Modern translation emphasizing clarity and readability.">Talal Itani (2024)</option>
+          <option value="db:muhammadmarmadukepickthall" title="A highly regarded literary English translation.">Muhammad Marmaduke Pickthall</option>
+          <option value="db:mfarookmalik" title="Focused on clarity and easy comprehension for English readers.">M. Farook Malik</option>
+          <option value="db:abdulhye" title="Known for providing traditional Islamic perspectives in translation.">Abdul Hye</option>
+          <option value="db:mustafakhattab2018" title="Known for The Clear Quran, a simple and accurate translation.">Mustafa Khattab (Clear Quran)</option>
+        </optgroup>
       </select>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Arabic, Urdu, Farsi: phone only — G2 glasses show Latin-script translations.</span>
+      <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;font-style:normal;min-height:1.4em"></span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">No Urdu, Farsi, Hindi, Bengali, or Arabic on glasses — those show English instead.</span>
     </div>
   </div>
 
@@ -670,7 +694,7 @@ body {
         <button type="button" class="toggle-btn" id="btnCustomDeployed" onclick="setWhisperProvider('custom')">Custom</button>
       </div>
     </div>
-    <p class="s-hint" style="margin:0 0 10px 0;font-size:12px;color:var(--tc-2)">HF needs token + endpoint URL (backend .env). Custom = another HF cluster, CTranslate local, or Modal.</p>
+    <p class="s-hint" style="margin:0 0 10px 0;font-size:12px;color:var(--tc-2)">HF: set token + endpoint URL in backend .env where you host the app. Custom: override with in-app token + endpoint (another HF cluster, CTranslate local, or Modal).</p>
     <div class="s-row" id="rowWhisperEndpoint" style="display:none">
       <span class="s-label">Endpoint URL</span>
       <span class="s-hint">HF: *.endpoints.huggingface.cloud — Modal: *.modal.run — Local: http://localhost:...</span>
@@ -690,7 +714,7 @@ body {
 
   <div class="settings-footer">
     <div id="settingsVersion"></div>
-    Built with ♥ for the Ummah
+    Built with ♥ for the Ummah<br>by wasimlhr
   </div>
 </div>
 
@@ -773,21 +797,54 @@ body {
   }
 
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible' && S.isRecording) acquireWakeLock();
+    if (document.visibilityState === 'visible') {
+      if (S.isRecording) acquireWakeLock();
+      // Chrome/Android suspends AudioContext when screen off — resume when user returns
+      if (S.audioContext && S.audioContext.state === 'suspended') {
+        S.audioContext.resume().then(function () { log('Audio resumed', 'ok'); }).catch(function () {});
+      }
+      if (_noSleepAudio && _noSleepAudio.ctx && _noSleepAudio.ctx.state === 'suspended') {
+        _noSleepAudio.ctx.resume().catch(function () {});
+      }
+    }
   });
 
-  // ── Fast Mode ─────────────────────────────────────────────────────────────
-  var _fastMode = false;
+  // ── Pace Mode (Fast / Slow) ────────────────────────────────────────────────
+  var _fastMode = true;
+  var _slowMode = false;
   window.toggleFastMode = function () {
     _fastMode = !_fastMode;
-    var btn = document.getElementById('fastModeBtn');
-    btn.textContent = '⚡ Fast Mode: ' + (_fastMode ? 'On' : 'Off');
-    btn.classList.toggle('active', _fastMode);
+    if (_fastMode) _slowMode = false;
+    _updatePaceButtons();
+    S.settings.fastMode = _fastMode;
+    S.settings.slowMode = _slowMode;
+    saveSettings();
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
+      S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
     }
-    log('Fast mode ' + (_fastMode ? 'ON — faster timers, wider scan' : 'OFF'), _fastMode ? 'ok' : 'info');
+    log('Pace: ' + (_fastMode ? 'Fast' : _slowMode ? 'Slow' : 'Normal'), _fastMode || _slowMode ? 'ok' : 'info');
   };
+  window.toggleSlowMode = function () {
+    _slowMode = !_slowMode;
+    if (_slowMode) _fastMode = false;
+    _updatePaceButtons();
+    S.settings.fastMode = _fastMode;
+    S.settings.slowMode = _slowMode;
+    saveSettings();
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
+      S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
+    }
+    log('Pace: ' + (_slowMode ? 'Slow' : _fastMode ? 'Fast' : 'Normal'), _fastMode || _slowMode ? 'ok' : 'info');
+  };
+  function _updatePaceButtons() {
+    var fb = document.getElementById('fastModeBtn');
+    var sb = document.getElementById('slowModeBtn');
+    if (fb) { fb.classList.toggle('active', _fastMode); }
+    if (sb) { sb.classList.toggle('active', _slowMode); }
+  }
+  _updatePaceButtons();
 
   // ── Taraweeh Mode ──────────────────────────────────────────────────────────
   var _taraweehMode = false;
@@ -856,11 +913,21 @@ body {
     return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
   }
 
+  var DEFAULT_SETTINGS = {
+    lang: '',
+    defaultSurah: '0',
+    pipelineVersion: 'v3',
+    forcePhoneMic: false,
+    fastMode: true,
+    slowMode: false,
+  };
+
   function loadSettings() {
     try {
       const s = localStorage.getItem(SETTINGS_KEY);
-      return s ? JSON.parse(s) : {};
-    } catch { return {}; }
+      const saved = s ? JSON.parse(s) : {};
+      return { ...DEFAULT_SETTINGS, ...saved };
+    } catch { return { ...DEFAULT_SETTINGS }; }
   }
 
   function saveSettings() {
@@ -931,9 +998,10 @@ body {
       }
     } else if (s.type === 'fast_mode') {
       _fastMode = !!s.enabled;
-      var fb = document.getElementById('fastModeBtn');
-      fb.textContent = '⚡ Fast Mode: ' + (_fastMode ? 'On' : 'Off');
-      fb.classList.toggle('active', _fastMode);
+      _updatePaceButtons();
+    } else if (s.type === 'slow_mode') {
+      _slowMode = !!s.enabled;
+      _updatePaceButtons();
     } else if (s.type === 'taraweeh_mode') {
       _taraweehMode = !!s.enabled;
       var tb = document.getElementById('taraweehBtn');
@@ -982,8 +1050,8 @@ body {
   // ─── G2 display (2-container layout) ──────────────────────────────────────
   // Container 1 "hdr": top bar — status, surah, ayah (no event capture)
   // Container 2 "body": main area — translation (isEventCapture=1 for scroll/tap)
-  // Canvas: 576x288. 2 containers: header (32px), body (256px).
-  var G2_HDR_H  = 32;
+  // Canvas: 576x288. 2 containers: header (40px for spacing from line), body (248px).
+  var G2_HDR_H  = 40;
   var G2_BODY_Y = G2_HDR_H;
   var G2_BODY_H = 288 - G2_HDR_H;
 
@@ -996,8 +1064,8 @@ body {
           { containerID: 1, containerName: 'hdr',
             xPosition: 0, yPosition: 0, width: 576, height: G2_HDR_H,
             isEventCapture: 0,
-            borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 6,
-            content: 'Taraweeh Companion ' + APP_VERSION },
+            borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+            content: appTitleHdr() },
           { containerID: 2, containerName: 'body',
             xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
             isEventCapture: 1,
@@ -1011,39 +1079,29 @@ body {
   }
 
   // glassesUpdate receives { hdr, body } object from buildGlassesText
+  // G2: always use full rebuild — textContainerUpgrade can fail over BLE and leave display stuck
   function glassesUpdate(display) {
     if (!S.bridge) return;
     if (typeof display === 'string') display = { hdr: '', body: display };
     try {
-      if (!S.displayRebuilt) {
-        var hdrContent  = (display.hdr  || '').slice(0, 200);
-        var bodyContent = (display.body || '').slice(0, MAX_REBUILD_CHARS - 200);
-        S.bridge.rebuildPageContainer({
-          containerTotalNum: 2,
-          textObject: [
-            { containerID: 1, containerName: 'hdr',
-              xPosition: 0, yPosition: 0, width: 576, height: G2_HDR_H,
-              isEventCapture: 0,
-              borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 6,
-              content: hdrContent },
-            { containerID: 2, containerName: 'body',
-              xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
-              isEventCapture: 1,
-              borderWidth: 1, borderColor: 5, borderRdaius: 4, paddingLength: 8,
-              content: bodyContent },
-          ],
-        });
-        S.displayRebuilt = true;
-      } else {
-        var hdrContent  = (display.hdr  || '').slice(0, 500);
-        var bodyContent = (display.body || '').slice(0, MAX_UPGRADE_CHARS - 500);
-        S.bridge.textContainerUpgrade({
-          containerID: 1, containerName: 'hdr', content: hdrContent,
-        });
-        S.bridge.textContainerUpgrade({
-          containerID: 2, containerName: 'body', content: bodyContent,
-        });
-      }
+      var hdrContent  = (display.hdr  || '').slice(0, 200);
+      var bodyContent = (display.body || '').slice(0, MAX_REBUILD_CHARS - 200);
+      S.bridge.rebuildPageContainer({
+        containerTotalNum: 2,
+        textObject: [
+          { containerID: 1, containerName: 'hdr',
+            xPosition: 0, yPosition: 0, width: 576, height: G2_HDR_H,
+            isEventCapture: 0,
+            borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+            content: hdrContent },
+          { containerID: 2, containerName: 'body',
+            xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
+            isEventCapture: 1,
+            borderWidth: 1, borderColor: 5, borderRdaius: 4, paddingLength: 8,
+            content: bodyContent },
+        ],
+      });
+      S.displayRebuilt = true;
     } catch (e) { log('G2 display error: ' + e.message, 'err'); }
   }
 
@@ -1051,6 +1109,13 @@ body {
   var G2_CHARS = 55;   // chars per line — use full 576px width
   var G2_BODY_LINES = 11; // lines per page — use full body area
   var G2_DIV = '-'.repeat(G2_CHARS);  // single line — hyphen renders as one line (box char looked double)
+
+  function appTitleHdr() {
+    var left = 'Taraweeh Companion';
+    var right = APP_VERSION;
+    var pad = Math.max(1, 65 - left.length - right.length);
+    return left + ' '.repeat(pad) + right;
+  }
 
   function clip(s, n) { return (s || '').length > n ? s.slice(0, n - 1) + '\u2026' : (s || ''); }
 
@@ -1096,12 +1161,14 @@ body {
   var _cdDurationMs = 0;
   var _cdTimer      = null;
   var _cdLastHdr    = '';
+  var _cdLastBody   = '';
 
-  function startCountdown(durationMs, baseHdr) {
+  function startCountdown(durationMs, baseHdr, body) {
     stopCountdown();
     _cdStartMs    = Date.now();
     _cdDurationMs = durationMs;
     _cdLastHdr    = baseHdr;
+    _cdLastBody   = body || '';
     _tickCountdown();
     _cdTimer = setInterval(_tickCountdown, 500);
   }
@@ -1115,8 +1182,8 @@ body {
       var avail = Math.max(1, G2_CHARS - _cdLastHdr.length - tag.length);
       padded = _cdLastHdr + ' '.repeat(avail) + tag;
     }
-    if (S.bridge) {
-      try { S.bridge.textContainerUpgrade({ containerID: 1, containerName: 'hdr', content: padded.slice(0, 500) }); } catch (_) {}
+    if (S.isG2 && S.bridge) {
+      glassesUpdate({ hdr: padded, body: _cdLastBody });
     }
     // Update app timer pill
     var pill = document.getElementById('sPillTimer');
@@ -1151,14 +1218,15 @@ body {
           var cPad  = Math.max(1, G2_CHARS - cRef.length - cPct.length - 3);
           var cHdr  = '\u25CB ' + cRef + ' '.repeat(cPad) + cPct;
           var cPages = buildPages(transForGlasses, state.transliteration);
-          cPages[cPages.length - 1] += '\nconfirming\u2026';
+          var lockDots = (state._lockingDots !== undefined) ? '.'.repeat(state._lockingDots) : '\u2026';
+          cPages[cPages.length - 1] += '\nLocking' + lockDots + ' ' + (state.candidateScore || 0) + '%';
           return { hdr: cHdr, pages: cPages };
         }
         if (state.completedSurah) {
           var sName = state.completedSurahName || ('Surah ' + state.completedSurah);
           return { hdr: '\u2713 ' + clip(sName, 24) + ' complete', pages: ['Listening for next surah\u2026'] };
         }
-        return { hdr: 'Taraweeh Companion', pages: ['Recite any verse to begin.'] };
+        return { hdr: 'Listening', pages: ['\nSearching\u2026'] };
 
       case 'LOCKED': {
         var lName = state.surahName ? clip(state.surahName, 14) : 'Quran';
@@ -1192,7 +1260,7 @@ body {
         return { hdr: '\u26A0 Signal Lost', pages: ['Resume recitation.'] };
     
       default:
-        return { hdr: 'Taraweeh Companion', pages: ['Ready.'] };
+        return { hdr: appTitleHdr(), pages: ['Ready.'] };
     }
   }
 
@@ -1224,19 +1292,62 @@ body {
     var total    = display.pages.length;
     _pageMs      = total > 1 ? Math.floor(totalMs / total) : totalMs;
     var baseHdr  = showGlassesPage(display, 0);
-    startCountdown(_pageMs, baseHdr);
+    startCountdown(_pageMs, baseHdr, display.pages[0] || '');
     if (total > 1) {
       _pageTimer = setInterval(function () {
         _pageIdx++;
         if (_pageIdx >= total) { stopPageFlip(); return; }
         var h = showGlassesPage(_pageDisplay, _pageIdx);
-        startCountdown(_pageMs, h);
+        startCountdown(_pageMs, h, _pageDisplay.pages[_pageIdx] || '');
       }, _pageMs);
     }
   }
 
   function stopPageFlip() {
     if (_pageTimer) { clearInterval(_pageTimer); _pageTimer = null; }
+  }
+
+  // ─── Searching dots animation (G2) ────────────────────────────────────────
+  var _searchingDotsTimer = null;
+  var _searchingDotsIdx   = 0;
+
+  function startSearchingDots() {
+    stopSearchingDots();
+    _searchingDotsIdx = 0;
+    _searchingDotsTimer = setInterval(function () {
+      if (!S.isRecording || !S.isG2 || !S.bridge) return;
+      if (S._lastGlassesState && (S._lastGlassesState.isCandidate || S._lastGlassesState.mode === 'LOCKED')) {
+        stopSearchingDots();
+        return;
+      }
+      _searchingDotsIdx = (_searchingDotsIdx + 1) % 4;
+      var dots = '.'.repeat(_searchingDotsIdx);
+      glassesUpdate({ hdr: 'Listening', body: '\nSearching' + dots });
+    }, 400);
+  }
+
+  function stopSearchingDots() {
+    if (_searchingDotsTimer) { clearInterval(_searchingDotsTimer); _searchingDotsTimer = null; }
+  }
+
+  var _lockingDotsTimer = null;
+  var _lockingDotsIdx   = 0;
+
+  function startLockingDots() {
+    if (_lockingDotsTimer) return;
+    _lockingDotsIdx = 0;
+    _lockingDotsTimer = setInterval(function () {
+      if (!S.isRecording || !S.isG2 || !S.bridge) return;
+      var st = S._lastGlassesState;
+      if (!st || !st.isCandidate || st.mode === 'LOCKED') { stopLockingDots(); return; }
+      _lockingDotsIdx = (_lockingDotsIdx + 1) % 4;
+      var stateWithDots = { ...st, _lockingDots: _lockingDotsIdx };
+      showGlassesPage(buildGlassesText(stateWithDots), 0);
+    }, 400);
+  }
+
+  function stopLockingDots() {
+    if (_lockingDotsTimer) { clearInterval(_lockingDotsTimer); _lockingDotsTimer = null; }
   }
 
   // ─── Phone UI updater ─────────────────────────────────────────────────────
@@ -1247,9 +1358,10 @@ body {
     var locked = document.getElementById('lockedContent');
     var confRow = document.getElementById('confRow');
 
-    // Show verse panel when LOCKED, RESUMING, or when we have a strong candidate (>=40%)
+    // Show verse panel when LOCKED, RESUMING, or when we have a strong candidate (>=40%), or user searching
     var showVerse = state.mode === 'LOCKED' || state.mode === 'RESUMING'
-      || (state.isCandidate && state.arabic);
+      || (state.isCandidate && state.arabic)
+      || (state.mode === 'SEARCHING' && state.userSearching && state.arabic);
 
     // In taraweeh ruku/sajda, hide verse content (overlay takes over)
     if (_taraweehMode && (_taraweehPos === 'RUKU' || _taraweehPos === 'SAJDA')) {
@@ -1273,21 +1385,22 @@ body {
       var navRow = document.getElementById('verseNavRow');
       if (navRow) navRow.style.display = 'flex';
 
-      // Visual indicator: candidate vs locked
+      // Visual indicator: candidate vs locked vs user searching
       var versePosEl = document.getElementById('versePos');
       var isCandidate = state.isCandidate;
-      var scoreLabel = isCandidate ? ' \u007e' + (state.candidateScore || '') + '%' : '';
+      var isUserSearching = state.userSearching;
+      var scoreLabel = isCandidate ? ' \u007e' + (state.candidateScore || '') + '%' : (isUserSearching ? ' (Auto locking…)' : '');
       versePosEl.textContent =
         (state.surahName || '') + '  \u2022  Ayah ' + (state.ayah || '') + ' of ' + (state.ayahTotal || '?') + scoreLabel;
-      versePosEl.style.opacity = isCandidate ? '0.75' : '1';
+      versePosEl.style.opacity = (isCandidate || isUserSearching) ? '0.75' : '1';
 
       document.getElementById('verseArabic').textContent = state.arabic || '';
       document.getElementById('verseTranslit').textContent = state.transliteration || '';
       document.getElementById('verseTrans').textContent = state.translation || '';
 
-      // Dim the verse slightly while it's a candidate (still confirming)
+      // Dim the verse slightly while it's a candidate or user searching (still confirming)
       var verseCard = locked.querySelector ? locked.querySelector('.verse-card') : null;
-      if (verseCard) verseCard.style.opacity = isCandidate ? '0.75' : '1';
+      if (verseCard) verseCard.style.opacity = (isCandidate || isUserSearching) ? '0.75' : '1';
 
       // confidence from backend is 0-1 float
       var conf = isCandidate
@@ -1295,16 +1408,16 @@ body {
         : Math.round((state.confidence || 0) * 100);
       document.getElementById('confFill').style.width = conf + '%';
       document.getElementById('confPct').textContent = conf + '%';
-      confRow.style.display = (state.mode === 'LOCKED' || isCandidate) ? 'flex' : 'none';
+      confRow.style.display = (state.mode === 'LOCKED' || isCandidate || isUserSearching) ? 'flex' : 'none';
 
-      var statusLabel = isCandidate
-        ? '~ ' + (state.surahName || '') + ' \u2022 ' + (state.ayah || '') + ' (confirming…)'
+      var statusLabel = (isCandidate || state.userSearching)
+        ? 'Auto locking… ' + (state.surahName || '') + ' \u2022 ' + (state.ayah || '') + (isCandidate ? ' (' + (state.candidateScore || '') + '%)' : '')
         : (state.surahName || '') + ' \u2022 ' + (state.ayah || '');
-      setStatus(statusLabel, isCandidate ? '' : 'result');
+      setStatus(statusLabel, (isCandidate || state.userSearching) ? '' : 'result');
     } else {
       locked.style.display = 'none';
       var navRow = document.getElementById('verseNavRow');
-      if (navRow) navRow.style.display = 'none';
+      if (navRow) navRow.style.display = (state.mode === 'SEARCHING' && S.isRecording) ? 'flex' : 'none';
       searching.style.display = 'flex';
       confRow.style.display = 'none';
 
@@ -1401,9 +1514,12 @@ body {
         whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
         whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
         whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
-        pipelineVersion: S.settings.pipelineVersion || 'v2',
+        pipelineVersion: S.settings.pipelineVersion || 'v3',
+        fastMode: _fastMode,
+        slowMode: _slowMode,
       }));
-      if (_fastMode)     S.ws.send(JSON.stringify({ type: 'set_fast_mode',     enabled: true }));
+      S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
+      S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
       if (_taraweehMode) S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: true }));
       // If recording was already active (reconnect mid-session), re-send start
       if (S.isRecording) {
@@ -1484,9 +1600,9 @@ body {
       document.getElementById('lockWins').innerHTML = winsHtml;
       document.getElementById('lockMargin').textContent = 'gap: ' + (lp.margin || 0) + 'pt';
       document.getElementById('lockCoverage').textContent = 'cov: ' + (lp.coverage || 0) + '%';
-      var msg2 = lp.wins === 0 ? 'Waiting for first match…'
-        : lp.wins === 1 ? 'Need 1 more consistent win + ' + Math.max(0, 8 - lp.margin) + 'pt more gap'
-        : 'Locking…';
+      var msg2 = lp.wins === 0 ? 'Auto locking…'
+        : lp.wins === 1 ? 'Auto locking… ' + lp.wins + '/' + lp.winsRequired + ' wins'
+        : 'Auto locking…';
       document.getElementById('lockMsg').textContent = msg2;
     }
   }
@@ -1501,7 +1617,7 @@ body {
       if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN)
         S.ws.send(JSON.stringify({ type: 'start' }));
     } else if (msg.type === 'pipeline_version') {
-      var pv = (msg.version || 'v2').toUpperCase();
+      var pv = (msg.version || 'v3').toUpperCase();
       document.getElementById('versionEl').textContent = APP_VERSION + ' ' + pv;
       log('Pipeline: ' + pv, 'ok');
     } else if (msg.type === 'pace') {
@@ -1535,19 +1651,26 @@ body {
       if (S.isG2) {
         var prev = S._lastGlassesState || {};
         S._lastGlassesState = msg.state;
+        if (msg.state.isCandidate || msg.state.mode === 'LOCKED') stopSearchingDots();
+        if (msg.state.isCandidate) startLockingDots();
+        else stopLockingDots();
         var gDisplay = buildGlassesText(msg.state);
         if (msg.state.mode === 'LOCKED') {
           var ayahChanged = msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
           if (ayahChanged) {
+            // Force full rebuild so glasses reliably receive the new verse
+            // (textContainerUpgrade can fail to push over BLE in some cases)
+            S.displayRebuilt = false;
             var wc = (msg.state.arabic || '').split(/\s+/).length || 4;
             var rawMs = msg.state.timerMs || Math.max(3000, wc * 700);
             // Shave 500ms so the visual countdown finishes just before the next
             // ayah arrives, eliminating the "dead" gap between timer=0 and new text.
             var estMs = Math.max(1500, rawMs - 500);
             startPageFlip(gDisplay, estMs);
-          } else if (msg.state.timerMs && !_cdTimer) {
-            // Timer was capped/restarted on same ayah — keep countdown alive
-            startCountdown(msg.state.timerMs, gDisplay.hdr);
+          } else if (msg.state.timerMs && !_pageTimer) {
+            // Refresh countdown when we have timerMs — backend sends every 1s so
+            // countdown never disappears. Skip when in multi-page flip (has own timing).
+            startCountdown(msg.state.timerMs, gDisplay.hdr, gDisplay.pages[0] || '');
           }
         } else {
           stopPageFlip(); stopCountdown();
@@ -1763,7 +1886,7 @@ body {
         whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
         whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
         whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
-        pipelineVersion: S.settings.pipelineVersion || 'v2',
+        pipelineVersion: S.settings.pipelineVersion || 'v3',
       }));
       S.ws.send(JSON.stringify({ type: 'start' }));
       log('Reused existing WS, sent start', 'ok');
@@ -1771,8 +1894,8 @@ body {
 
     acquireWakeLock();
     var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
-    if (useBrowserMic) { startBrowserMic(); if (S.isG2) showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); }
-    else { startG2Mic(); showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); }
+    if (useBrowserMic) { startBrowserMic(); if (S.isG2) { showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); startSearchingDots(); } }
+    else { startG2Mic(); showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); startSearchingDots(); }
 
     // Show matching panel, hide idle state
     document.getElementById('matchIdle').style.display = 'none';
@@ -1806,8 +1929,8 @@ body {
     btn.textContent = S.isG2 ? '\u25CF Start Listening (G2 mic)' : 'Start Listening';
     btn.classList.remove('recording');
     setStatus('Stopped');
-    stopPageFlip(); stopCountdown();
-    if (S.isG2) glassesUpdate({ hdr: 'Taraweeh Companion', body: 'Stopped.' });
+    stopPageFlip(); stopCountdown(); stopSearchingDots(); stopLockingDots();
+    if (S.isG2) glassesUpdate({ hdr: appTitleHdr(), body: 'Stopped.' });
     updatePhoneUI({ mode: 'SEARCHING' });
   }
 
@@ -1872,6 +1995,21 @@ body {
     toggleWhisperFields();
   };
 
+  window.setMicSource = function (src) {
+    var isPhone = src === 'phone';
+    document.getElementById('btnG2Mic').classList.toggle('active', !isPhone);
+    document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
+  };
+
+  window.updateTranslationDesc = function () {
+    var sel = document.getElementById('settingLang');
+    var descEl = document.getElementById('translationDesc');
+    if (!sel || !descEl) return;
+    var opt = sel.options[sel.selectedIndex];
+    var title = opt ? opt.getAttribute('title') : '';
+    descEl.textContent = title || '';
+  };
+
   window.toggleWhisperFields = function () {
     var isCustom = document.getElementById('btnCustomDeployed').classList.contains('active');
     var epVal = (document.getElementById('settingWhisperEndpoint') || {}).value || '';
@@ -1894,14 +2032,36 @@ body {
     document.getElementById('settingWhisperModalSecret').value = S.settings.whisperModalSecret || '';
     document.getElementById('settingLang').value = S.settings.lang || '';
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
-    document.getElementById('settingPipeline').value = S.settings.pipelineVersion || 'v2';
-    document.getElementById('settingForcePhoneMic').checked = !!S.settings.forcePhoneMic;
+    document.getElementById('settingPipeline').value = S.settings.pipelineVersion || 'v3';
+    setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
+    updateTranslationDesc();
     toggleWhisperFields();
     checkBackend();
     updateMicStatus();
     document.getElementById('settingMicTest').onclick = requestMicFromSettings;
   };
+
+  function reinitPipeline() {
+    if (!S.ws || S.ws.readyState !== WebSocket.OPEN) return;
+    S.ws.send(JSON.stringify({
+      type: 'init',
+      preferredSurah: parseInt(S.settings.defaultSurah || '0'),
+      lang: (S.settings.lang || '').trim() || null,
+      hfToken: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
+      whisperProvider: S.settings.whisperProvider || null,
+      whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
+      whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
+      whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
+      pipelineVersion: S.settings.pipelineVersion || 'v3',
+      fastMode: _fastMode,
+      slowMode: _slowMode,
+    }));
+    S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
+    S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
+    if (_taraweehMode) S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: true }));
+    if (S.isRecording) S.ws.send(JSON.stringify({ type: 'start' }));
+  }
 
   window.hideSettings = function () {
     S.settings.backendUrl = document.getElementById('settingBackend').value.trim();
@@ -1913,8 +2073,9 @@ body {
     S.settings.lang = document.getElementById('settingLang').value;
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = document.getElementById('settingPipeline').value;
-    S.settings.forcePhoneMic = document.getElementById('settingForcePhoneMic').checked;
+    S.settings.forcePhoneMic = document.getElementById('btnPhoneMic').classList.contains('active');
     saveSettings();
+    reinitPipeline();
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('mainView').style.display = 'block';
   };
@@ -1975,7 +2136,11 @@ body {
     } catch (_) {}
 
     S.settings = loadSettings();
-    document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v2').toUpperCase();
+    _fastMode = !!S.settings.fastMode;
+    _slowMode = !!S.settings.slowMode;
+    if (_slowMode) _fastMode = false;
+    _updatePaceButtons();
+    document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v3').toUpperCase();
     populateSurahs();
     initWave();
 

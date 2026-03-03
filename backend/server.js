@@ -16,6 +16,7 @@ import { loadQuran } from './keywordMatcher.js';
 import { closeTranscription, PROVIDER } from './transcriptionRouter.js';
 import { AudioPipeline as AudioPipelineV1 } from './audioPipeline.js';
 import { AudioPipeline as AudioPipelineV2 } from './audioPipelineV2.js';
+import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
 
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
@@ -88,12 +89,14 @@ wss.on('connection', (ws, req) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   }
 
-  let pipelineVersion = 'v2';
+  let pipelineVersion = 'v3';
 
   function createPipeline(preferredSurah = 0, opts = {}, version) {
     if (pipeline) pipeline.destroy();
     if (version) pipelineVersion = version;
-    const Ctor = pipelineVersion === 'v1' ? AudioPipelineV1 : AudioPipelineV2;
+    const Ctor = pipelineVersion === 'v1' ? AudioPipelineV1
+      : pipelineVersion === 'v3' ? AudioPipelineV3
+      : AudioPipelineV2;
 
     const hasWhisperOverrides = opts.whisperProvider || opts.whisperEndpointUrl || opts.whisperApiKey || opts.hfToken;
     const ep = opts.whisperEndpointUrl || '';
@@ -120,6 +123,9 @@ wss.on('connection', (ws, req) => {
       onStatus: (s) => send({ type: 'sys_status', ...s }),
       onError: (err) => send({ type: 'error', error: err }),
     });
+    if (pipeline.setFastMode) pipeline.setFastMode(!!opts.fastMode);
+    if (pipeline.setSlowMode) pipeline.setSlowMode(!!opts.slowMode);
+    console.log(`[Init] Pace: ${opts.slowMode ? 'SLOW' : opts.fastMode ? 'FAST' : 'normal'}`);
     send({ type: 'pipeline_version', version: pipelineVersion });
   }
 
@@ -151,7 +157,7 @@ wss.on('connection', (ws, req) => {
           case 'init': {
             const surah = (typeof msg.preferredSurah === 'number' && msg.preferredSurah >= 1 && msg.preferredSurah <= 114)
               ? msg.preferredSurah : 0;
-            const ver = msg.pipelineVersion === 'v1' ? 'v1' : 'v2';
+            const ver = msg.pipelineVersion === 'v1' ? 'v1' : msg.pipelineVersion === 'v2' ? 'v2' : 'v3';
             console.log(`[Init] preferredSurah=${surah} pipeline=${ver}`);
             createPipeline(surah, msg, ver);
             _binaryLogged = false;
@@ -167,6 +173,7 @@ wss.on('connection', (ws, req) => {
           case 'manual_advance': pipeline?.manualAdvance(); break;
           case 'manual_prev': pipeline?.manualPrev(); break;
           case 'set_fast_mode': pipeline?.setFastMode(msg.enabled); break;
+          case 'set_slow_mode': pipeline?.setSlowMode(msg.enabled); break;
           case 'set_taraweeh_mode': pipeline?.setTaraweehMode(msg.enabled); break;
           case 'reset_rakat': pipeline?.resetRakat(); break;
         }

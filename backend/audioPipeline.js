@@ -81,11 +81,13 @@ const NOISE_WORDS = new Set([
   'مرحبا', 'مرحباً', 'اهلا', 'أهلاً', 'اهلاً',
   'صباح', 'مساء',
   'شكرا', 'شكراً',
+  'نانسي', 'قنقر',  // channel/translator names (e.g. ترجمة نانسي قنقر)
 ]);
 const NOISE_PHRASES = [
   'مرحبا بك', 'مرحباً بك', 'أهلا بك', 'اهلا بك',
   'صباح الخير', 'مساء الخير', 'كيف حالك',
   'شكرا لكم', 'ترجمه لكي', 'توقف عن الاشتراك', 'ماذا يفعلون',
+  'يا عمار',  // non-Quran: someone addressing "Ammar"
 ];
 
 // Pre-recitation phrases that Whisper may transcribe but are NOT Quranic verses.
