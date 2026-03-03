@@ -1079,29 +1079,37 @@ body {
   }
 
   // glassesUpdate receives { hdr, body } object from buildGlassesText
-  // G2: always use full rebuild — textContainerUpgrade can fail over BLE and leave display stuck
+  // Full rebuild on first use or ayah change; textContainerUpgrade for countdown (lightweight).
+  // Full rebuild every 500ms overwhelmed BLE — display lagged. Use upgrade for countdown ticks.
   function glassesUpdate(display) {
     if (!S.bridge) return;
     if (typeof display === 'string') display = { hdr: '', body: display };
     try {
-      var hdrContent  = (display.hdr  || '').slice(0, 200);
-      var bodyContent = (display.body || '').slice(0, MAX_REBUILD_CHARS - 200);
-      S.bridge.rebuildPageContainer({
-        containerTotalNum: 2,
-        textObject: [
-          { containerID: 1, containerName: 'hdr',
-            xPosition: 0, yPosition: 0, width: 576, height: G2_HDR_H,
-            isEventCapture: 0,
-            borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
-            content: hdrContent },
-          { containerID: 2, containerName: 'body',
-            xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
-            isEventCapture: 1,
-            borderWidth: 1, borderColor: 5, borderRdaius: 4, paddingLength: 8,
-            content: bodyContent },
-        ],
-      });
-      S.displayRebuilt = true;
+      if (!S.displayRebuilt) {
+        var hdrContent  = (display.hdr  || '').slice(0, 200);
+        var bodyContent = (display.body || '').slice(0, MAX_REBUILD_CHARS - 200);
+        S.bridge.rebuildPageContainer({
+          containerTotalNum: 2,
+          textObject: [
+            { containerID: 1, containerName: 'hdr',
+              xPosition: 0, yPosition: 0, width: 576, height: G2_HDR_H,
+              isEventCapture: 0,
+              borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+              content: hdrContent },
+            { containerID: 2, containerName: 'body',
+              xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
+              isEventCapture: 1,
+              borderWidth: 1, borderColor: 5, borderRdaius: 4, paddingLength: 8,
+              content: bodyContent },
+          ],
+        });
+        S.displayRebuilt = true;
+      } else {
+        var hdrContent  = (display.hdr  || '').slice(0, 500);
+        var bodyContent = (display.body || '').slice(0, MAX_UPGRADE_CHARS - 500);
+        S.bridge.textContainerUpgrade({ containerID: 1, containerName: 'hdr', content: hdrContent });
+        S.bridge.textContainerUpgrade({ containerID: 2, containerName: 'body', content: bodyContent });
+      }
     } catch (e) { log('G2 display error: ' + e.message, 'err'); }
   }
 
@@ -1162,6 +1170,7 @@ body {
   var _cdTimer      = null;
   var _cdLastHdr    = '';
   var _cdLastBody   = '';
+  var _cdTickCount  = 0;
 
   function startCountdown(durationMs, baseHdr, body) {
     stopCountdown();
@@ -1169,6 +1178,7 @@ body {
     _cdDurationMs = durationMs;
     _cdLastHdr    = baseHdr;
     _cdLastBody   = body || '';
+    _cdTickCount  = 0;
     _tickCountdown();
     _cdTimer = setInterval(_tickCountdown, 500);
   }
@@ -1183,7 +1193,11 @@ body {
       padded = _cdLastHdr + ' '.repeat(avail) + tag;
     }
     if (S.isG2 && S.bridge) {
-      glassesUpdate({ hdr: padded, body: _cdLastBody });
+      _cdTickCount++;
+      if (_cdTickCount % 4 === 1) {
+        S.displayRebuilt = false;
+        glassesUpdate({ hdr: padded, body: _cdLastBody });
+      }
     }
     // Update app timer pill
     var pill = document.getElementById('sPillTimer');
@@ -1219,7 +1233,7 @@ body {
           var cHdr  = '\u25CB ' + cRef + ' '.repeat(cPad) + cPct;
           var cPages = buildPages(transForGlasses, state.transliteration);
           var lockDots = (state._lockingDots !== undefined) ? '.'.repeat(state._lockingDots) : '\u2026';
-          cPages[cPages.length - 1] += '\nLocking' + lockDots + ' ' + (state.candidateScore || 0) + '%';
+          cPages[cPages.length - 1] += '\nAuto locking' + lockDots + ' ' + (state.candidateScore || 0) + '%';
           return { hdr: cHdr, pages: cPages };
         }
         if (state.completedSurah) {

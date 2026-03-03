@@ -30,8 +30,8 @@ const LOCK_MARGIN_MIN    = 5;     // score gap (% points) between #1 and #2
 const LOCK_COVERAGE_MIN  = 0.25;  // ≥25% of target ayah's words must be matched
 const LOCK_MIN_WORDS     = 3;     // matched words must be ≥ this to prevent single-word fast-locks
 const FAST_LOCK_SCORE    = 0.75;  // instant lock when score ≥ this AND margin ≥ 30
-const SINGLE_WIN_SCORE  = 0.45;  // solid IDF match on first chunk → lock
-const SINGLE_WIN_MARGIN = 8;     // 8 point gap to #2 required
+const SINGLE_WIN_SCORE  = 0.55;  // solid IDF match on first chunk → lock (raised for confident initial lock)
+const SINGLE_WIN_MARGIN = 12;    // 12 point gap to #2 required
 
 const SURAH_AYAH_COUNTS = [
   7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111,
@@ -104,16 +104,6 @@ export function processWhisperResult(whisperText, state, options = {}) {
 }
 
 function handleSearching(whisperText, state, preferredSurah, opts = {}) {
-  // User manually browsing: focus search on display position for faster auto-lock
-  const { preferredDisplaySurah, preferredDisplayAyah } = opts;
-  let seqHint;
-  if (preferredDisplaySurah > 0 && preferredDisplayAyah > 0) {
-    const fromAyah = Math.max(1, preferredDisplayAyah - 2);
-    const surahSize = SURAH_AYAH_COUNTS[preferredDisplaySurah - 1] ?? 286;
-    const toAyah = Math.min(surahSize, preferredDisplayAyah + 2);
-    seqHint = { surah: preferredDisplaySurah, fromAyah, toAyah };
-  }
-
   // After a surah completes, bias toward the NEXT surah (sequential order in Quran)
   // e.g. after Luqman (31) ends, boost As-Sajdah (32) ayah 1-10
   const lastSurah = state.lastLockedSurah;
@@ -122,8 +112,15 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   const surahJustCompleted = lastSurah > 0 && lastAyah >= lastSurahSize;
   const postFatiha = lastSurah === 1 && surahJustCompleted;
 
-  if (!seqHint) {
-  if (surahJustCompleted && lastSurah < 114 && lastSurah !== 1) {
+  let seqHint;
+  // User navigated with Prev/Next while searching — bias toward that area
+  if (opts.preferredDisplaySurah && opts.preferredDisplayAyah) {
+    seqHint = {
+      surah: opts.preferredDisplaySurah,
+      fromAyah: Math.max(1, opts.preferredDisplayAyah - 6),
+      toAyah: opts.preferredDisplayAyah + 6,
+    };
+  } else if (surahJustCompleted && lastSurah < 114 && lastSurah !== 1) {
     // Point to first ayahs of the NEXT surah (but NOT after Fatiha — in prayer Fatiha is
     // always followed by a different surah chosen by the imam, not necessarily surah 2).
     seqHint = { surah: lastSurah + 1, fromAyah: 1, toAyah: 10 };
@@ -133,16 +130,13 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   } else {
     seqHint = null;
   }
-  }
 
   // Mid-surah resync: always try same surah first, then fall back to global.
   // When surah just completed, also try the same surah — the display may have raced ahead.
   // EXCEPTION: after Fatiha (surah 1), skip the same-surah search entirely — the imam
   // will recite a completely different surah, so searching surah 1 is pure waste.
   let matches, keywords;
-  if (preferredDisplaySurah > 0 && preferredDisplayAyah > 0 && seqHint) {
-    ({ matches, keywords } = findAnchor(whisperText, preferredDisplaySurah, seqHint));
-  } else if (lastSurah > 0 && !postFatiha) {
+  if (lastSurah > 0 && !postFatiha) {
     const sameSurahResult = findAnchor(whisperText, lastSurah, seqHint);
     matches  = sameSurahResult.matches;
     keywords = sameSurahResult.keywords;
@@ -285,9 +279,9 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // Prefix-ambiguous blocks lock unless it's a refrain (identical repeated verse).
   const prefixBlocksLock = isPrefixAmbiguous && !refrainBypass;
 
-  // Fast-lock: unmistakably high confidence
+  // Fast-lock: unmistakably high confidence — require 3+ words (not 2) to avoid generic-word locks
   const isFastLock = top.score >= FAST_LOCK_SCORE && margin >= 30
-    && hasEnoughWords
+    && matchedWordCount >= LOCK_MIN_WORDS
     && (!isUnexpectedSurah || wins >= 2)
     && !isBismillahAmbiguous   // bismillah alone never fast-locks
     && !prefixBlocksLock;      // ambiguous prefix never fast-locks (refrain bypass ok)
@@ -314,7 +308,8 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && !isBismillahAmbiguous   // bismillah alone never high-margin-locks
     && !prefixBlocksLock;      // ambiguous prefix never high-margin-locks (refrain bypass ok)
 
-  // Sequential lock: candidate is in the expected next-verse range — only need 1 win
+  // Sequential lock: candidate is in the expected next-verse range — 1 win to display right away,
+  // still need confirmation (more wins) before we consider it a proper stable lock
   const isSeqLock = top.seqBoosted
     && (top.rawScore ?? top.score) >= 0.25
     && wins >= 1;
@@ -334,7 +329,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // even if individual margins are low (common words across surahs).
   const isSeqCarryLock = seqAdvance && wins >= 3
     && coverage >= LOCK_COVERAGE_MIN
-    && matchedWordCount >= 2
+    && matchedWordCount >= LOCK_MIN_WORDS
     && !isBismillahAmbiguous;
 
   // High-score lock: score >= 0.80 with 2+ wins and good coverage is unambiguous

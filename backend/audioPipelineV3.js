@@ -687,40 +687,8 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       } else {
-        // If we have a strong pending candidate and the display isn't running yet,
-        // start the timer immediately — don't wait for a perfect lock. The reciter
-        // keeps going and we need to keep up. If the anchor corrects later, we adjust.
-        const pending = this.state._pendingMatch;
-        const topMatch = this.state._matches?.[0];
-        const pendingScore = topMatch?.score ?? 0;
-        const uniqueWords = new Set(topMatch?.matchedWords || []).size;
-        const secondScore = this.state._matches?.[1]?.score ?? 0;
-        const margin = Math.round((pendingScore - secondScore) * 100);
-        // In RUKU/SAJDA: lower bar so recitation can recover from missed takbeers (sound/distortion)
-        const inPrayerPos = this.taraweehMode && (this._taraweehPos === 'RUKU' || this._taraweehPos === 'SAJDA');
-        const minScore = inPrayerPos ? 0.35 : 0.40;
-        const minWords = inPrayerPos ? 2 : 3;
-        const minMargin = inPrayerPos ? 5 : 10;
-        if (pending && pendingScore >= minScore && uniqueWords >= minWords && margin >= minMargin && this._displayAyah === 0) {
-          console.log(`[Pipeline] Strong candidate ${pending.surah}:${pending.ayah} (score=${(pendingScore*100).toFixed(0)}%, ${uniqueWords}uw, margin=${margin}) — starting display`);
-          this._displaySurah = pending.surah;
-          this._displayAyah  = pending.ayah;
-          this._sameAyahStreak = 0;
-          this._bumpCountForAyah = 0;
-          this._whisperSurah = pending.surah;
-          this._whisperAyah  = pending.ayah;
-          this._ayahStartTime = Date.now();
-          this._measuredWps = READ_WORDS_PER_SEC;
-          this._whisperLastConfirmMs = Date.now();
-          this._whisperLastConfirmAyah = pending.ayah;
-          this._whisperLastConfirmSurah = pending.surah;
-          if (this.taraweehMode && (this._taraweehPos === 'RUKU' || this._taraweehPos === 'SAJDA')) {
-            this._taraweehPos = 'QIYAM';
-            this._emitTaraweeh();
-          }
-          if (this.taraweehMode) this._taraweehLastFrom = 'reciting';
-          this._scheduleReadAdvance(Math.round(pendingScore * 100), 0, FIRST_LOCK_DURATION_FACTOR);
-        }
+        // Wait for anchor to lock — don't start display on weak candidates.
+        // Show candidate + "Auto locking" on glasses; only advance when properly locked.
         if (!stale()) this._emitState(text, rms);
         if (!stale()) this._advanceSearchWindow();
       }
@@ -946,18 +914,17 @@ export class AudioPipeline {
       }
 
       // ── Gradual slow-down: increase drift multiplier when confident ────
-      // Slower timer lets reciter catch up. Only bump when conf≥55% to avoid
-      // slowing on mishears. Caps at 2.5×.
+      // Slower timer lets reciter catch up. More aggressive (+0.25) to reduce drift.
       if (score >= REPEAT_BACK_CORRECT_MIN_CONF) {
-        this._driftMult = Math.min(2.5, this._driftMult + 0.15);
+        this._driftMult = Math.min(2.5, this._driftMult + 0.25);
       }
 
       console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} (lag=${lag}, conf=${score}%, drift=${this._driftMult.toFixed(2)}x, repeat=${this._behindRepeatCount}/${REPEAT_BACK_CORRECT_WINS}${refrainVerse ? ', refrain' : ''})`);
       return;
     }
 
-    // Not behind — decay drift multiplier back toward 1.0
-    this._driftMult = Math.max(1.0, this._driftMult - 0.10);
+    // Not behind — decay drift multiplier back toward 1.0 (faster recovery)
+    this._driftMult = Math.max(1.0, this._driftMult - 0.15);
     this._behindRepeatCount = 0;
     this._behindRepeatAyah  = 0;
 
@@ -1062,6 +1029,18 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       }
+      // Gap 1: instant catch-up — don't wait for smooth step, reduces drift
+      if (gap === 1) {
+        this._cancelReadAdvance();
+        this._displaySurah = confirmedSurah;
+        this._displayAyah  = confirmedAyah;
+        this._ayahStartTime = Date.now();
+        this.state = { ...this.state, surah: confirmedSurah, ayah: confirmedAyah,
+          lastLockedSurah: confirmedSurah, lastLockedAyah: confirmedAyah };
+        this._emitState(text, rms);
+        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
+        return;
+      }
       // Already in smooth catch-up — don't restart; rapid Whisper results would
       // otherwise cancel the timer and advance immediately, causing a 3-ayah jump.
       if (this._smoothAdvanceTimer) {
@@ -1073,18 +1052,12 @@ export class AudioPipeline {
       const stepMs = gap >= 4 ? 2000 : gap >= 3 ? 1600 : SMOOTH_ADVANCE_STEP_MS;
       console.log(`[Pipeline] Whisper :${confirmedAyah} ahead of display :${this._displayAyah} — catch-up (${gap} steps, ${stepMs}ms/step)`);
       this._smoothAdvanceTo(confirmedSurah, confirmedAyah, stepMs);
-    } else if (gap === 1) {
-      // Gap 1: trust the timer — it will advance soon. Avoids correction churn.
-      if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
-        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
-      }
-      this._emitState(text, rms);
-      return;
-    } else {
+    } else if (gap > 6) {
       console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${this._displayAyah} — anchor confused, ignoring`);
       if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
         this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
       }
+      this._emitState(text, rms);
     }
   }
 
@@ -1107,7 +1080,7 @@ export class AudioPipeline {
         }
         const rawWps = totalWords / (elapsedMs / 1000);
         const clampedWps = Math.max(0.5, Math.min(5.0, rawWps));
-        this._measuredWps = this._measuredWps * 0.4 + clampedWps * 0.6;
+        this._measuredWps = this._measuredWps * 0.3 + clampedWps * 0.7;
         console.log(`[Pipeline] Whisper clock: ${totalWords}w in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps`);
 
         this._updatePace(clampedWps, now);
@@ -1212,7 +1185,7 @@ export class AudioPipeline {
     // Word-based primary: reciters pace by words. Longer ayahs = more words = more time.
     const baseWps = this._measuredWps || READ_WORDS_PER_SEC;
     const paceRatio = baseWps / READ_WORDS_PER_SEC;
-    const trendMult = this._paceTrend > 0 ? 1.05 : this._paceTrend < 0 ? 0.95 : 1.0;
+    const trendMult = this._paceTrend > 0 ? 1.08 : this._paceTrend < 0 ? 0.92 : 1.0;
     // Pace mode: Fast = 1.3× speed (shorter per verse), Slow = 0.65× (20% slower than 0.78)
     const paceModeMult = this.fastMode ? 1.30 : this.slowMode ? 0.65 : 1.0;
     const wordMs = (wordCount / (baseWps * trendMult * paceModeMult)) * 1000;
