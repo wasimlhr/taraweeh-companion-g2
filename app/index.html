@@ -1668,6 +1668,10 @@ body {
         if (msg.state.isCandidate || msg.state.mode === 'LOCKED') stopSearchingDots();
         if (msg.state.isCandidate) startLockingDots();
         else stopLockingDots();
+        // Force full rebuild when leaving LOCKED or when candidate verse changes so G2 reliably gets updates (textContainerUpgrade can fail over BLE)
+        if ((prev.mode === 'LOCKED' && msg.state.mode !== 'LOCKED') ||
+            (msg.state.mode !== 'LOCKED' && (prev.surah !== msg.state.surah || prev.ayah !== msg.state.ayah)))
+          S.displayRebuilt = false;
         var gDisplay = buildGlassesText(msg.state);
         if (msg.state.mode === 'LOCKED') {
           var ayahChanged = msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
@@ -1944,7 +1948,10 @@ body {
     btn.classList.remove('recording');
     setStatus('Stopped');
     stopPageFlip(); stopCountdown(); stopSearchingDots(); stopLockingDots();
-    if (S.isG2) glassesUpdate({ hdr: appTitleHdr(), body: 'Stopped.' });
+    if (S.isG2) {
+      S.displayRebuilt = false;
+      glassesUpdate({ hdr: appTitleHdr(), body: 'Stopped.' });
+    }
     updatePhoneUI({ mode: 'SEARCHING' });
   }
 

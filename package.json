@@ -1,6 +1,6 @@
 {
   "name": "taraweeh-companion",
-  "version": "2.8.1",
+  "version": "2.8.3",
   "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "backend:dev": "cd backend && npm run dev",
     "qr": "evenhub qr --http --port 3001",
     "qr:url": "evenhub qr --url",
-    "qr:railway": "node scripts/qr-web-url.js",
+    "qr:railway": "node scripts/qr-web-url.js https://taraweeh.up.railway.app --png",
     "kill-backend": "node scripts/kill-port-3001.js",
     "test-pipeline": "cd backend && node testPipeline.js",
     "sim": "node node_modules/@evenrealities/evenhub-simulator/bin/index.js http://localhost:3001",
