@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+Thumbs.db
+.cursor/
+.claude/
+.vscode/
+
+# Training (scripts, data, checkpoints) — not needed for app deployment
+training/
+training/__pycache__/
+*.pt
+*.bin
+*.safetensors
+*.deb
+
+# Debug audio
+backend/debug_*.pcm
+backend/debug_*.wav
+
+# Build artifacts
+*.tar.gz
+tar-extract/
+qr.png
+.env

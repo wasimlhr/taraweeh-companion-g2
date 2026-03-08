@@ -1,14 +1,10 @@
 {
   "name": "taraweeh-companion",
-  "version": "2.8.3",
-  "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
+  "version": "2.8.4",
+  "description": "Taraweeh Companion \u2014 real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {
     "postinstall": "cd backend && npm install",
-    "modal:deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy-modal.ps1",
-    "modal:deploy-int8": "powershell -ExecutionPolicy Bypass -File scripts/deploy-modal.ps1 int8",
-    "modal:deploy-int4": "powershell -ExecutionPolicy Bypass -File scripts/deploy-modal.ps1 int4",
-    "modal:deploy-onnx": "powershell -ExecutionPolicy Bypass -File scripts/deploy-modal.ps1 onnx",
     "start": "cd backend && npm run start",
     "backend:dev": "cd backend && npm run dev",
     "qr": "evenhub qr --http --port 3001",

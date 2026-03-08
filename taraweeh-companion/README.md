@@ -153,12 +153,6 @@ The server starts on:
 
 **G2 mic when hosted online:** The Even Hub app may not stream G2 microphone audio when the app is loaded from a remote URL (e.g. Railway). This can be due to WebView or bridge restrictions for external origins. **Workaround:** Enable **Phone mic** (main screen or Settings) to use the phone's microphone instead.
 
-**Manual URL entry (if QR doesn't work):** The Even Hub app lets you enter a URL manually. Use the **full URL including port**:
-- `https://<your-pc-ip>:3443` (HTTPS — required for mic on LAN; accept the self-signed cert warning)
-- `http://<your-pc-ip>:3001` (HTTP — mic may be blocked on non-localhost)
-
-Replace `<your-pc-ip>` with your computer's LAN IP (e.g. `192.168.1.5`). Phone and PC must be on the same Wi‑Fi. If the page doesn't load, the WebView may be rejecting the self-signed certificate — try scanning the QR code from `npm run qr` instead, which uses the correct URL format.
-
 ### Phone-Only Mode
 
 Open `https://<your-lan-ip>:3443` in your phone browser (accept the self-signed cert warning). The full UI works without glasses connected.
@@ -189,13 +183,9 @@ The app is designed to use a **custom Whisper endpoint**. Choose one:
 
 | Option | Setup | Latency | Cost |
 |--------|-------|---------|------|
-| **HF Inference Endpoint** | Deploy **[whisper-quran-v1](https://huggingface.co/wasimlhr/whisper-quran-v1)** (fp16) → set `WHISPER_ENDPOINT_URL` | ~2–3 s/chunk | ~$0.60/hr GPU |
+| **HF Inference Endpoint** | Deploy [whisper-quran-v1](https://huggingface.co/wasimlhr/whisper-quran-v1) → set `WHISPER_ENDPOINT_URL` | ~2–3 s/chunk | ~$0.60/hr GPU |
 | **Modal** | Deploy Whisper on [Modal](https://modal.com) → set `WHISPER_ENDPOINT_URL` to `*.modal.run` | ~2–4 s/chunk | Pay-per-use GPU |
-
-**Important:** On HuggingFace Inference Endpoint you **must** use **wasimlhr/whisper-quran-v1** (fp16). Do **not** use whisper-quran-v1-int8 or -int4 there — the default HF image does not include bitsandbytes, so those models will fail to start. For int8/int4 use Modal instead. See [HF_ENDPOINT_README.md](HF_ENDPOINT_README.md).
 | **Local Python server** | Run `whisper_server.py` → set `USE_LOCAL_WHISPER=true` | ~1–2 s/chunk | Hardware only |
-
-**Deploy Modal (int8, int4, or ONNX):** Install Modal (`pip install modal`), log in (`modal token new`), then from the repo root run `npm run modal:deploy` (int8 + int4), or `npm run modal:deploy-int8` / `npm run modal:deploy-int4` / `npm run modal:deploy-onnx`. Models: [whisper-quran-v1-int8](https://huggingface.co/wasimlhr/whisper-quran-v1-int8), [whisper-quran-v1-int4](https://huggingface.co/wasimlhr/whisper-quran-v1-int4), [whisper-quran-v1-onnx-quantized](https://huggingface.co/wasimlhr/whisper-quran-v1-onnx-quantized). Set `WHISPER_ENDPOINT_URL` to the URL Modal prints after deploy.
 
 **HF token:** Required when using an **HF Inference Endpoint** — set `HUGGINGFACE_TOKEN` for authentication. Not needed for Modal or local server.
 
@@ -311,6 +301,6 @@ This project is for personal and educational use. The Quran text data is in the 
 
 - **Even Realities** — G2 smart glasses and SDK
 - **OpenAI** — Whisper speech recognition model
-- **Tarteel AI** — Quran recitation training data
+- **Buraaq** — Quran recitation training data
 - **quran-json** — Structured Quran text corpus
 - **Sahih International** — English translation
