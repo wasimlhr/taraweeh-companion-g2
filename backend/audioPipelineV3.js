@@ -69,7 +69,7 @@ const PAUSE_ANALYSIS_BYTES = Math.floor(BYTES_PER_MS * PAUSE_ANALYSIS_MS);
 const PAUSE_THRESHOLD      = parseFloat(process.env.PAUSE_THRESHOLD   || '0.005');
 const PAUSE_ADVANCE_MS     = parseInt(process.env.PAUSE_ADVANCE_MS    || '2500', 10);
 const PAUSE_COOLDOWN_MS    = parseInt(process.env.PAUSE_COOLDOWN_MS   || '6000', 10);
-const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '4000', 10);
+const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '2000', 10);
 
 const BASE_DISPLAY_LEAD = 2;
 const BLOCKED_FORCE_UNBLOCK_MS = 8000;  // Force-unblock after 8s even without real Whisper match
