@@ -500,7 +500,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.7.10</span>
+      <span class="version" id="versionEl">v2.8.4</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -720,7 +720,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.7.10';
+  const APP_VERSION = 'v2.8.4';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -810,7 +810,7 @@ body {
   });
 
   // ── Pace Mode (Fast / Slow) ────────────────────────────────────────────────
-  var _fastMode = true;
+  var _fastMode = false;
   var _slowMode = false;
   window.toggleFastMode = function () {
     _fastMode = !_fastMode;

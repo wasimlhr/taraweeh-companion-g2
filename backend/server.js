@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v5.0.1 — spotCheck refrain fix
+ * v5.0.2 — back-correction cooldown, higher snap-back threshold, stronger fast/slow modes
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -123,13 +123,16 @@ wss.on('connection', (ws, req) => {
       onStatus: (s) => send({ type: 'sys_status', ...s }),
       onError: (err) => send({ type: 'error', error: err }),
     });
-    if (pipeline.setFastMode) pipeline.setFastMode(!!opts.fastMode);
-    if (pipeline.setSlowMode) pipeline.setSlowMode(!!opts.slowMode);
-    console.log(`[Init] Pace: ${opts.slowMode ? 'SLOW' : opts.fastMode ? 'FAST' : 'normal'}`);
+    // Ignore client fast/slow — learned pace handles it. Client localStorage
+    // may have stale fastMode=true from old defaults.
+    if (pipeline.setFastMode) pipeline.setFastMode(false);
+    if (pipeline.setSlowMode) pipeline.setSlowMode(false);
+    console.log(`[Init] Pace: normal (client sent: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'})`);
     send({ type: 'pipeline_version', version: pipelineVersion });
   }
 
-  createPipeline(0, {});
+  // Don't eagerly create — client sends 'init' message with settings.
+  // Eager creation caused duplicate pipelines (old one's callbacks leaked).
 
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
@@ -214,6 +217,11 @@ if (httpsServer) {
 }
 
 process.on('SIGTERM', async () => {
+  console.log('[Server] SIGTERM received — shutting down');
+  // Close all WebSocket connections (triggers 'close' → pipeline.destroy())
+  wss.clients.forEach(ws => ws.terminate());
   await closeTranscription();
-  httpServer.close();
+  httpServer.close(() => process.exit(0));
+  // Force exit after 5s if graceful close hangs
+  setTimeout(() => process.exit(1), 5000).unref();
 });

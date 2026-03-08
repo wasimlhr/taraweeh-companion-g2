@@ -21,11 +21,12 @@ const SEARCH_WINDOWS_MS = [3000, 5000, 8000, 12000, 20000];
 const MAX_SEARCH_BUF_MS = 35000;
 
 // Use 3s chunks continuously (same as search start) — faster feedback, consistent logic
-const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '3000', 10);
-const LOCKED_MAX_MS    = parseInt(process.env.LOCKED_MAX_MS    || '6000', 10);
+const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '2000', 10);
+const LOCKED_MAX_MS    = parseInt(process.env.LOCKED_MAX_MS    || '4000', 10);
 // 3s chunks → 4 misses = 12s (too fast). 12 misses ≈ 36s, similar to 10s chunks × 4.
-const MISSED_BEFORE_RESUMING_V3 = parseInt(process.env.MISSED_BEFORE_RESUMING_V3 || '12', 10);
-const MISSED_BEFORE_LOST_V3     = parseInt(process.env.MISSED_BEFORE_LOST_V3 || '12', 10);
+// 2s chunks → 16 misses ≈ 32s before resuming (same effective time as 12 × 3s)
+const MISSED_BEFORE_RESUMING_V3 = parseInt(process.env.MISSED_BEFORE_RESUMING_V3 || '16', 10);
+const MISSED_BEFORE_LOST_V3     = parseInt(process.env.MISSED_BEFORE_LOST_V3 || '16', 10);
 const LOCKED_MIN_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MIN_MS);
 const LOCKED_MAX_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MAX_MS);
 
@@ -34,25 +35,27 @@ const READ_ADVANCE_CONFIDENCE  = parseInt(process.env.READ_ADVANCE_CONFIDENCE   
 const READ_WORDS_PER_SEC       = parseFloat(process.env.READ_WORDS_PER_SEC       || '1.15');
 const READ_ADVANCE_MIN_MS      = parseInt(process.env.READ_ADVANCE_MIN_MS        || '4000',  10);
 // No hard cap — transliteration + pace mode determine duration. 90s safety only for bugs.
-const READ_ADVANCE_MAX_MS      = parseInt(process.env.READ_ADVANCE_MAX_MS        || '90000', 10);
+const READ_ADVANCE_MAX_MS      = parseInt(process.env.READ_ADVANCE_MAX_MS        || '55000', 10);
 const READ_ADVANCE_CONFIRM_BUMP_MS = parseInt(process.env.READ_ADVANCE_CONFIRM_BUMP_MS || '2500', 10);
 const SMOOTH_ADVANCE_STEP_MS   = parseInt(process.env.SMOOTH_ADVANCE_STEP_MS     || '1200',  10);
 // By first lock we've matched 3–6s of audio — reciter is near end of ayah; advance quickly
 const FIRST_LOCK_DURATION_FACTOR = parseFloat(process.env.FIRST_LOCK_DURATION_FACTOR || '0.25', 10);
 // After catch-up or back-correct: reciter is partway through ayah — use shorter timer
 const CORRECTED_DURATION_FACTOR = parseFloat(process.env.CORRECTED_DURATION_FACTOR || '0.5', 10);
+// Cooldown after back-correction: suppress further back-corrections for this many ms
+const BACK_CORRECT_COOLDOWN_MS = parseInt(process.env.BACK_CORRECT_COOLDOWN_MS || '5000', 10);
 // User manual: press Prev when display 1 ayah ahead → logic advances too fast. Add lag to align.
 // Mode-aware: Slow needs more lag (measured reciters), Fast less (keep up).
-const DISPLAY_LAG_BASE_MS = parseInt(process.env.DISPLAY_LAG_MS || '1800', 10);
+const DISPLAY_LAG_BASE_MS = parseInt(process.env.DISPLAY_LAG_MS || '1200', 10);
 
 const PAUSE_ANALYSIS_MS    = parseInt(process.env.PAUSE_ANALYSIS_MS   || '250',  10);
 const PAUSE_ANALYSIS_BYTES = Math.floor(BYTES_PER_MS * PAUSE_ANALYSIS_MS);
 const PAUSE_THRESHOLD      = parseFloat(process.env.PAUSE_THRESHOLD   || '0.005');
 const PAUSE_ADVANCE_MS     = parseInt(process.env.PAUSE_ADVANCE_MS    || '2500', 10);
 const PAUSE_COOLDOWN_MS    = parseInt(process.env.PAUSE_COOLDOWN_MS   || '6000', 10);
-const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '30000', 10);
+const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '4000', 10);
 
-const BASE_DISPLAY_LEAD = 2;
+const BASE_DISPLAY_LEAD = 1;
 
 // ── Noise filtering ──────────────────────────────────────────────────────────
 
@@ -165,7 +168,9 @@ function isNoise(text) {
   return false;
 }
 
-const TAKBEER_RE = /^الله\s+(ال)?[اأآ]كبا?ر/u;
+// Whisper often garbles takbeer: أكبى/اكبي/اكبا/أكبر — match all variants.
+// Don't require ^ — noise words may precede it in 2s chunks.
+const TAKBEER_RE = /الله\s*(ال)?[اأآ]كب[رىياً]/u;
 function isTakbeer(text) {
   if (!text) return false;
   const n = text.replace(/[\u064b-\u065f\u0670\u0640]/g, '').trim();
@@ -218,6 +223,7 @@ export class AudioPipeline {
     this._pauseAccumMs       = 0;
     this._lastPauseAdvanceMs = 0;
     this._lastManualAdjustMs = 0;
+    this._lastBackCorrectMs = 0;  // cooldown after back-correction to prevent ping-pong
 
     this.fastMode = false;
     this.slowMode = false;  // paceMode: normal | fast | slow (fast and slow mutually exclusive)
@@ -232,6 +238,10 @@ export class AudioPipeline {
     this._driftMult         = 1.0;  // >1.0 = display running ahead, slows timer gradually
     this._sameAyahStreak    = 0;    // consecutive confirms of same ayah at display (reciter repeating)
     this._bumpCountForAyah  = 0;    // bumps applied this ayah — capped to avoid indefinite extension
+
+    // Learned pace: measured from manual advance clicks (ms per word)
+    this._measuredMsPerWord = 0;   // 0 = no data yet, use default
+    this._msPerWordSamples  = [];  // last 6 samples for rolling average
 
     // Pace tracking: rolling window of recent WPS samples for trend detection
     this._paceHistory    = [];   // [{wps, ts}] — last 8 measurements
@@ -375,6 +385,8 @@ export class AudioPipeline {
       this._resetSearchBuf();
     } else {
       const from = `${this._displaySurah}:${this._displayAyah}`;
+      // Learn pace from how long user stayed on previous ayah
+      this._learnPaceFromManual();
       this._sameAyahStreak = 0;
       this._bumpCountForAyah = 0;
       this._displayAyah++;
@@ -389,6 +401,30 @@ export class AudioPipeline {
       this._scheduleReadAdvance(Math.max(this.state.confidence, 65));
     }
     this._emitState(null, null);
+  }
+
+  // Learn reciter pace from manual advance: how long did user stay on previous ayah?
+  _learnPaceFromManual() {
+    if (!this._ayahStartTime) return;
+    const elapsedMs = Date.now() - this._ayahStartTime;
+    if (elapsedMs > 120000) return; // stale, ignore
+    const verse = getVerseData(this._displaySurah, this._displayAyah, this.translationLang);
+    if (!verse) return;
+    const translit = verse.transliteration || '';
+    const wc = Math.max(1, translit ? translit.split(/\s+/).length : (verse.arabic ? verse.arabic.split(/\s+/).length : 0));
+    if (wc < 3) return; // too short to learn from
+    const sample = Math.round(elapsedMs / wc);
+    // Only learn from realistic pace: 500-4000 ms/word.
+    // Below 500 = rapid tap/correction. Above 4000 = paused/distracted.
+    if (sample < 500 || sample > 4000) {
+      console.log(`[Pipeline] Pace ignored: ${wc}w in ${(elapsedMs/1000).toFixed(1)}s = ${sample}ms/w (outside 500-4000 range)`);
+      return;
+    }
+    this._msPerWordSamples.push(sample);
+    if (this._msPerWordSamples.length > 6) this._msPerWordSamples.shift();
+    const avg = Math.round(this._msPerWordSamples.reduce((a, b) => a + b, 0) / this._msPerWordSamples.length);
+    this._measuredMsPerWord = avg;
+    console.log(`[Pipeline] Pace learned: ${wc}w in ${(elapsedMs/1000).toFixed(1)}s = ${sample}ms/w → avg ${avg}ms/w (${this._msPerWordSamples.length} samples)`);
   }
 
   manualPrev() {
@@ -439,8 +475,16 @@ export class AudioPipeline {
   }
 
   destroy() {
-    this._cancelReadAdvance();
-    this._resetSearchBuf();
+    this.active = false;           // stop all processing & stale-check in-flight Whisper
+    this._stopTimerHeartbeat();     // kill 500ms emit interval
+    this._cancelReadAdvance();      // clear display-advance & smooth-advance timers
+    this._resetSearchBuf();         // free search buffers
+    this._lockedBuf = Buffer.alloc(0);
+    this.processing = false;
+    this.onStateUpdate = () => {};  // swallow any late callbacks
+    this.onStatus = () => {};
+    this.onError = () => {};
+    console.log('[Pipeline] Destroyed');
   }
 
   // ── Ingest ─────────────────────────────────────────────────────────────────
@@ -468,10 +512,17 @@ export class AudioPipeline {
         this._lockedBuf = this._lockedBuf.subarray(this._lockedBuf.length - LOCKED_MAX_BYTES);
       }
 
-      if (this._lockedBuf.length >= LOCKED_MIN_BYTES && !this.processing) {
+      // Slow mode: use larger chunks (4s min) so Whisper gets enough words to match.
+      // 2s chunks for slow reciters yield 1 word → spotCheck can't match → all noise.
+      // Always use 4s chunks — 2s gives only 1-2 words, not enough for spotCheck
+      const minBytes = Math.floor(BYTES_PER_MS * 4000);
+      if (this._lockedBuf.length >= minBytes && !this.processing) {
         const chunk = Buffer.from(this._lockedBuf);
+        const bufMs = Math.round(chunk.length / BYTES_PER_MS);
+        const sinceLastCall = this._lastLockedCall ? Date.now() - this._lastLockedCall : 0;
         this._lockedBuf = Buffer.alloc(0);
         this._lastLockedCall = Date.now();
+        console.log(`[Pipeline] Locked chunk ${bufMs}ms (${Math.round(chunk.length/1024)}KB) gap=${sinceLastCall}ms`);
         this._processLockedChunk(chunk);
       }
     } else {
@@ -849,10 +900,10 @@ export class AudioPipeline {
           finalResult = { ...anchorResult, ayah: minAnchorAyah };
         }
         this.state = finalResult;
-        // Always route to _onWhisperConfirm — no immediate back-correct.
-        // When behind: gradual drift (slow timer) lets reciter catch up; only
-        // back-correct on strong repeat evidence (4× same ayah, high conf).
-        this._onWhisperConfirm(finalResult.surah, finalResult.ayah, finalResult.confidence, text, rms);
+        // _locked = spotCheck found a real word match; false = noise/miss.
+        // Pass this through so the timer hold only fires on real confirms.
+        const realMatch = !!finalResult._locked;
+        this._onWhisperConfirm(finalResult.surah, finalResult.ayah, finalResult.confidence, text, rms, realMatch);
       }
     } catch (err) {
       console.error('[Pipeline] Locked chunk error:', err.message);
@@ -862,7 +913,7 @@ export class AudioPipeline {
 
   // ── Core V2: single handler for Whisper confirmations in LOCKED mode ───────
 
-  _onWhisperConfirm(confirmedSurah, confirmedAyah, score, text, rms) {
+  _onWhisperConfirm(confirmedSurah, confirmedAyah, score, text, rms, realMatch = true) {
     const sameSurah = confirmedSurah === this._displaySurah;
 
     // ── Always ratchet _whisperAyah forward (never backward) ───────────────
@@ -882,11 +933,17 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       }
+      // Post-back-correction cooldown: don't snap back again right away
+      if (this._lastBackCorrectMs && (Date.now() - this._lastBackCorrectMs) < BACK_CORRECT_COOLDOWN_MS) {
+        console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} — ignoring (back-correct cooldown)`);
+        this._emitState(text, rms);
+        return;
+      }
       const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
       const lag = this._displayAyah - confirmedAyah;
-      // lag=1: trust single conf≥48% — next chunk often "catches up" before we get 2nd, so we never back-correct
-      const REPEAT_BACK_CORRECT_WINS = lag === 1 && score >= 48 ? 1 : (lag === 1 ? 2 : 3);
-      const REPEAT_BACK_CORRECT_MIN_CONF = 55;
+      // lag=1: require 2 consecutive reports (was 1 for score>=48) — reduces false snap-backs
+      const REPEAT_BACK_CORRECT_WINS = lag === 1 ? 2 : 3;
+      const REPEAT_BACK_CORRECT_MIN_CONF = 65;
 
       // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
       if (!refrainVerse && confirmedAyah === this._behindRepeatAyah && score >= REPEAT_BACK_CORRECT_MIN_CONF) {
@@ -903,6 +960,7 @@ export class AudioPipeline {
         this._displayAyah  = confirmedAyah;
         this._driftMult    = 1.0;
         this._ayahStartTime = Date.now();
+        this._lastBackCorrectMs = Date.now();  // start cooldown to prevent ping-pong
         this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
           lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
         console.log(`[Pipeline] Reciter repeat detected: display → :${confirmedAyah} (${this._behindRepeatCount}x, conf=${score}%)`);
@@ -941,73 +999,21 @@ export class AudioPipeline {
       return;
     }
 
-    // ── Rule 3: Whisper at display position → confirm, bump timer ─────────
-    // Whisper confirms reciter is in start/middle of ayah — add a bit more
-    // time so display stays in sync with reciter.
+    // ── Rule 3: Whisper at display position → on track ──
+    // Just log. Don't touch the timer — it's set from learned pace.
+    // Whisper detecting NEXT ayah (Rule 4) drives the advance.
     if (confirmedAyah === this._displayAyah) {
       this._driftMult = 1.0;
-      this._sameAyahStreak++;
-      const BUMP_CAP_PER_AYAH = 2;
-      const BUMP_REMAINING_THRESHOLD_MS = 12000;
-      console.log(`[Pipeline] Whisper confirms :${confirmedAyah} = display (conf=${score}%, streak=${this._sameAyahStreak}, bumps=${this._bumpCountForAyah}) — on track`);
-      if (this._displayAdvanceTimer && this._timerStartedAt && this._nextAdvanceMs > 0) {
+      if (realMatch) this._sameAyahStreak++;
+      if (this._displayAdvanceTimer && this._timerStartedAt) {
         const elapsed = Date.now() - this._timerStartedAt;
         const remaining = Math.max(0, this._nextAdvanceMs - elapsed);
-        // Skip bump when <12s left — advance is imminent; bumping felt like timer reset
-        const canBump = remaining >= BUMP_REMAINING_THRESHOLD_MS
-          && this._bumpCountForAyah < BUMP_CAP_PER_AYAH
-          && this._sameAyahStreak < 2;  // reciter repeating: stop bumping, let timer run
-        if (!canBump) {
-          this._emitState(text, rms);
-          return;
+        console.log(`[Pipeline] Whisper ${realMatch ? 'confirms' : 'noise→'} :${confirmedAyah} (${Math.round(remaining/1000)}s left, streak=${this._sameAyahStreak})`);
+      } else {
+        console.log(`[Pipeline] Whisper ${realMatch ? 'confirms' : 'noise→'} :${confirmedAyah} (streak=${this._sameAyahStreak})`);
+        if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
+          this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
         }
-        const bumped = Math.min(remaining + READ_ADVANCE_CONFIRM_BUMP_MS, READ_ADVANCE_MAX_MS);
-        if (bumped > remaining) {
-          this._bumpCountForAyah++;
-          this._cancelReadAdvance();
-          this._nextAdvanceMs  = bumped;
-          this._timerStartedAt = Date.now();
-          this._displayAdvanceTimer = setTimeout(() => {
-            this._displayAdvanceTimer = null;
-            this._nextAdvanceMs  = 0;
-            this._timerStartedAt = 0;
-            if (!this._canDisplayAdvance()) return;
-            const nextAyahData = getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
-            if (!nextAyahData) {
-              const prevSurah = this._displaySurah;
-              const prevAyah  = this._displayAyah;
-              this._completedSurah = prevSurah;
-              this._displaySurah = 0;
-              this._displayAyah  = 0;
-              this._whisperSurah = 0;
-              this._whisperAyah  = 0;
-              this._driftMult    = 1.0;
-              this._measuredWps  = READ_WORDS_PER_SEC;
-              this._behindRepeatCount = 0;
-              this._behindRepeatAyah  = 0;
-              this._sameAyahStreak = 0;
-              this._bumpCountForAyah = 0;
-              this.state = { ...createState(), mode: 'SEARCHING',
-                lastLockedSurah: prevSurah, lastLockedAyah: prevAyah };
-              this._restorePreRukuIfNeeded(prevSurah);
-              this._resetSearchBuf();
-              console.log(`[Pipeline] Read-advance: end of surah ${prevSurah} — soft reset, searching for next`);
-            } else {
-              this._sameAyahStreak = 0;
-              this._bumpCountForAyah = 0;
-              this._displayAyah++;
-              this._ayahStartTime = Date.now();
-              this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
-                lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
-              console.log(`[Pipeline] Read-advance → ${this._displaySurah}:${this._displayAyah}`);
-              this._scheduleReadAdvance(this.state.confidence);
-            }
-            this._emitState(null, null);
-          }, bumped);
-          console.log(`[Pipeline] Timer bumped +${READ_ADVANCE_CONFIRM_BUMP_MS}ms (${Math.round(remaining/1000)}s → ${Math.round(bumped/1000)}s)`);
-        }
-      } else if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
-        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
       }
       this._emitState(text, rms);
       return;
@@ -1151,10 +1157,12 @@ export class AudioPipeline {
     this._cancelReadAdvance();
     if (!this._canDisplayAdvance()) return;
 
-    // Informational: log when display is running ahead of Whisper (no blocking)
+    // BLOCK display from racing ahead of Whisper. If display is already
+    // 2+ ayahs ahead, wait for Whisper to catch up before scheduling more.
     const nextAyah = this._displayAyah + 1;
     if (this._whisperAyah > 0 && (nextAyah - this._whisperAyah) > this._maxDisplayLead) {
-      console.log(`[Pipeline] Display ahead: :${this._displayAyah} (whisper :${this._whisperAyah}, lead=${this._displayAyah - this._whisperAyah}) — continuing`);
+      console.log(`[Pipeline] Display BLOCKED: :${this._displayAyah} (whisper :${this._whisperAyah}, lead=${this._displayAyah - this._whisperAyah}) — waiting for Whisper`);
+      return;
     }
 
     if (confidence < READ_ADVANCE_CONFIDENCE) {
@@ -1182,45 +1190,30 @@ export class AudioPipeline {
     const noonEndings = (translit.match(/oon|een|aan/gi) || []).length;
     const elongBonusMs = strongElong * 200 + noonEndings * 150;
 
-    // Word-based primary: reciters pace by words. Longer ayahs = more words = more time.
-    const baseWps = this._measuredWps || READ_WORDS_PER_SEC;
-    const paceRatio = baseWps / READ_WORDS_PER_SEC;
-    const trendMult = this._paceTrend > 0 ? 1.08 : this._paceTrend < 0 ? 0.92 : 1.0;
-    // Pace mode: Fast = 1.3× speed (shorter per verse), Slow = 0.65× (20% slower than 0.78)
-    const paceModeMult = this.fastMode ? 1.30 : this.slowMode ? 0.65 : 1.0;
-    const wordMs = (wordCount / (baseWps * trendMult * paceModeMult)) * 1000;
-
-    // Char-based fallback: long ayahs with few transliteration words need char scaling.
-    const baseCps = (this.fastMode ? 11 : this.slowMode ? 5.2 : 8) * paceRatio * trendMult;
-    const charMs = (charCount / baseCps) * 1000;
-
-    // Take the longer — never skip long verses. Add elong + 8% padding.
-    const rawMs = Math.max(wordMs, charMs) + elongBonusMs;
-    const fullLagMs = this.slowMode ? Math.round(DISPLAY_LAG_BASE_MS * 1.68) : this.fastMode ? Math.round(DISPLAY_LAG_BASE_MS * 0.7) : DISPLAY_LAG_BASE_MS;
-    // Cap lag at 25% of base for short ayahs — prevents short verses from getting inflated timer
-    const lagMs = Math.min(fullLagMs, Math.round(rawMs * 0.25));
-    const paddedMs = rawMs * 1.08 + lagMs;  // lag aligns with manual Prev; Slow needs more
-
-    // Floor: word-based min; Fast=550ms/word, Normal=650ms, Slow=820ms
-    const wordFloorMs = this.fastMode ? 550 : this.slowMode ? 984 : 650;
-    const wordFloor = wordCount * wordFloorMs;
-    const floorMs = Math.max(wordFloor, 2500);
-    const minMs   = Math.max(floorMs, afterPauseMinMs);
-    // Transliteration-based duration + pace mode; 90s safety only for bugs
-    const baseDurationMs = Math.max(paddedMs, minMs);
-    let durationMs = Math.min(Math.round(baseDurationMs * this._driftMult), READ_ADVANCE_MAX_MS);
+    // Simple word-based timer derived from measured reciter pace.
+    // Live data shows ~1.9s/word for slow reciters, ~0.9s for normal, ~0.5s for fast.
+    // Whisper confirms hold/extend if reciter is still on the ayah.
+    // Use learned pace if available, otherwise fallback defaults
+    // Base default 1400ms/w. Fast/slow nudge it ±30%. Learned pace overrides.
+    const defaultMsPerWord = this.fastMode ? 1000 : this.slowMode ? 1800 : 1400;
+    const msPerWord = this._measuredMsPerWord > 0 ? this._measuredMsPerWord : defaultMsPerWord;
+    const rawMs = wordCount * msPerWord + elongBonusMs;
+    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : 2500);
+    const baseDurationMs = Math.max(rawMs, floorMs);
+    let durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
     if (durationFactor < 1.0) {
-      const minMsFactor = durationFactor <= FIRST_LOCK_DURATION_FACTOR + 0.05 ? 1500 : 2000;
-      durationMs = Math.max(minMsFactor, Math.round(durationMs * durationFactor));
+      if (durationFactor <= FIRST_LOCK_DURATION_FACTOR + 0.05) {
+        // First lock: reciter already ~6-7s into this ayah (capture + Whisper RTT).
+        const pipelineLatencyMs = this.slowMode ? 7000 : 4000;
+        durationMs = Math.max(3000, durationMs - pipelineLatencyMs);
+      } else {
+        durationMs = Math.max(2000, Math.round(durationMs * durationFactor));
+      }
     }
 
-    const trendTag = this._paceTrend !== 0 ? ` trend=${this._paceTrend > 0 ? '+' : '-'}` : '';
-    const driftTag = this._driftMult > 1.01 ? ` drift=${this._driftMult.toFixed(2)}x` : '';
     const modeTag = this.fastMode ? ' [FAST]' : this.slowMode ? ' [SLOW]' : '';
-    const modeTagFull = modeTag + trendTag + driftTag;
-    const halfTag = durationFactor < 1.0 ? (durationFactor <= FIRST_LOCK_DURATION_FACTOR + 0.05 ? ' [first-lock]' : durationFactor <= CORRECTED_DURATION_FACTOR + 0.05 ? ' [corrected]' : ' [manual-prev half]') : '';
-    const lagTag = lagMs > 0 ? ` +${lagMs}ms lag` : '';
-    console.log(`[Pipeline] Read-advance in ${durationMs}ms (${charCount}ch ${wordCount}w +${elongBonusMs}ms elong${lagTag}, conf=${confidence}%${modeTagFull}${halfTag})`);
+    const halfTag = durationFactor < 1.0 ? (durationFactor <= FIRST_LOCK_DURATION_FACTOR + 0.05 ? ' [first-lock]' : ' [corrected]') : '';
+    console.log(`[Pipeline] Read-advance in ${durationMs}ms (${wordCount}w × ${msPerWord}ms/w, conf=${confidence}%${modeTag}${halfTag})`);
 
     this._nextAdvanceMs  = durationMs;
     this._timerStartedAt = Date.now();
@@ -1235,24 +1228,40 @@ export class AudioPipeline {
         const prevSurah = this._displaySurah;
         const prevAyah  = this._displayAyah;
         this._completedSurah = prevSurah;
-        this._displaySurah = 0;
-        this._displayAyah  = 0;
-        this._whisperSurah = 0;
-        this._whisperAyah  = 0;
         this._driftMult    = 1.0;
         this._measuredWps  = READ_WORDS_PER_SEC;
         this._behindRepeatCount = 0;
         this._behindRepeatAyah  = 0;
         this._sameAyahStreak = 0;
         this._bumpCountForAyah = 0;
-        this.state = { ...createState(), mode: 'SEARCHING',
-          lastLockedSurah: prevSurah, lastLockedAyah: prevAyah };
-        // Taraweeh: if Fatiha just ended, restore pre-ruku position so the
-        // anchor looks for the continuation surah, not surah 2.
+        // Jump to next surah ayah 1 and keep advancing while searching
+        const nextSurah = prevSurah < 114 ? prevSurah + 1 : 0;
+        const nextSurahData = nextSurah > 0 ? getVerseData(nextSurah, 1, this.translationLang) : null;
+        if (nextSurahData && prevSurah !== 1) {
+          // Pre-display next surah:1, stay LOCKED, let Whisper correct if wrong
+          this._displaySurah = nextSurah;
+          this._displayAyah  = 1;
+          this._whisperSurah = nextSurah;
+          this._whisperAyah  = 1;
+          this._ayahStartTime = Date.now();
+          this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
+            surah: nextSurah, ayah: 1,
+            lastLockedSurah: prevSurah, lastLockedAyah: prevAyah };
+          console.log(`[Pipeline] End of surah ${prevSurah} → pre-display ${nextSurah}:1`);
+          this._scheduleReadAdvance(Math.max(this.state.confidence, 50));
+        } else {
+          this._displaySurah = 0;
+          this._displayAyah  = 0;
+          this._whisperSurah = 0;
+          this._whisperAyah  = 0;
+          this.state = { ...createState(), mode: 'SEARCHING',
+            lastLockedSurah: prevSurah, lastLockedAyah: prevAyah };
+          this._resetSearchBuf();
+          console.log(`[Pipeline] End of surah ${prevSurah} — searching for next`);
+        }
         this._restorePreRukuIfNeeded(prevSurah);
-        this._resetSearchBuf();
-        console.log(`[Pipeline] Read-advance: end of surah ${prevSurah} — soft reset, searching for next`);
       } else {
+        // Don't learn pace from auto-advance — only manual clicks are ground truth
         this._sameAyahStreak = 0;
         this._bumpCountForAyah = 0;
         this._displayAyah++;

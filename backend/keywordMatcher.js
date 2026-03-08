@@ -237,9 +237,9 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
     const { score, f1, idfScore, matchedWords, coverage } = scoreCandidate(inputWords, a.words);
     if (score < 0.01 && !(seqHint && a.surah === seqHint.surah && a.ayah >= seqHint.fromAyah && a.ayah <= seqHint.toAyah)) continue;
 
-    // Require 2+ matched words for longer ayahs, 1 for ultra-short (1-2 word ayahs)
-    if (matchedWords.length < 1) continue;
-    if (matchedWords.length < 2 && a.words.length > 2) continue;
+    // Require 2+ matched words; 3+ for longer ayahs
+    if (matchedWords.length < 2) continue;
+    if (matchedWords.length < 3 && a.words.length > 4) continue;
 
     // Sequential boost: candidate is the expected next verse(s) after last lock
     const inSeqRange = seqHint
