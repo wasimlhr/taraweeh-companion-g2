@@ -1187,7 +1187,9 @@ export class AudioPipeline {
         const rawWps = totalWords / (elapsedMs / 1000);
         const clampedWps = Math.max(0.5, Math.min(5.0, rawWps));
         this._measuredWps = this._measuredWps * 0.3 + clampedWps * 0.7;
-        console.log(`[Pipeline] Whisper clock: ${totalWords}w in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps`);
+        // Sync _measuredMsPerWord for timer use (convert wps → ms/word)
+        this._measuredMsPerWord = Math.round(1000 / this._measuredWps);
+        console.log(`[Pipeline] Whisper clock: ${totalWords}w in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps (${this._measuredMsPerWord}ms/w)`);
 
         this._updatePace(clampedWps, now);
       }
