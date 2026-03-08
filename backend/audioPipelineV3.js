@@ -1035,7 +1035,9 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       }
-      // Gap 1: instant catch-up — don't wait for smooth step, reduces drift
+      // Gap 1: Whisper detected next ayah. But this data is ~6s old (4s capture
+      // + 2s RTT), so the reciter is already partway through. Subtract pipeline
+      // lag from the timer instead of using full duration.
       if (gap === 1) {
         this._cancelReadAdvance();
         this._displaySurah = confirmedSurah;
@@ -1202,13 +1204,9 @@ export class AudioPipeline {
     const baseDurationMs = Math.max(rawMs, floorMs);
     let durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
     if (durationFactor < 1.0) {
-      if (durationFactor <= FIRST_LOCK_DURATION_FACTOR + 0.05) {
-        // First lock: reciter already ~6-7s into this ayah (capture + Whisper RTT).
-        const pipelineLatencyMs = this.slowMode ? 7000 : 4000;
-        durationMs = Math.max(3000, durationMs - pipelineLatencyMs);
-      } else {
-        durationMs = Math.max(2000, Math.round(durationMs * durationFactor));
-      }
+      // Whisper data is ~6s old. Subtract pipeline lag from timer.
+      const PIPELINE_LAG_MS = 6000;
+      durationMs = Math.max(2000, durationMs - PIPELINE_LAG_MS);
     }
 
     const modeTag = this.fastMode ? ' [FAST]' : this.slowMode ? ' [SLOW]' : '';

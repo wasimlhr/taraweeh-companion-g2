@@ -503,9 +503,11 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
             _locked: true,
           };
         }
-        if (wideCheck.score < backThreshold) {
-          // Weak backward match — treat as same-position confirmation instead of back-correcting
-          console.log(`[Anchor] Weak back-match ignored: :${wideCheck.ayah} score=${wideCheck.score.toFixed(2)} < ${backThreshold} — holding :${state.ayah}`);
+        // Back by 1 ayah is almost always audio buffer lag, not real.
+        // Only allow back-correction by 2+ ayahs (real error).
+        const backDist = state.ayah - wideCheck.ayah;
+        if (backDist <= 1 || wideCheck.score < backThreshold) {
+          console.log(`[Anchor] Back-match ignored: :${wideCheck.ayah} (dist=${backDist}, score=${wideCheck.score.toFixed(2)}) — holding :${state.ayah}`);
           return {
             ...state,
             confidence: Math.max(Math.round(wideCheck.score * 100), state.confidence),
