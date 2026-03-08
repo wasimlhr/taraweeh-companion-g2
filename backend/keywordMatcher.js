@@ -296,7 +296,13 @@ export function spotCheck(whisperText, expectedSurah, expectedAyah, window = 4) 
 
     // High-coverage boost: when most/all of the ayah's words matched (e.g. short refrains),
     // the IDF score is low because the words are common, but the match is actually solid.
-    const effectiveScore = (coverage >= 0.80 && matchedWords.length >= 3) ? Math.max(score, 0.50) : score;
+    // For refrain verses, lower the threshold to handle Whisper garbling 1-2 words.
+    const refrainVerse = isRefrain(a.surah, a.ayah);
+    const coverageThresh = refrainVerse ? 0.60 : 0.80;
+    const minWords = refrainVerse ? 2 : 3;
+    const boostScore = refrainVerse ? 0.45 : 0.50;
+    const effectiveScore = (coverage >= coverageThresh && matchedWords.length >= minWords)
+      ? Math.max(score, boostScore) : score;
 
     if (!best || effectiveScore > best.score) {
       best = { found: true, surah: a.surah, ayah: a.ayah, score: effectiveScore, matchedWords };
@@ -334,12 +340,20 @@ function _resolveRefrain(inputWords, surah, expectedAyah, startAyah, endAyah) {
     const inputCoverage = matchedWords.length / inputWords.length;
     if (inputCoverage < 0.50) continue;
 
-    // Find the next refrain instance at or after expectedAyah, within bounds
+    // Find closest refrain instance to expectedAyah (prefer at-or-after)
     let resolved = null;
+    let bestDist = Infinity;
     for (const ay of ayahs) {
       if (ay < startAyah || ay > endAyah) continue;
-      if (ay >= expectedAyah) { resolved = ay; break; }
-      if (!resolved || ay > resolved) resolved = ay;
+      const dist = Math.abs(ay - expectedAyah);
+      // Prefer at-or-after over before, break ties by distance
+      const isBetter = !resolved 
+        || dist < bestDist
+        || (dist === bestDist && ay >= expectedAyah && resolved < expectedAyah);
+      if (isBetter) {
+        resolved = ay;
+        bestDist = dist;
+      }
     }
 
     if (resolved !== null) {
