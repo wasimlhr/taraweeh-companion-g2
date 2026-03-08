@@ -340,6 +340,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // surah. Each window pointed at the next verse — that's strong directional evidence
   // even if individual margins are low (common words across surahs).
   const isSeqCarryLock = seqAdvance && wins >= 3
+    && top.score >= 0.30       // don't lock on near-zero scores
     && coverage >= covThreshold
     && matchedWordCount >= LOCK_MIN_WORDS
     && !isBismillahAmbiguous;
@@ -503,11 +504,12 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
             _locked: true,
           };
         }
-        // Back by 1 ayah is almost always audio buffer lag, not real.
-        // Only allow back-correction by 2+ ayahs (real error).
+        // Back by 1 ayah is almost always audio buffer lag — always ignore.
+        // Back by 2+ needs strong score, scaled by distance.
         const backDist = state.ayah - wideCheck.ayah;
-        if (backDist <= 1 || wideCheck.score < backThreshold) {
-          console.log(`[Anchor] Back-match ignored: :${wideCheck.ayah} (dist=${backDist}, score=${wideCheck.score.toFixed(2)}) — holding :${state.ayah}`);
+        const backMinScore = backDist <= 1 ? 999 : backDist <= 2 ? 0.70 : 0.80;
+        if (wideCheck.score < backMinScore) {
+          console.log(`[Anchor] Back-match ignored: :${wideCheck.ayah} (dist=${backDist}, score=${wideCheck.score.toFixed(2)} < ${backMinScore}) — holding :${state.ayah}`);
           return {
             ...state,
             confidence: Math.max(Math.round(wideCheck.score * 100), state.confidence),
@@ -518,7 +520,25 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
           };
         }
       }
-      return applyBack(wideCheck, wideCheck.ayah > state.ayah ? 'Advanced' : 'Back-corrected');
+      // Forward jumps: require higher score for bigger jumps to prevent wild leaps
+      const isForward = wideCheck.ayah > state.ayah;
+      if (isForward) {
+        const fwdDist = wideCheck.ayah - state.ayah;
+        // 1 ayah: 0.40, 2: 0.55, 3+: 0.65
+        const fwdMinScore = fwdDist <= 1 ? 0.40 : fwdDist <= 2 ? 0.55 : 0.65;
+        if (wideCheck.score < fwdMinScore) {
+          console.log(`[Anchor] Forward jump ignored: :${state.ayah}→:${wideCheck.ayah} (dist=${fwdDist}, score=${wideCheck.score.toFixed(2)} < ${fwdMinScore})`);
+          return {
+            ...state,
+            confidence: Math.max(Math.round(wideCheck.score * 100), state.confidence),
+            missedChunks: 0,
+            lastKeywords: keywords,
+            _matches: [{ surah: state.surah, ayah: state.ayah, score: wideCheck.score, matchedWords: wideCheck.matchedWords }],
+            _locked: true,
+          };
+        }
+      }
+      return applyBack(wideCheck, isForward ? 'Advanced' : 'Back-corrected');
     }
     // Still on same ayah — confirm position, reset missed count
     return {

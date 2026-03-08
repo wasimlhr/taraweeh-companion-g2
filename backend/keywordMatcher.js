@@ -186,9 +186,12 @@ function scoreCandidate(inputWords, ayahWords) {
   const f1 = (precision + recall === 0) ? 0 : (2 * precision * recall) / (precision + recall);
 
   const fallbackIdf = 1.0;
-  const inputIdfSum   = inputWords.reduce((s, w) => s + (idfMap.get(w) ?? fallbackIdf), 0);
+  // Ayah-centric IDF: what fraction of the AYAH's IDF weight was matched?
+  // This measures how well we identified the ayah, not how much of the input was used.
+  // A 4s Whisper chunk may span 2 ayahs — input-centric scoring penalises unfairly.
+  const ayahIdfSum    = ayahWords.reduce((s, w) => s + (idfMap.get(w) ?? fallbackIdf), 0);
   const matchedIdfSum = matched.reduce((s, w)  => s + (idfMap.get(w) ?? fallbackIdf), 0);
-  const idfScore = inputIdfSum === 0 ? 0 : matchedIdfSum / inputIdfSum;
+  const idfScore = ayahIdfSum === 0 ? 0 : matchedIdfSum / ayahIdfSum;
 
   const score    = 0.25 * f1 + 0.75 * idfScore;
   const coverage = matched.length / ayahWords.length;
