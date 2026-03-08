@@ -17,6 +17,7 @@ import { closeTranscription, PROVIDER } from './transcriptionRouter.js';
 import { AudioPipeline as AudioPipelineV1 } from './audioPipeline.js';
 import { AudioPipeline as AudioPipelineV2 } from './audioPipelineV2.js';
 import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
+import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
 
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
@@ -89,14 +90,15 @@ wss.on('connection', (ws, req) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   }
 
-  let pipelineVersion = 'v3';
+  let pipelineVersion = 'v4';  // V4: Default to word-level tracking
 
   function createPipeline(preferredSurah = 0, opts = {}, version) {
     if (pipeline) pipeline.destroy();
     if (version) pipelineVersion = version;
     const Ctor = pipelineVersion === 'v1' ? AudioPipelineV1
+      : pipelineVersion === 'v2' ? AudioPipelineV2
       : pipelineVersion === 'v3' ? AudioPipelineV3
-      : AudioPipelineV2;
+      : AudioPipelineV4;
 
     const hasWhisperOverrides = opts.whisperProvider || opts.whisperEndpointUrl || opts.whisperApiKey || opts.hfToken;
     const ep = opts.whisperEndpointUrl || '';
@@ -160,8 +162,13 @@ wss.on('connection', (ws, req) => {
           case 'init': {
             const surah = (typeof msg.preferredSurah === 'number' && msg.preferredSurah >= 1 && msg.preferredSurah <= 114)
               ? msg.preferredSurah : 0;
-            const ver = msg.pipelineVersion === 'v1' ? 'v1' : msg.pipelineVersion === 'v2' ? 'v2' : 'v3';
-            console.log(`[Init] preferredSurah=${surah} pipeline=${ver}`);
+            // V4: Force V4 for testing (TODO: allow client to choose)
+            const requestedVer = msg.pipelineVersion === 'v1' ? 'v1' 
+              : msg.pipelineVersion === 'v2' ? 'v2' 
+              : msg.pipelineVersion === 'v3' ? 'v3' 
+              : 'v4';
+            const ver = 'v4';  // Force V4 for now
+            console.log(`[Init] preferredSurah=${surah} pipeline=${ver} (client requested: ${requestedVer})`);
             createPipeline(surah, msg, ver);
             _binaryLogged = false;
             break;

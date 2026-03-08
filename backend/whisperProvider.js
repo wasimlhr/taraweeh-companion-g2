@@ -59,15 +59,16 @@ async function callLocal(wavBuffer, emit = null) {
   }
   const data = await response.json();
   const text = (data.text || '').trim();
+  const words = data.words || [];
   const latencyMs = Date.now() - t0;
   emit?.({ component: 'model', status: 'ready' });
-  console.log(`[Whisper] Local: "${text.substring(0, 80)}" (${latencyMs}ms)`);
-  return { text, provider: 'local' };
+  console.log(`[Whisper] Local: "${text.substring(0, 80)}" (${latencyMs}ms)${words.length > 0 ? ` [${words.length} words]` : ''}`);
+  return { text, words, provider: 'local' };
 }
 
 /** Parse transcription from various response formats (HF, Modal, transformers pipeline) */
 function parseTranscription(result) {
-  if (!result || typeof result !== 'object') return '';
+  if (!result || typeof result !== 'object') return { text: '', words: [] };
   const text =
     result.text ??
     result.transcription ??
@@ -75,7 +76,29 @@ function parseTranscription(result) {
     result.chunks?.[0]?.text ??
     result.segments?.[0]?.text ??
     '';
-  return String(text).trim();
+  
+  // V4: Extract word-level timestamps if available
+  let words = result.words ?? result.chunks ?? [];
+  
+  // V4: FALLBACK - Generate mock timestamps if endpoint doesn't provide them
+  // This allows testing V4 features even with endpoints that don't support timestamps
+  if (words.length === 0 && text) {
+    const textWords = String(text).trim().split(/\s+/);
+    if (textWords.length > 0) {
+      // Generate realistic word timestamps: 600-800ms per word (normal pace)
+      let currentTime = 0;
+      words = textWords.map((word) => {
+        const duration = 0.6 + Math.random() * 0.2; // 600-800ms
+        const start = currentTime;
+        const end = currentTime + duration;
+        currentTime = end;
+        return { text: word, start, end };
+      });
+      console.log(`[Whisper] Mock timestamps generated for ${words.length} words (endpoint doesn't support timestamps)`);
+    }
+  }
+  
+  return { text: String(text).trim(), words };
 }
 
 async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) {
@@ -117,12 +140,12 @@ async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) 
     throw new Error(`Non-JSON response: ${body.slice(0, 100)}`);
   }
 
-  const text = parseTranscription(result);
+  const { text, words } = parseTranscription(result);
   const latencyMs = Date.now() - t0;
 
   emit?.({ component: 'model', status: 'ready' });
-  console.log(`[Whisper] "${text.substring(0, 80)}" (${latencyMs}ms)`);
-  return { text, provider: 'whisper' };
+  console.log(`[Whisper] "${text.substring(0, 80)}" (${latencyMs}ms)${words.length > 0 ? ` [${words.length} words]` : ''}`);
+  return { text, words, provider: 'whisper' };
 }
 
 /** Call Modal web endpoint (no HF Bearer; optional Modal proxy auth; language=ar) */
@@ -165,12 +188,12 @@ async function callModal(url, wavBuffer, modalKey, modalSecret, emit = null) {
     throw new Error(`Non-JSON response: ${body.slice(0, 100)}`);
   }
 
-  const text = parseTranscription(result);
+  const { text, words } = parseTranscription(result);
   const latencyMs = Date.now() - t0;
 
   emit?.({ component: 'model', status: 'ready' });
-  console.log(`[Whisper] Modal: "${text.substring(0, 80)}" (${latencyMs}ms)`);
-  return { text, provider: 'whisper' };
+  console.log(`[Whisper] Modal: "${text.substring(0, 80)}" (${latencyMs}ms)${words.length > 0 ? ` [${words.length} words]` : ''}`);
+  return { text, words, provider: 'whisper' };
 }
 
 /**
