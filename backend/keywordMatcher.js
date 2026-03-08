@@ -193,10 +193,14 @@ function scoreCandidate(inputWords, ayahWords) {
   const matchedIdfSum = matched.reduce((s, w)  => s + (idfMap.get(w) ?? fallbackIdf), 0);
   const idfScore = ayahIdfSum === 0 ? 0 : matchedIdfSum / ayahIdfSum;
 
-  const score    = 0.25 * f1 + 0.75 * idfScore;
+  // Word count bonus: when coverage/IDF are similar, prefer matches with more words.
+  // This prevents short ayahs with high coverage from beating long ayahs with more evidence.
+  const wordCountBonus = Math.min(0.15, matched.length * 0.01);  // max +0.15 for 15+ words
+  
+  const score    = 0.25 * f1 + 0.75 * idfScore + wordCountBonus;
   const coverage = matched.length / ayahWords.length;
 
-  return { score, f1, idfScore, matchedWords: matched, coverage };
+  return { score, f1, idfScore, matchedWords: matched, coverage, wordCountBonus };
 }
 
 // Boost applied to candidates that are in the expected sequential range after the last lock
@@ -306,14 +310,19 @@ export function spotCheck(whisperText, expectedSurah, expectedAyah, window = 4) 
 
     if (!best || effectiveScore > best.score) {
       best = { found: true, surah: a.surah, ayah: a.ayah, score: effectiveScore, matchedWords };
-    } else if (effectiveScore === best.score) {
-      const bestAhead = best.ayah >= expectedAyah;
-      const candAhead = a.ayah >= expectedAyah;
-      if (candAhead && !bestAhead) {
+    } else if (Math.abs(effectiveScore - best.score) < 0.02) {
+      // Very close scores (<0.02 margin): prefer more matched words, then proximity
+      if (matchedWords.length > best.matchedWords.length) {
         best = { found: true, surah: a.surah, ayah: a.ayah, score: effectiveScore, matchedWords };
-      } else if (candAhead === bestAhead) {
-        if (Math.abs(a.ayah - expectedAyah) < Math.abs(best.ayah - expectedAyah)) {
+      } else if (matchedWords.length === best.matchedWords.length) {
+        const bestAhead = best.ayah >= expectedAyah;
+        const candAhead = a.ayah >= expectedAyah;
+        if (candAhead && !bestAhead) {
           best = { found: true, surah: a.surah, ayah: a.ayah, score: effectiveScore, matchedWords };
+        } else if (candAhead === bestAhead) {
+          if (Math.abs(a.ayah - expectedAyah) < Math.abs(best.ayah - expectedAyah)) {
+            best = { found: true, surah: a.surah, ayah: a.ayah, score: effectiveScore, matchedWords };
+          }
         }
       }
     }
