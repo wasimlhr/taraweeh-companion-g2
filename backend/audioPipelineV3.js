@@ -525,8 +525,8 @@ export class AudioPipeline {
     this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
       surah: this._displaySurah, ayah: this._displayAyah,
       lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
-    // Reciter is already halfway through — use half the timer, not full
-    this._scheduleReadAdvance(Math.max(this.state.confidence, 65), 0, 0.5);
+    // Reciter is already partway through — use shorter timer for catching up
+    this._scheduleReadAdvance(Math.max(this.state.confidence, 65), 0, 0.3);
     this._emitState(null, null);
   }
 
