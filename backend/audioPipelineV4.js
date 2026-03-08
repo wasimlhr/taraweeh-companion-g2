@@ -426,6 +426,8 @@ export class AudioPipeline {
       this._displayAyah++;
       const to = `${this._displaySurah}:${this._displayAyah}`;
       this._ayahStartTime = Date.now();
+      this._lockTime = this._ayahStartTime;  // V4: Reset word progress timer
+      this._currentWordIndex = 0;  // V4: Reset word index
       this._lastManualAdjustMs = Date.now();
       this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
         surah: this._displaySurah, ayah: this._displayAyah,
@@ -528,6 +530,8 @@ export class AudioPipeline {
     }
     this._whisperAyah = this._displayAyah;
     this._ayahStartTime = Date.now();
+    this._lockTime = this._ayahStartTime;  // V4: Reset word progress timer
+    this._currentWordIndex = 0;  // V4: Reset word index
     this._lastManualAdjustMs = Date.now();
     this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
       surah: this._displaySurah, ayah: this._displayAyah,
@@ -808,6 +812,8 @@ export class AudioPipeline {
         }
 
         this._ayahStartTime = Date.now();
+        this._lockTime = this._ayahStartTime;  // V4: Reset word progress timer on initial lock
+        this._currentWordIndex = 0;  // V4: Reset word index
         this._measuredWps            = READ_WORDS_PER_SEC;
         this._whisperLastConfirmMs   = Date.now();
         this._whisperLastConfirmAyah = this.state.ayah;
