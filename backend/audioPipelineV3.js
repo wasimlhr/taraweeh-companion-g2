@@ -1023,8 +1023,9 @@ export class AudioPipeline {
       }
       const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
       const lag = this._displayAyah - confirmedAyah;
-      // lag=1: require 2 consecutive reports (was 1 for score>=48) — reduces false snap-backs
-      const REPEAT_BACK_CORRECT_WINS = lag === 1 ? 2 : 3;
+      // High confidence (≥80%) = immediate back-correct (1 confirm)
+      // Medium confidence: lag=1 needs 2, lag≥2 needs 3
+      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1 : (lag === 1 ? 2 : 3);
       const REPEAT_BACK_CORRECT_MIN_CONF = 65;
 
       // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
@@ -1061,13 +1062,18 @@ export class AudioPipeline {
         return;
       }
 
-      // ── Gradual slow-down: increase drift multiplier when confident ────
-      // Slower timer lets reciter catch up. More aggressive (+0.25) to reduce drift.
+      // ── Stop timer while behind: pause display advancement ────
+      // When reciter is behind, don't keep advancing forward. Cancel timer and wait
+      // for confirmation before resuming. This prevents runaway drift during repeats.
       if (score >= REPEAT_BACK_CORRECT_MIN_CONF) {
+        this._cancelReadAdvance();
         this._driftMult = Math.min(2.5, this._driftMult + 0.25);
+        console.log(`[Pipeline] Timer paused: Whisper :${confirmedAyah} behind display :${this._displayAyah} (lag=${lag}, conf=${score}%, repeat=${this._behindRepeatCount}/${REPEAT_BACK_CORRECT_WINS}${refrainVerse ? ', refrain' : ''})`);
+      } else {
+        // Low confidence — keep timer running with drift multiplier
+        this._driftMult = Math.min(2.5, this._driftMult + 0.25);
+        console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} (lag=${lag}, conf=${score}%, drift=${this._driftMult.toFixed(2)}x, repeat=${this._behindRepeatCount}/${REPEAT_BACK_CORRECT_WINS}${refrainVerse ? ', refrain' : ''})`);  
       }
-
-      console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} (lag=${lag}, conf=${score}%, drift=${this._driftMult.toFixed(2)}x, repeat=${this._behindRepeatCount}/${REPEAT_BACK_CORRECT_WINS}${refrainVerse ? ', refrain' : ''})`);
       return;
     }
 
