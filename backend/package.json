@@ -1,1 +1,0 @@
-{"name":"quran-live-backend","version":"1.0.0","type":"module","scripts":{"start":"node server.js","dev":"node --watch server.js","test-pipeline":"node testPipeline.js"},"dependencies":{"@google/genai":"^1.0.0","@huggingface/inference":"^3.0.0","dotenv":"^16.4.5","express":"^4.18.0","selfsigned":"^5.5.0","ws":"^8.18.0"},"engines":{"node":">=18"}}
