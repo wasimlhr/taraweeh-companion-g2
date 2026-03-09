@@ -230,13 +230,18 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   const isBismillahAmbiguous = top.surah === 1 && top.ayah === 1;
 
   const matchedWordCount = top.matchedWords?.length ?? 0;
-  // 2-word minimum in three situations:
+  // Fatiha (surah 1) has genuinely short ayahs (1:3 = 2 words, 1:4 = 3 words).
+  // Allow 2-word matches for Fatiha since it's the most recited surah.
+  const isFatihaCandidate = top.surah === 1 && top.ayah >= 2; // ayah 1 handled by bismillah guard
+  // 2-word minimum in four situations:
   //  1. Very high margin (≥50): gap to #2 is so large a coincidence is impossible
   //  2. Sequential context after surah completion: short ayahs (An-Naziaat style) with 2 wins
-  //  3. Otherwise: standard LOCK_MIN_WORDS=3
+  //  3. Fatiha (surah 1): genuinely short ayahs, most common surah
+  //  4. Otherwise: standard LOCK_MIN_WORDS=3
   const minWords = (margin >= 50)
     ? 2
     : (surahJustCompleted && wins >= 2 && margin >= 10) ? 2
+    : isFatihaCandidate ? 2
     : LOCK_MIN_WORDS;
   const hasEnoughWords   = matchedWordCount >= minWords;
 
@@ -312,7 +317,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // After Fatiha (surah 1), relax to 2 words at margin ≥ 25 — the imam picks any surah
   // so we have zero sequential context and need to lock fast on whatever Whisper hears.
   // Ordinary high-margin (25-49) in other contexts still needs LOCK_MIN_WORDS=3.
-  const highMarginMinWords = (margin >= 50 || (margin >= 25 && postFatiha)) ? 2 : LOCK_MIN_WORDS;
+  const highMarginMinWords = (margin >= 50 || (margin >= 25 && (postFatiha || isFatihaCandidate))) ? 2 : LOCK_MIN_WORDS;
   const isHighMarginLock = margin >= 25 && top.score >= 0.40 && coverage >= covThreshold
     && matchedWordCount >= highMarginMinWords
     && !isUnexpectedSurah      // don't allow high-margin cross-surah hop

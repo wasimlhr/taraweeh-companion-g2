@@ -736,9 +736,13 @@ export class AudioPipeline {
       }
 
       // In RUKU we expect Fatiha — allow bismillah to reach matcher so we can lock on 1:2+.
-      // Otherwise bismillah-only is generic (could be any surah) — skip.
+      // Otherwise bismillah-only is generic (could be any surah) — skip the matcher,
+      // but still add to _lastSearchTexts so the NEXT chunk combines with it
+      // (e.g. "بسم الله..." + "الحمد لله..." = strong Fatiha match).
       if (isBismillahOnly(cleaned) && this._taraweehPos !== 'RUKU') {
-        console.log(`[Pipeline] Bismillah only — treating as generic, skipping (not locking on Fatiha)`);
+        console.log(`[Pipeline] Bismillah only — skipping matcher but keeping for combination`);
+        this._lastSearchTexts.push(cleaned);
+        if (this._lastSearchTexts.length > 3) this._lastSearchTexts.shift();
         this.onStatus({ component: 'search', status: 'noise', audioSec: bufMs / 1000 });
         if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
         return;
