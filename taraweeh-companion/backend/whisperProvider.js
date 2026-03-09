@@ -119,12 +119,9 @@ function parseTranscription(result) {
 }
 
 async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) {
-  const params = new URLSearchParams();
-  params.set('language', 'ar');
-  params.set('task', 'transcribe');
-  params.set('return_timestamps', 'true');
-  const sep = url.includes('?') ? '&' : '?';
-  const fullUrl = url + sep + params.toString();
+  // HF Inference Endpoints default toolkit doesn't accept language/task as query params
+  // The model is fine-tuned for Arabic so no need to force language
+  const fullUrl = url;
 
   emit?.({ component: 'model', status: 'pending' });
 

@@ -123,10 +123,16 @@ body {
   padding: 18px;
   margin-bottom: 10px;
   min-height: 140px;
+  max-height: 70vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
   transition: background 0.2s, border-color 0.2s;
+}
+#lockedContent {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 .verse-pos {
   font-size: 12px;
@@ -282,8 +288,9 @@ body {
 
 /* Manual ayah nav arrows */
 .verse-nav-row {
-  display: flex; gap: 12px; justify-content: center; margin-top: 12px; padding-top: 8px;
+  display: flex; gap: 12px; justify-content: center; padding-top: 8px;
   border-top: 1px solid var(--bc-4);
+  flex-shrink: 0;
 }
 .nav-arrow-btn {
   flex: 1; max-width: 120px; padding: 10px 14px; font-size: 14px; font-weight: 600;
@@ -617,7 +624,7 @@ body {
       <!-- V4: Word Progress Bar -->
       <div id="wordProgress" class="word-progress" style="display:none">
         <div class="word-progress-info">
-          <span id="wordProgressText">Word 0 / 0</span>
+          <span id="wordProgressText">0 / 0</span>
           <span id="wordProgressPercent">0%</span>
         </div>
         <div class="word-progress-bar">
@@ -1442,9 +1449,22 @@ body {
       if (state.mode === 'LOCKED') resetMatchPanel && resetMatchPanel();
       searching.style.display = 'none';
       locked.style.display = 'flex';
-      // V4: Show word progress only in LOCKED mode
+      // V4: Show word progress only in LOCKED mode; fill from state so "Word X / Y" appears immediately (and after reconnect)
       var wordProg = document.getElementById('wordProgress');
-      if (wordProg) wordProg.style.display = (state.mode === 'LOCKED') ? 'block' : 'none';
+      if (wordProg) {
+        wordProg.style.display = (state.mode === 'LOCKED') ? 'block' : 'none';
+        if (state.mode === 'LOCKED' && state.totalWords > 0) {
+          var textSpan = document.getElementById('wordProgressText');
+          var percentSpan = document.getElementById('wordProgressPercent');
+          var fillDiv = document.getElementById('wordProgressFill');
+          var idx = Math.min(state.wordIndex != null ? state.wordIndex : 0, state.totalWords - 1);
+          var currentWord = Math.min(idx + 1, state.totalWords);
+          if (textSpan) textSpan.textContent = currentWord + ' / ' + state.totalWords;
+          var progress = (idx + 1) / state.totalWords;
+          if (percentSpan) percentSpan.textContent = Math.round(progress * 100) + '%';
+          if (fillDiv) fillDiv.style.width = (progress * 100) + '%';
+        }
+      }
       locked.style.flexDirection = 'column';
       locked.style.gap = '10px';
       var navRow = document.getElementById('verseNavRow');
@@ -1785,7 +1805,7 @@ body {
     
     // Update text: "Word 5 / 12"
     var currentWord = Math.min(msg.wordIndex + 1, msg.totalWords); // +1 for 1-indexed display
-    textSpan.textContent = 'Word ' + currentWord + ' / ' + msg.totalWords;
+    textSpan.textContent = currentWord + ' / ' + msg.totalWords;
     
     // Update percentage
     var percent = Math.round(msg.progress * 100);

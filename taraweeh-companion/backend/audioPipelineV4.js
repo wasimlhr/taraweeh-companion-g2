@@ -7,11 +7,30 @@
  * - Re-lock: pass display position into RESUMING for better resync when display ahead
  */
 import { writeFileSync, readFileSync, existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { transcribe } from './transcriptionRouter.js';
 import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah } from './anchorStateMachine.js';
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
 import { findAnchor, isRefrain, getAyah } from './keywordMatcher.js';
+
+// ── Word-level corpus data (morphology + tajweed weights) ───────────────────
+const __dirname_v4 = dirname(fileURLToPath(import.meta.url));
+let _quranWords = null;
+function getWordData(surah, ayah) {
+  if (!_quranWords) {
+    const wordFile = join(__dirname_v4, 'data', 'corpus', 'quran-words.json');
+    try {
+      _quranWords = JSON.parse(readFileSync(wordFile, 'utf8'));
+      console.log(`[Pipeline] Loaded quran-words.json (${Object.keys(_quranWords).length} ayahs)`);
+    } catch (e) {
+      console.log(`[Pipeline] quran-words.json not found — using uniform word weights`);
+      _quranWords = {};
+    }
+  }
+  return _quranWords[`${surah}:${ayah}`] || null;
+}
 
 // ── Position persistence across restarts ────────────────────────────────────
 const POS_FILE = '/tmp/taraweeh_position.json';
@@ -123,8 +142,8 @@ function computeRms(pcm) {
 
 const CLIP_THRESHOLD = parseFloat(process.env.CLIP_THRESHOLD || '0.10');
 const CLIP_TARGET    = parseFloat(process.env.CLIP_TARGET    || '0.04');
-const QUIET_BOOST_THRESHOLD = 0.008;  // G2 mic often 0.001–0.002 — HF soundfile fails on near-silence
-const QUIET_BOOST_TARGET   = 0.03;   // boost to usable level
+const QUIET_BOOST_THRESHOLD = 0.015;  // G2 mic often 0.001–0.009 — boost to proper speech level
+const QUIET_BOOST_TARGET   = 0.08;   // target normal speech RMS for better Whisper accuracy
 function applyClipGuard(pcm, rms) {
   let gain = 1;
   if (rms > 0 && rms < QUIET_BOOST_THRESHOLD) {
@@ -269,6 +288,7 @@ export class AudioPipeline {
     // Learned pace: measured from manual advance clicks (ms per word)
     this._measuredMsPerWord = 0;   // 0 = no data yet, use default
     this._msPerWordSamples  = [];  // last 6 samples for rolling average
+    this._whisperClockSamples = 0; // count of Whisper clock measurements (no manual data)
 
     // Pace tracking: rolling window of recent WPS samples for trend detection
     this._paceHistory    = [];   // [{wps, ts}] — last 8 measurements
@@ -837,7 +857,11 @@ export class AudioPipeline {
         // Locked on verse = reciting (next takbeer goes to RUKU)
         if (this.taraweehMode) this._taraweehLastFrom = 'reciting';
 
-        this._scheduleReadAdvance(this.state.confidence, 0, FIRST_LOCK_DURATION_FACTOR);
+        // Only start first-lock timer if no timer is already running for this ayah
+        // (timer may already be set from read-advance into this ayah)
+        if (!this._displayAdvanceTimer) {
+          this._scheduleReadAdvance(this.state.confidence, 0, FIRST_LOCK_DURATION_FACTOR);
+        }
         this._emitState(text, rms);
         return;
       } else {
@@ -1227,19 +1251,27 @@ export class AudioPipeline {
       if (elapsedMs > 2000) {
         const fromAyah = Math.min(this._whisperLastConfirmAyah, confirmedAyah);
         const toAyah   = Math.max(this._whisperLastConfirmAyah, confirmedAyah);
+        // Count words BETWEEN confirmations — exclude the starting ayah (already timed)
         let totalWords = 0;
-        for (let a = fromAyah; a <= toAyah; a++) {
+        for (let a = fromAyah + 1; a <= toAyah; a++) {
           const v = getVerseData(confirmedSurah, a, this.translationLang);
           totalWords += v?.transliteration
             ? v.transliteration.split(/\s+/).length
             : (v?.arabic ? v.arabic.split(/\s+/).length : 4);
         }
+        if (totalWords === 0) totalWords = 4; // safety fallback for single-ayah jump
         const rawWps = totalWords / (elapsedMs / 1000);
         const clampedWps = Math.max(0.5, Math.min(5.0, rawWps));
-        this._measuredWps = this._measuredWps * 0.3 + clampedWps * 0.7;
-        // Sync _measuredMsPerWord for timer use (convert wps → ms/word)
-        this._measuredMsPerWord = Math.round(1000 / this._measuredWps);
-        console.log(`[Pipeline] Whisper clock: ${totalWords}w in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps (${this._measuredMsPerWord}ms/w)`);
+        // Conservative blend: 0.7 old + 0.3 new — prevents one noisy sample from racing the timer
+        this._measuredWps = this._measuredWps * 0.7 + clampedWps * 0.3;
+        // Only sync _measuredMsPerWord from Whisper clock when NO manual samples exist.
+        // Manual advances are direct user feedback — higher trust than Whisper clock.
+        const whisperMsPerWord = Math.round(1000 / this._measuredWps);
+        if (this._msPerWordSamples.length === 0) {
+          this._measuredMsPerWord = whisperMsPerWord;
+          this._whisperClockSamples++;
+        }
+        console.log(`[Pipeline] Whisper clock: ${totalWords}w in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps (${whisperMsPerWord}ms/w)${this._msPerWordSamples.length > 0 ? ' [manual pace kept: ' + this._measuredMsPerWord + 'ms/w]' : ''}`);
 
         this._updatePace(clampedWps, now);
       }
@@ -1291,21 +1323,40 @@ export class AudioPipeline {
   }
 
   // V4: Update word progress and emit to frontend
+  // Uses corpus word weights for proportional timing — heavy words (madd, verbs) get more time
   _updateWordProgress() {
     const ayah = getAyah(this._displaySurah, this._displayAyah);
     if (!ayah) return;
-    
+
     const totalWords = ayah.words.length;
     if (totalWords === 0) return;
-    
-    // Estimate current word based on timer
+
     const elapsedMs = Date.now() - this._lockTime;
     const msPerWord = this._measuredMsPerWord || 700;
-    this._currentWordIndex = Math.max(0, Math.min(
-      Math.floor(elapsedMs / msPerWord),
-      totalWords - 1
-    ));
-    
+
+    // Use corpus weights for proportional word timing
+    const wordData = getWordData(this._displaySurah, this._displayAyah);
+    if (wordData?.words?.length === totalWords) {
+      // Weighted progress: accumulate weights until elapsed time is consumed
+      const totalWeight = wordData.tw || totalWords;
+      const totalDurationMs = totalWeight * msPerWord;
+      let accumulated = 0;
+      let wordIdx = 0;
+      for (let i = 0; i < wordData.words.length; i++) {
+        accumulated += wordData.words[i].w;
+        const wordEndMs = (accumulated / totalWeight) * totalDurationMs;
+        if (elapsedMs < wordEndMs) { wordIdx = i; break; }
+        wordIdx = i;
+      }
+      this._currentWordIndex = Math.max(0, Math.min(wordIdx, totalWords - 1));
+    } else {
+      // Fallback: uniform word timing
+      this._currentWordIndex = Math.max(0, Math.min(
+        Math.floor(elapsedMs / msPerWord),
+        totalWords - 1
+      ));
+    }
+
     // Emit word progress to frontend
     this.onStateUpdate({
       type: 'wordProgress',
@@ -1313,7 +1364,7 @@ export class AudioPipeline {
       ayah: this._displayAyah,
       wordIndex: this._currentWordIndex,
       totalWords: totalWords,
-      progress: (this._currentWordIndex + 1) / totalWords,  // +1 so 0/3 shows as 33%, not 0%
+      progress: (this._currentWordIndex + 1) / totalWords,
       words: ayah.words,
     });
   }
@@ -1411,21 +1462,31 @@ export class AudioPipeline {
     const charCount = translit.length || (verse?.arabic ? verse.arabic.length : 30);
     const wordCount = Math.max(1, translit ? translit.split(/\s+/).length : (verse?.arabic ? verse.arabic.split(/\s+/).length : 4));
 
-    // Elongation bonus: stretched syllables add recitation time.
-    const strongElong = (translit.match(/AA|ee|oo|aa|ii|uu/gi) || []).length;
-    const noonEndings = (translit.match(/oon|een|aan/gi) || []).length;
+    // Corpus-based word weights: each word has a weight based on morphology + tajweed
+    // totalWeight replaces simple wordCount — heavier words (madd, ghunnah, verb forms) get more time
+    const wordData = getWordData(this._displaySurah, this._displayAyah);
+    // Blend corpus weight (80%) with plain word count (20%) — pure weights add ~5s extra per ayah
+    const rawWeight = wordData?.tw || wordCount;
+    const totalWeight = wordData ? (rawWeight * 0.8 + wordCount * 0.2) : wordCount;
+    const hasMadds = wordData?.madds || 0;
+    const hasGhunnahs = wordData?.ghunnahs || 0;
+
+    // Elongation bonus from transliteration (fallback when no corpus data)
+    const strongElong = wordData ? 0 : (translit.match(/AA|ee|oo|aa|ii|uu/gi) || []).length;
+    const noonEndings = wordData ? 0 : (translit.match(/oon|een|aan/gi) || []).length;
     const elongBonusMs = strongElong * 200 + noonEndings * 150;
 
-    // Simple word-based timer derived from measured reciter pace.
+    // Word-weight-based timer derived from measured reciter pace.
     // Live data shows ~1.9s/word for slow reciters, ~0.9s for normal, ~0.5s for fast.
     // Whisper confirms hold/extend if reciter is still on the ayah.
     // Use learned pace if available, otherwise fallback defaults
     // Base default 1400ms/w. Fast/slow nudge it ±30%. Learned pace overrides.
     const defaultMsPerWord = this.fastMode ? 1000 : this.slowMode ? 1800 : 1400;
-    // Need at least 3 samples before trusting learned pace — 1 sample is noise
-    const msPerWord = (this._measuredMsPerWord > 0 && this._msPerWordSamples.length >= 3)
+    // Trust manual pace after 1 sample (direct user feedback), Whisper-only after 3 confirmations
+    const msPerWord = (this._measuredMsPerWord > 0 && (this._msPerWordSamples.length >= 1 || this._whisperClockSamples >= 3))
       ? this._measuredMsPerWord : defaultMsPerWord;
-    const rawMs = wordCount * msPerWord + elongBonusMs;
+    // Use totalWeight (corpus-based) instead of plain wordCount for proportional timing
+    const rawMs = Math.round(totalWeight * msPerWord) + elongBonusMs;
     const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : 2500);
     const baseDurationMs = Math.max(rawMs, floorMs);
     let durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
@@ -1439,7 +1500,8 @@ export class AudioPipeline {
 
     const modeTag = this.fastMode ? ' [FAST]' : this.slowMode ? ' [SLOW]' : '';
     const halfTag = durationFactor < 1.0 ? (durationFactor <= FIRST_LOCK_DURATION_FACTOR + 0.05 ? ' [first-lock]' : ' [corrected]') : '';
-    console.log(`[Pipeline] Read-advance in ${durationMs}ms (${wordCount}w × ${msPerWord}ms/w, conf=${confidence}%${modeTag}${halfTag})`);
+    const weightTag = wordData ? ` wt=${totalWeight.toFixed(1)}` : '';
+    console.log(`[Pipeline] Read-advance in ${durationMs}ms (${wordCount}w${weightTag} × ${msPerWord}ms/w, conf=${confidence}%${modeTag}${halfTag})`);
 
     this._nextAdvanceMs  = durationMs;
     this._timerStartedAt = Date.now();
@@ -1753,7 +1815,19 @@ export class AudioPipeline {
       this._completedSurah = 0;
       // Persist position for restart recovery
       _savePosition(displaySurah, displayAyah, this._measuredMsPerWord);
-    } else if (isCandidate) {
+    }
+
+    // V4: Include word progress in state so UI shows "Word X / Y" immediately when LOCKED (and after reconnect)
+    let stateTotalWords;
+    let stateWordIndex;
+    if (this.state.mode === 'LOCKED' && this._displaySurah && this._displayAyah) {
+      const ayah = getAyah(this._displaySurah, this._displayAyah);
+      if (ayah?.words?.length) {
+        stateTotalWords = ayah.words.length;
+        stateWordIndex = Math.max(0, Math.min(this._currentWordIndex ?? 0, stateTotalWords - 1));
+      }
+    }
+    if (isCandidate) {
       console.log(`[Emit] CANDIDATE ${topMatch.surah}:${topMatch.ayah} score=${topScore.toFixed(2)} "${(lockedVerse?.translation || '').substring(0, 50)}"`);
     }
 
@@ -1799,6 +1873,9 @@ export class AudioPipeline {
           category: this._paceCategory,
           trend: this._paceTrend > 0 ? 'accelerating' : this._paceTrend < 0 ? 'decelerating' : 'steady',
         } : undefined,
+        // V4: Word X/Y so frontend can show progress as soon as LOCKED (e.g. after reconnect)
+        totalWords: stateTotalWords,
+        wordIndex: stateWordIndex,
       },
       whisperText: whisperText ?? null,
       rms: rms != null ? +rms.toFixed(4) : null,
