@@ -157,7 +157,7 @@ wss.on('connection', (ws, req) => {
     } else {
       try {
         const msg = JSON.parse(data.toString());
-        console.log(`[WS] msg type=${msg.type}`);
+        if (msg.type !== 'ping') console.log(`[WS] msg type=${msg.type}`);
         switch (msg.type) {
           case 'init': {
             const surah = (typeof msg.preferredSurah === 'number' && msg.preferredSurah >= 1 && msg.preferredSurah <= 114)
@@ -181,6 +181,7 @@ wss.on('connection', (ws, req) => {
           case 'reset': pipeline?.reset(); break;
           case 'pause': pipeline?.pause(); break;
           case 'audio_return': pipeline?.audioReturn(); break;
+          case 'ping': ws.isAlive = true; send({ type: 'pong' }); break;
           case 'manual_advance': pipeline?.manualAdvance(); break;
           case 'manual_prev': pipeline?.manualPrev(); break;
           case 'set_fast_mode': pipeline?.setFastMode(msg.enabled); break;
