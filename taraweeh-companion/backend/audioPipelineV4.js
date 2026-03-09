@@ -572,20 +572,36 @@ export class AudioPipeline {
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'RESUMING') return;
     // Freeze display and timer — but keep listening to Whisper in the background
     // so we track where the reciter is. On resume, snap to the latest Whisper position.
+    // Save remaining timer so we can resume it (not restart from scratch)
+    if (this._displayAdvanceTimer && this._nextAdvanceMs > 0 && this._timerStartedAt > 0) {
+      const elapsed = Date.now() - this._timerStartedAt + (this._pauseAccumMs || 0);
+      this._pausedTimerRemainingMs = Math.max(0, this._nextAdvanceMs - elapsed);
+    } else {
+      this._pausedTimerRemainingMs = 0;
+    }
     this._cancelReadAdvance();
     this._pausedWhisperSurah = this._whisperSurah;
     this._pausedWhisperAyah  = this._whisperAyah;
+    this._pausedDisplaySurah = this._displaySurah;
+    this._pausedDisplayAyah  = this._displayAyah;
     this.state = { ...this.state, mode: 'PAUSED' };
-    console.log(`[Pipeline] Paused display at ${this._displaySurah}:${this._displayAyah} (Whisper still listening)`);
+    console.log(`[Pipeline] Paused display at ${this._displaySurah}:${this._displayAyah} (timer remaining: ${this._pausedTimerRemainingMs}ms, Whisper still listening)`);
     this._emitState(null, null);
   }
 
   audioReturn() {
     if (this.state.mode !== 'PAUSED') return;
-    // Snap display to wherever Whisper last confirmed (reciter may have moved)
-    const snapSurah = this._whisperSurah || this._displaySurah;
-    const snapAyah  = this._whisperAyah  || this._displayAyah;
-    const moved = snapSurah !== this._displaySurah || snapAyah !== this._displayAyah;
+    // Only snap to Whisper if it moved AHEAD of where we paused.
+    // Whisper is always ~6-12s behind the display, so snapping to it
+    // on a quick pause/resume would jump backward. Keep display position
+    // unless Whisper confirms the reciter moved forward during the pause.
+    const whisperAhead = this._whisperSurah > 0 && (
+      this._whisperSurah > this._pausedDisplaySurah ||
+      (this._whisperSurah === this._pausedDisplaySurah && this._whisperAyah > this._pausedDisplayAyah)
+    );
+    const snapSurah = whisperAhead ? this._whisperSurah : this._pausedDisplaySurah || this._displaySurah;
+    const snapAyah  = whisperAhead ? this._whisperAyah  : this._pausedDisplayAyah  || this._displayAyah;
+    const moved = whisperAhead;
     this._displaySurah = snapSurah;
     this._displayAyah  = snapAyah;
     this._ayahStartTime = Date.now();
@@ -594,8 +610,17 @@ export class AudioPipeline {
     this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
       surah: snapSurah, ayah: snapAyah,
       lastLockedSurah: snapSurah, lastLockedAyah: snapAyah };
-    console.log(`[Pipeline] Resumed → ${snapSurah}:${snapAyah}${moved ? ' (snapped to Whisper)' : ''}`);
-    this._scheduleReadAdvance(Math.max(this.state.confidence, 65));
+
+    if (!moved && this._pausedTimerRemainingMs > 0) {
+      // Same ayah — resume timer with leftover time instead of restarting
+      console.log(`[Pipeline] Resumed → ${snapSurah}:${snapAyah} (timer resuming: ${this._pausedTimerRemainingMs}ms left)`);
+      this._scheduleReadAdvance(this.state.confidence, 0, 1.0, this._pausedTimerRemainingMs);
+    } else {
+      // Whisper moved — fresh timer for new position
+      console.log(`[Pipeline] Resumed → ${snapSurah}:${snapAyah}${moved ? ' (snapped to Whisper)' : ''}`);
+      this._scheduleReadAdvance(Math.max(this.state.confidence, 65));
+    }
+    this._pausedTimerRemainingMs = 0;
     this._emitState(null, null);
   }
 
@@ -1127,12 +1152,9 @@ export class AudioPipeline {
 
       if (this._behindRepeatCount >= REPEAT_BACK_CORRECT_WINS) {
         const backDist = this._displayAyah - confirmedAyah;
+        // Large back-corrections (4+) snap immediately if confirmed — don't block
         if (backDist > 3) {
-          console.log(`[Pipeline] Back-correct blocked: dist=${backDist} > 3 — anchor confused`);
-          this._behindRepeatCount = 0;
-          this._behindRepeatAyah = 0;
-          this._emitState(text, rms);
-          return;
+          console.log(`[Pipeline] Large back-correct: dist=${backDist} — snapping (${this._behindRepeatCount}x confirmed, conf=${score}%)`);
         }
         this._sameAyahStreak = 0;
         this._bumpCountForAyah = 0;
@@ -1247,8 +1269,21 @@ export class AudioPipeline {
       const stepMs = gap >= 4 ? 2000 : gap >= 3 ? 1600 : SMOOTH_ADVANCE_STEP_MS;
       console.log(`[Pipeline] Whisper :${confirmedAyah} ahead of display :${this._displayAyah} — catch-up (${gap} steps, ${stepMs}ms/step)`);
       this._smoothAdvanceTo(confirmedSurah, confirmedAyah, stepMs);
+    } else if (gap > 6 && gap <= 15 && score >= 70) {
+      // Large forward gap with high confidence — snap immediately
+      this._cancelReadAdvance();
+      this._displaySurah = confirmedSurah;
+      this._displayAyah  = confirmedAyah;
+      this._ayahStartTime = Date.now();
+      this._lockTime = this._ayahStartTime;
+      this.state = { ...this.state, surah: confirmedSurah, ayah: confirmedAyah,
+        lastLockedSurah: confirmedSurah, lastLockedAyah: confirmedAyah };
+      console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${this._displayAyah} — snapping (conf=${score}%)`);
+      this._emitState(text, rms);
+      this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
+      return;
     } else if (gap > 6) {
-      console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${this._displayAyah} — anchor confused, ignoring`);
+      console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${this._displayAyah} — anchor confused, ignoring (conf=${score}%)`);
       if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
         this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
       }
@@ -1454,9 +1489,16 @@ export class AudioPipeline {
       && (this.state.mode === 'LOCKED' || this.state.mode === 'RESUMING' || this.state.mode === 'SEARCHING');
   }
 
-  _scheduleReadAdvance(confidence, afterPauseMinMs = 0, durationFactor = 1.0) {
+  _scheduleReadAdvance(confidence, afterPauseMinMs = 0, durationFactor = 1.0, overrideDurationMs = 0) {
     this._cancelReadAdvance();
     if (!this._canDisplayAdvance()) return;
+
+    let durationMs;
+    if (overrideDurationMs > 0) {
+      // Resume from paused timer — skip all calculation, use exact remaining time
+      durationMs = overrideDurationMs;
+      console.log(`[Pipeline] Read-advance in ${durationMs}ms [resumed from pause]`);
+    } else {
 
     // BLOCK display from racing ahead of Whisper. If display is already
     // too far ahead, wait for Whisper to catch up before scheduling more.
@@ -1527,7 +1569,7 @@ export class AudioPipeline {
     const rawMs = Math.round(totalWeight * msPerWord) + elongBonusMs;
     const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : 2500);
     const baseDurationMs = Math.max(rawMs, floorMs);
-    let durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
+    durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
     if (durationFactor < 1.0) {
       // Whisper data is ~6s old. Subtract pipeline lag — but never more than half
       // the timer. Short ayahs (3-6 words) shouldn't get crushed to 2s.
@@ -1540,6 +1582,8 @@ export class AudioPipeline {
     const halfTag = durationFactor < 1.0 ? (durationFactor <= FIRST_LOCK_DURATION_FACTOR + 0.05 ? ' [first-lock]' : ' [corrected]') : '';
     const weightTag = wordData ? ` wt=${totalWeight.toFixed(1)}` : '';
     console.log(`[Pipeline] Read-advance in ${durationMs}ms (${wordCount}w${weightTag} × ${msPerWord}ms/w, conf=${confidence}%${modeTag}${halfTag})`);
+
+    } // end of normal (non-override) duration calculation
 
     this._nextAdvanceMs  = durationMs;
     this._timerStartedAt = Date.now();
