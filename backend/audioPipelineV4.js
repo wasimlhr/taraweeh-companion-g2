@@ -11,7 +11,7 @@ import { transcribe } from './transcriptionRouter.js';
 import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah } from './anchorStateMachine.js';
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
-import { findAnchor, isRefrain } from './keywordMatcher.js';
+import { findAnchor, isRefrain, getAyah } from './keywordMatcher.js';
 
 // ── Position persistence across restarts ────────────────────────────────────
 const POS_FILE = '/tmp/taraweeh_position.json';
@@ -278,6 +278,13 @@ export class AudioPipeline {
 
     this.taraweehMode    = false;
     this._taraweehPos    = 'QIYAM';
+
+    // V4: Word-level tracking fields
+    this._currentWordIndex = 0;           // Current word position within ayah (0-indexed)
+    this._currentAyahWords = [];          // Word array for current ayah
+    this._wordTimestamps = [];            // Word timestamps from Whisper: [{text, start, end}]
+    this._wordProgressInterval = null;    // Timer for progress updates (200ms)
+    this._lockTime = 0;                   // When ayah was locked (for word position estimation)
     this._taraweehLastFrom = 'reciting';  // 'reciting' | 'ruku' | 'sajda1' | 'sajda2'
     this._sajdaCount     = 0;              // 1 or 2 when in SAJDA
     this._rakatCount     = 0;
@@ -419,6 +426,8 @@ export class AudioPipeline {
       this._displayAyah++;
       const to = `${this._displaySurah}:${this._displayAyah}`;
       this._ayahStartTime = Date.now();
+      this._lockTime = this._ayahStartTime;  // V4: Reset word progress timer
+      this._currentWordIndex = 0;  // V4: Reset word index
       this._lastManualAdjustMs = Date.now();
       this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
         surah: this._displaySurah, ayah: this._displayAyah,
@@ -521,6 +530,8 @@ export class AudioPipeline {
     }
     this._whisperAyah = this._displayAyah;
     this._ayahStartTime = Date.now();
+    this._lockTime = this._ayahStartTime;  // V4: Reset word progress timer
+    this._currentWordIndex = 0;  // V4: Reset word index
     this._lastManualAdjustMs = Date.now();
     this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
       surah: this._displaySurah, ayah: this._displayAyah,
@@ -653,12 +664,14 @@ export class AudioPipeline {
       this.onStatus({ component: 'search', status: 'transcribing', audioSec: bufMs / 1000, window: this._searchWinIdx + 1 });
 
       let text = '';
+      let words = [];  // V4: Word timestamps from Whisper
       try {
         const audioToSend = applyClipGuard(this._searchBuf, rms);
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
+        words = result.words || [];  // V4: Extract word timestamps
         if (stale()) { console.log('[Pipeline] Stale search result discarded'); return; }
-        console.log(`[Pipeline] Whisper (${bufMs}ms): "${text.substring(0, 80)}"`);
+        console.log(`[Pipeline] Whisper (${bufMs}ms): "${text.substring(0, 80)}"${words.length > 0 ? ` [${words.length} words]` : ''}`);
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
         this.onError(err.message);
@@ -799,6 +812,8 @@ export class AudioPipeline {
         }
 
         this._ayahStartTime = Date.now();
+        this._lockTime = this._ayahStartTime;  // V4: Reset word progress timer on initial lock
+        this._currentWordIndex = 0;  // V4: Reset word index
         this._measuredWps            = READ_WORDS_PER_SEC;
         this._whisperLastConfirmMs   = Date.now();
         this._whisperLastConfirmAyah = this.state.ayah;
@@ -878,10 +893,12 @@ export class AudioPipeline {
       console.log(`[Pipeline] Locked check ${chunkMs}ms rms=${rms.toFixed(3)}, display=${this._displaySurah}:${this._displayAyah}, whisper=${this._whisperSurah}:${this._whisperAyah}${displayCapped ? ' [force — capped]' : ''}`);
 
       let text = '';
+      let words = [];  // V4: Word timestamps from Whisper
       try {
         const audioToSend = applyClipGuard(chunk, rms);
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
+        words = result.words || [];  // V4: Extract word timestamps
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
         this.processing = false;
@@ -981,7 +998,7 @@ export class AudioPipeline {
         // _locked = spotCheck found a real word match; false = noise/miss.
         // Pass this through so the timer hold only fires on real confirms.
         const realMatch = !!finalResult._locked;
-        this._onWhisperConfirm(finalResult.surah, finalResult.ayah, finalResult.confidence, text, rms, realMatch);
+        this._onWhisperConfirm(finalResult.surah, finalResult.ayah, finalResult.confidence, text, rms, realMatch, words);  // V4: Pass words
       }
     } catch (err) {
       console.error('[Pipeline] Locked chunk error:', err.message);
@@ -991,7 +1008,7 @@ export class AudioPipeline {
 
   // ── Core V2: single handler for Whisper confirmations in LOCKED mode ───────
 
-  _onWhisperConfirm(confirmedSurah, confirmedAyah, score, text, rms, realMatch = true) {
+  _onWhisperConfirm(confirmedSurah, confirmedAyah, score, text, rms, realMatch = true, words = []) {  // V4: Added words parameter
     const sameSurah = confirmedSurah === this._displaySurah;
 
     // ── Ratchet _whisperAyah forward only on REAL matches ──────────────────
@@ -1165,6 +1182,16 @@ export class AudioPipeline {
       }
       this._emitState(text, rms);
     }
+
+    // V4: Word-level tracking - learn pace from word timestamps
+    if (words.length > 0 && realMatch) {
+      this._wordTimestamps = words;
+      this._learnWordPaceFromTimestamps();
+    }
+    // Update word progress display
+    if (confirmedSurah === this._displaySurah && confirmedAyah === this._displayAyah) {
+      this._updateWordProgress();
+    }
   }
 
   _updateWpsClock(confirmedSurah, confirmedAyah) {
@@ -1206,6 +1233,66 @@ export class AudioPipeline {
       // Surah changed — reset pace history (different recitation section)
       this._paceHistory = [];
     }
+  }
+
+  // V4: Learn pace from word-level timestamps
+  _learnWordPaceFromTimestamps() {
+    if (this._wordTimestamps.length === 0) return;
+    
+    // Calculate actual pace from word durations
+    const durations = this._wordTimestamps.map(w => {
+      const start = typeof w.start === 'number' ? w.start : (Array.isArray(w.timestamp) ? w.timestamp[0] : 0);
+      const end = typeof w.end === 'number' ? w.end : (Array.isArray(w.timestamp) ? w.timestamp[1] : start + 0.5);
+      return (end - start) * 1000;  // Convert to ms
+    });
+    
+    const avgMs = durations.reduce((a, b) => a + b, 0) / durations.length;
+    const minMs = Math.min(...durations);
+    const maxMs = Math.max(...durations);
+    
+    // Weighted average with existing estimate (70% old, 30% new)
+    if (this._measuredMsPerWord > 0) {
+      this._measuredMsPerWord = Math.round(this._measuredMsPerWord * 0.7 + avgMs * 0.3);
+    } else {
+      this._measuredMsPerWord = Math.round(avgMs);
+    }
+    
+    // Also update WPS for consistency
+    this._measuredWps = 1000 / this._measuredMsPerWord;
+    
+    console.log(
+      `[Pipeline] Word pace from timestamps: ${avgMs.toFixed(0)}ms avg ` +
+      `(${minMs.toFixed(0)}-${maxMs.toFixed(0)}ms range, ` +
+      `${this._wordTimestamps.length} words) → ${this._measuredMsPerWord}ms/w`
+    );
+  }
+
+  // V4: Update word progress and emit to frontend
+  _updateWordProgress() {
+    const ayah = getAyah(this._displaySurah, this._displayAyah);
+    if (!ayah) return;
+    
+    const totalWords = ayah.words.length;
+    if (totalWords === 0) return;
+    
+    // Estimate current word based on timer
+    const elapsedMs = Date.now() - this._lockTime;
+    const msPerWord = this._measuredMsPerWord || 700;
+    this._currentWordIndex = Math.max(0, Math.min(
+      Math.floor(elapsedMs / msPerWord),
+      totalWords - 1
+    ));
+    
+    // Emit word progress to frontend
+    this.onStateUpdate({
+      type: 'wordProgress',
+      surah: this._displaySurah,
+      ayah: this._displayAyah,
+      wordIndex: this._currentWordIndex,
+      totalWords: totalWords,
+      progress: (this._currentWordIndex + 1) / totalWords,  // +1 so 0/3 shows as 33%, not 0%
+      words: ayah.words,
+    });
   }
 
   _updatePace(rawWps, now) {
@@ -1333,6 +1420,13 @@ export class AudioPipeline {
 
     this._nextAdvanceMs  = durationMs;
     this._timerStartedAt = Date.now();
+    
+    // V4: Start word progress updates (every 200ms)
+    if (this._wordProgressInterval) clearInterval(this._wordProgressInterval);
+    this._wordProgressInterval = setInterval(() => {
+      this._updateWordProgress();
+    }, 200);  // 5 FPS
+    
     this._displayAdvanceTimer = setTimeout(() => {
       this._displayAdvanceTimer = null;
       this._nextAdvanceMs  = 0;
@@ -1382,6 +1476,7 @@ export class AudioPipeline {
         this._bumpCountForAyah = 0;
         this._displayAyah++;
         this._ayahStartTime = Date.now();
+        this._lockTime = this._ayahStartTime;  // V4: Track lock time for word progress
         this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
           lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
         console.log(`[Pipeline] Read-advance → ${this._displaySurah}:${this._displayAyah}`);
@@ -1478,6 +1573,8 @@ export class AudioPipeline {
   _cancelReadAdvance() {
     if (this._displayAdvanceTimer) { clearTimeout(this._displayAdvanceTimer); this._displayAdvanceTimer = null; }
     if (this._smoothAdvanceTimer)  { clearTimeout(this._smoothAdvanceTimer);  this._smoothAdvanceTimer  = null; }
+    // V4: Clear word progress interval
+    if (this._wordProgressInterval) { clearInterval(this._wordProgressInterval); this._wordProgressInterval = null; }
     this._nextAdvanceMs  = 0;
     this._timerStartedAt = 0;
     this._pauseAccumMs   = 0;

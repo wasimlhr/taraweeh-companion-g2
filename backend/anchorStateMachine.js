@@ -26,8 +26,8 @@ const BACK_STEP_CAP = 4;   // max ayahs to move backward in one Whisper cycle
 
 // v5 ambiguity-aware lock — prevents premature lock on shared openings (e.g. 2:255 vs 3:2)
 const LOCK_WINS_REQUIRED = 2;     // consecutive chunks must agree
-const LOCK_MARGIN_MIN    = 5;     // score gap (% points) between #1 and #2
-const LOCK_COVERAGE_MIN  = 0.25;  // ≥25% of target ayah's words must be matched
+const LOCK_MARGIN_MIN    = 3;     // score gap (% points) between #1 and #2 (was 5, too strict for long shared ayahs)
+const LOCK_COVERAGE_MIN  = 0.25;  // ≥25% of target ayah's words must be matched (scaled down for long ayahs)
 const LOCK_MIN_WORDS     = 3;     // matched words must be ≥ this to prevent single-word fast-locks
 const FAST_LOCK_SCORE    = 0.75;  // instant lock when score ≥ this AND margin ≥ 30
 const SINGLE_WIN_SCORE  = 0.55;  // solid IDF match on first chunk → lock (raised for confident initial lock)
@@ -179,6 +179,10 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   const secondRaw = second ? (second.rawScore ?? second.score) : 0;
   const margin    = second ? (topRaw - secondRaw) * 100 : topRaw * 100;
   const coverage  = top.coverage || 0;
+  // Scale coverage threshold for long ayahs: a 49-word ayah with 7 matched words
+  // is 14% coverage but very reliable. Min 10% for long ayahs, 25% for short ones.
+  const topWordCount = top.matchedWords?.length ? (top.totalWords || (top.matchedWords.length / Math.max(coverage, 0.01))) : 10;
+  const covThreshold = topWordCount >= 30 ? 0.10 : topWordCount >= 20 ? 0.15 : LOCK_COVERAGE_MIN;
 
   console.log(`[Anchor] Top: [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)}${top.seqBoosted ? '(+seq)' : ''} F1=${(top.f1||0).toFixed(2)} IDF=${(top.idfScore||0).toFixed(2)} margin=${margin.toFixed(1)} cov=${(coverage*100).toFixed(0)}%`);
   matches.slice(0, 3).forEach((m, i) =>
@@ -255,11 +259,18 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && !isBismillahAmbiguous;  // bismillah is always too ambiguous regardless
   // After Fatiha, prefix-ambiguity is expected (short ayahs share words across surahs)
   // and we have no sequential context to disambiguate — rely on margin instead.
+  // Context bypass: if we were tracking a surah and one candidate is in it, prefer it
+  const hasContextSurah = lastSurah > 0;
+  const topInContext = hasContextSurah && top.surah === lastSurah;
+  const secondInContext = hasContextSurah && second && second.surah === lastSurah;
+  // If top is in our context surah but second isn't, treat as unambiguous
+  const contextBypass = topInContext && !secondInContext;
   const isPrefixAmbiguous = !topHasExclusiveWord
     && second !== undefined
     && second.score >= 0.30
     && !isHighConfidenceBypass
-    && !postFatiha;
+    && !postFatiha
+    && !contextBypass;
   // Refrain bypass: Ar-Rahman (55) and similar surahs repeat the same verse many times.
   // Top and second share identical text → no exclusive word is ever possible. Requiring
   // 2 wins would never help — the next chunk is also the refrain. So when both are
@@ -289,7 +300,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // Single-win lock: solid score + clear gap to #2 on first chunk
   const isSingleWinLock = top.score >= Math.max(SINGLE_WIN_SCORE, crossSurahPenalty.minScore)
     && margin   >= Math.max(SINGLE_WIN_MARGIN, crossSurahPenalty.minMargin)
-    && coverage >= LOCK_COVERAGE_MIN
+    && coverage >= covThreshold
     && hasEnoughWords
     && wins     >= Math.max(1, crossSurahPenalty.minWins)
     && !isBismillahAmbiguous   // bismillah alone never single-win-locks
@@ -302,7 +313,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // so we have zero sequential context and need to lock fast on whatever Whisper hears.
   // Ordinary high-margin (25-49) in other contexts still needs LOCK_MIN_WORDS=3.
   const highMarginMinWords = (margin >= 50 || (margin >= 25 && postFatiha)) ? 2 : LOCK_MIN_WORDS;
-  const isHighMarginLock = margin >= 25 && top.score >= 0.40 && coverage >= LOCK_COVERAGE_MIN
+  const isHighMarginLock = margin >= 25 && top.score >= 0.40 && coverage >= covThreshold
     && matchedWordCount >= highMarginMinWords
     && !isUnexpectedSurah      // don't allow high-margin cross-surah hop
     && !isBismillahAmbiguous   // bismillah alone never high-margin-locks
@@ -315,20 +326,22 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && wins >= 1;
 
   // Standard ambiguity-aware lock: 2 consecutive wins + clear margin + enough coverage
-  // IMPORTANT: require SINGLE_WIN_SCORE here too — two wins on a 0.48 score candidate is
-  // not confidence, it's noise repeating. Without this gate, the "No-matches preserves wins"
-  // optimisation can bridge a weak candidate across a quiet window to reach wins=2.
+  // With 2+ wins AND good coverage (>=40%), lower the score threshold to 0.40 — repeated
+  // agreement across chunks with distinct words is strong signal even at moderate scores.
+  // At lower coverage, keep SINGLE_WIN_SCORE to avoid noise locks.
+  const consistentScoreMin = (wins >= LOCK_WINS_REQUIRED && coverage >= 0.40) ? 0.40 : SINGLE_WIN_SCORE;
   const isConsistentLock = wins >= Math.max(LOCK_WINS_REQUIRED, crossSurahPenalty.minWins)
-    && top.score >= SINGLE_WIN_SCORE
+    && top.score >= consistentScoreMin
     && margin   >= LOCK_MARGIN_MIN
-    && coverage >= LOCK_COVERAGE_MIN
+    && coverage >= covThreshold
     && hasEnoughWords;
 
   // Sequential-carry lock: 3+ wins accumulated via sequential advancement in the same
   // surah. Each window pointed at the next verse — that's strong directional evidence
   // even if individual margins are low (common words across surahs).
   const isSeqCarryLock = seqAdvance && wins >= 3
-    && coverage >= LOCK_COVERAGE_MIN
+    && top.score >= 0.30       // don't lock on near-zero scores
+    && coverage >= covThreshold
     && matchedWordCount >= LOCK_MIN_WORDS
     && !isBismillahAmbiguous;
 
@@ -338,7 +351,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // Only require 2 matched words here — short ayahs with high scores are reliable.
   const isHighScoreLock = wins >= LOCK_WINS_REQUIRED
     && top.score >= 0.80
-    && coverage >= LOCK_COVERAGE_MIN
+    && coverage >= covThreshold
     && matchedWordCount >= 2
     && !isBismillahAmbiguous;
 
@@ -469,7 +482,8 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
 
   // Back-corrections require stronger evidence than forward/same-position confirmations.
   // A low-score backward match is more likely Whisper hallucination than a real position error.
-  const backThreshold = Math.max(scanThreshold, 0.35);
+  // Back-correction must be very confident — 0.69 was causing false 2-ayah jumps.
+  const backThreshold = Math.max(scanThreshold, 0.78);
 
   // 1. Wide scan ±scanRadius from current: finds best match whether forward, current, or backward.
   const wideCheck = spotCheck(whisperText, state.surah, state.ayah, scanRadius);
@@ -490,9 +504,12 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
             _locked: true,
           };
         }
-        if (wideCheck.score < backThreshold) {
-          // Weak backward match — treat as same-position confirmation instead of back-correcting
-          console.log(`[Anchor] Weak back-match ignored: :${wideCheck.ayah} score=${wideCheck.score.toFixed(2)} < ${backThreshold} — holding :${state.ayah}`);
+        // Back by 1 ayah is almost always audio buffer lag — always ignore.
+        // Back by 2+ needs strong score, scaled by distance.
+        const backDist = state.ayah - wideCheck.ayah;
+        const backMinScore = backDist <= 1 ? 999 : backDist <= 2 ? 0.70 : 0.80;
+        if (wideCheck.score < backMinScore) {
+          console.log(`[Anchor] Back-match ignored: :${wideCheck.ayah} (dist=${backDist}, score=${wideCheck.score.toFixed(2)} < ${backMinScore}) — holding :${state.ayah}`);
           return {
             ...state,
             confidence: Math.max(Math.round(wideCheck.score * 100), state.confidence),
@@ -503,7 +520,25 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
           };
         }
       }
-      return applyBack(wideCheck, wideCheck.ayah > state.ayah ? 'Advanced' : 'Back-corrected');
+      // Forward jumps: require higher score for bigger jumps to prevent wild leaps
+      const isForward = wideCheck.ayah > state.ayah;
+      if (isForward) {
+        const fwdDist = wideCheck.ayah - state.ayah;
+        // 1 ayah: 0.40, 2: 0.55, 3+: 0.65
+        const fwdMinScore = fwdDist <= 1 ? 0.40 : fwdDist <= 2 ? 0.55 : 0.65;
+        if (wideCheck.score < fwdMinScore) {
+          console.log(`[Anchor] Forward jump ignored: :${state.ayah}→:${wideCheck.ayah} (dist=${fwdDist}, score=${wideCheck.score.toFixed(2)} < ${fwdMinScore})`);
+          return {
+            ...state,
+            confidence: Math.max(Math.round(wideCheck.score * 100), state.confidence),
+            missedChunks: 0,
+            lastKeywords: keywords,
+            _matches: [{ surah: state.surah, ayah: state.ayah, score: wideCheck.score, matchedWords: wideCheck.matchedWords }],
+            _locked: true,
+          };
+        }
+      }
+      return applyBack(wideCheck, isForward ? 'Advanced' : 'Back-corrected');
     }
     // Still on same ayah — confirm position, reset missed count
     return {

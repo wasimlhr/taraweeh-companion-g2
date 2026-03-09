@@ -145,6 +145,41 @@ body {
   height: 1px;
   background: var(--bc-4);
 }
+
+/* V4: Word Progress Bar */
+.word-progress {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: rgba(76, 175, 80, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(76, 175, 80, 0.2);
+}
+.word-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--tc-2);
+  margin-bottom: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.word-progress-percent {
+  font-weight: 600;
+  color: #4CAF50;
+}
+.word-progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.word-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A);
+  transition: width 0.15s ease-out;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
+}
 .verse-translit {
   font-size: 15px;
   color: var(--tc-1);
@@ -500,7 +535,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.7.10</span>
+      <span class="version" id="versionEl">v2.8.4</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -578,6 +613,18 @@ body {
     <div id="lockedContent" style="display:none">
       <div class="verse-pos" id="versePos"></div>
       <div class="verse-arabic" id="verseArabic"></div>
+      
+      <!-- V4: Word Progress Bar -->
+      <div id="wordProgress" class="word-progress" style="display:none">
+        <div class="word-progress-info">
+          <span id="wordProgressText">Word 0 / 0</span>
+          <span id="wordProgressPercent">0%</span>
+        </div>
+        <div class="word-progress-bar">
+          <div id="wordProgressFill" class="word-progress-fill" style="width:0%"></div>
+        </div>
+      </div>
+      
       <div class="verse-divider"></div>
       <div class="verse-translit" id="verseTranslit"></div>
       <div class="verse-divider"></div>
@@ -642,6 +689,7 @@ body {
     <div class="s-row">
       <span class="s-label">Pipeline Engine</span>
       <select id="settingPipeline">
+        <option value="v4">V4 (word-level tracking, progress bar) ⭐ NEW</option>
         <option value="v3">V3 (half-timer prev, bump cap, re-lock)</option>
         <option value="v2">V2 (cap-based)</option>
         <option value="v1">V1 (legacy — penalty-based)</option>
@@ -720,7 +768,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.7.10';
+  const APP_VERSION = 'v2.8.4';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -810,7 +858,7 @@ body {
   });
 
   // ── Pace Mode (Fast / Slow) ────────────────────────────────────────────────
-  var _fastMode = true;
+  var _fastMode = false;
   var _slowMode = false;
   window.toggleFastMode = function () {
     _fastMode = !_fastMode;
@@ -916,7 +964,7 @@ body {
   var DEFAULT_SETTINGS = {
     lang: '',
     defaultSurah: '0',
-    pipelineVersion: 'v3',
+    pipelineVersion: 'v4',  // V4: Word-level tracking
     forcePhoneMic: false,
     fastMode: true,
     slowMode: false,
@@ -1394,6 +1442,9 @@ body {
       if (state.mode === 'LOCKED') resetMatchPanel && resetMatchPanel();
       searching.style.display = 'none';
       locked.style.display = 'flex';
+      // V4: Show word progress only in LOCKED mode
+      var wordProg = document.getElementById('wordProgress');
+      if (wordProg) wordProg.style.display = (state.mode === 'LOCKED') ? 'block' : 'none';
       locked.style.flexDirection = 'column';
       locked.style.gap = '10px';
       var navRow = document.getElementById('verseNavRow');
@@ -1528,7 +1579,7 @@ body {
         whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
         whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
         whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
-        pipelineVersion: S.settings.pipelineVersion || 'v3',
+        pipelineVersion: S.settings.pipelineVersion || 'v4',
         fastMode: _fastMode,
         slowMode: _slowMode,
       }));
@@ -1709,9 +1760,39 @@ body {
     } else if (msg.type === 'taraweeh') {
       _updateTaraweehOverlay(msg.position, msg.rakat);
       log('Taraweeh: ' + msg.position + ' rakat=' + msg.rakat, 'ok');
+    } else if (msg.type === 'wordProgress') {
+      // V4: Handle word progress updates
+      _updateWordProgress(msg);
     } else if (msg.type === 'error') {
       log('Backend error: ' + msg.error, 'err');
     }
+  }
+
+  // V4: Update word progress bar
+  function _updateWordProgress(msg) {
+    var progressDiv = document.getElementById('wordProgress');
+    var textSpan = document.getElementById('wordProgressText');
+    var percentSpan = document.getElementById('wordProgressPercent');
+    var fillDiv = document.getElementById('wordProgressFill');
+    
+    if (!progressDiv || !msg.totalWords) {
+      if (progressDiv) progressDiv.style.display = 'none';
+      return;
+    }
+    
+    // Show progress bar
+    progressDiv.style.display = 'block';
+    
+    // Update text: "Word 5 / 12"
+    var currentWord = Math.min(msg.wordIndex + 1, msg.totalWords); // +1 for 1-indexed display
+    textSpan.textContent = 'Word ' + currentWord + ' / ' + msg.totalWords;
+    
+    // Update percentage
+    var percent = Math.round(msg.progress * 100);
+    percentSpan.textContent = percent + '%';
+    
+    // Update progress bar width
+    fillDiv.style.width = (msg.progress * 100) + '%';
   }
 
   // ─── Audio ────────────────────────────────────────────────────────────────
@@ -1904,7 +1985,7 @@ body {
         whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
         whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
         whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
-        pipelineVersion: S.settings.pipelineVersion || 'v3',
+        pipelineVersion: S.settings.pipelineVersion || 'v4',
       }));
       S.ws.send(JSON.stringify({ type: 'start' }));
       log('Reused existing WS, sent start', 'ok');
@@ -2053,7 +2134,7 @@ body {
     document.getElementById('settingWhisperModalSecret').value = S.settings.whisperModalSecret || '';
     document.getElementById('settingLang').value = S.settings.lang || '';
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
-    document.getElementById('settingPipeline').value = S.settings.pipelineVersion || 'v3';
+    document.getElementById('settingPipeline').value = S.settings.pipelineVersion || 'v4';
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     updateTranslationDesc();
@@ -2074,7 +2155,7 @@ body {
       whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
       whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
       whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
-      pipelineVersion: S.settings.pipelineVersion || 'v3',
+      pipelineVersion: S.settings.pipelineVersion || 'v4',
       fastMode: _fastMode,
       slowMode: _slowMode,
     }));
@@ -2161,7 +2242,7 @@ body {
     _slowMode = !!S.settings.slowMode;
     if (_slowMode) _fastMode = false;
     _updatePaceButtons();
-    document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v3').toUpperCase();
+    document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v4').toUpperCase();
     populateSurahs();
     initWave();
 

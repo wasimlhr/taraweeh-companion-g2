@@ -186,14 +186,21 @@ function scoreCandidate(inputWords, ayahWords) {
   const f1 = (precision + recall === 0) ? 0 : (2 * precision * recall) / (precision + recall);
 
   const fallbackIdf = 1.0;
-  const inputIdfSum   = inputWords.reduce((s, w) => s + (idfMap.get(w) ?? fallbackIdf), 0);
+  // Ayah-centric IDF: what fraction of the AYAH's IDF weight was matched?
+  // This measures how well we identified the ayah, not how much of the input was used.
+  // A 4s Whisper chunk may span 2 ayahs — input-centric scoring penalises unfairly.
+  const ayahIdfSum    = ayahWords.reduce((s, w) => s + (idfMap.get(w) ?? fallbackIdf), 0);
   const matchedIdfSum = matched.reduce((s, w)  => s + (idfMap.get(w) ?? fallbackIdf), 0);
-  const idfScore = inputIdfSum === 0 ? 0 : matchedIdfSum / inputIdfSum;
+  const idfScore = ayahIdfSum === 0 ? 0 : matchedIdfSum / ayahIdfSum;
 
-  const score    = 0.25 * f1 + 0.75 * idfScore;
+  // Word count bonus: when coverage/IDF are similar, prefer matches with more words.
+  // This prevents short ayahs with high coverage from beating long ayahs with more evidence.
+  const wordCountBonus = Math.min(0.15, matched.length * 0.01);  // max +0.15 for 15+ words
+  
+  const score    = 0.25 * f1 + 0.75 * idfScore + wordCountBonus;
   const coverage = matched.length / ayahWords.length;
 
-  return { score, f1, idfScore, matchedWords: matched, coverage };
+  return { score, f1, idfScore, matchedWords: matched, coverage, wordCountBonus };
 }
 
 // Boost applied to candidates that are in the expected sequential range after the last lock
@@ -237,9 +244,9 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
     const { score, f1, idfScore, matchedWords, coverage } = scoreCandidate(inputWords, a.words);
     if (score < 0.01 && !(seqHint && a.surah === seqHint.surah && a.ayah >= seqHint.fromAyah && a.ayah <= seqHint.toAyah)) continue;
 
-    // Require 2+ matched words for longer ayahs, 1 for ultra-short (1-2 word ayahs)
-    if (matchedWords.length < 1) continue;
-    if (matchedWords.length < 2 && a.words.length > 2) continue;
+    // Require 2+ matched words; 3+ for longer ayahs
+    if (matchedWords.length < 2) continue;
+    if (matchedWords.length < 3 && a.words.length > 4) continue;
 
     // Sequential boost: candidate is the expected next verse(s) after last lock
     const inSeqRange = seqHint
@@ -293,18 +300,29 @@ export function spotCheck(whisperText, expectedSurah, expectedAyah, window = 4) 
 
     // High-coverage boost: when most/all of the ayah's words matched (e.g. short refrains),
     // the IDF score is low because the words are common, but the match is actually solid.
-    const effectiveScore = (coverage >= 0.80 && matchedWords.length >= 3) ? Math.max(score, 0.50) : score;
+    // For refrain verses, lower the threshold to handle Whisper garbling 1-2 words.
+    const refrainVerse = isRefrain(a.surah, a.ayah);
+    const coverageThresh = refrainVerse ? 0.60 : 0.80;
+    const minWords = refrainVerse ? 2 : 3;
+    const boostScore = refrainVerse ? 0.45 : 0.50;
+    const effectiveScore = (coverage >= coverageThresh && matchedWords.length >= minWords)
+      ? Math.max(score, boostScore) : score;
 
     if (!best || effectiveScore > best.score) {
       best = { found: true, surah: a.surah, ayah: a.ayah, score: effectiveScore, matchedWords };
-    } else if (effectiveScore === best.score) {
-      const bestAhead = best.ayah >= expectedAyah;
-      const candAhead = a.ayah >= expectedAyah;
-      if (candAhead && !bestAhead) {
+    } else if (Math.abs(effectiveScore - best.score) < 0.02) {
+      // Very close scores (<0.02 margin): prefer more matched words, then proximity
+      if (matchedWords.length > best.matchedWords.length) {
         best = { found: true, surah: a.surah, ayah: a.ayah, score: effectiveScore, matchedWords };
-      } else if (candAhead === bestAhead) {
-        if (Math.abs(a.ayah - expectedAyah) < Math.abs(best.ayah - expectedAyah)) {
+      } else if (matchedWords.length === best.matchedWords.length) {
+        const bestAhead = best.ayah >= expectedAyah;
+        const candAhead = a.ayah >= expectedAyah;
+        if (candAhead && !bestAhead) {
           best = { found: true, surah: a.surah, ayah: a.ayah, score: effectiveScore, matchedWords };
+        } else if (candAhead === bestAhead) {
+          if (Math.abs(a.ayah - expectedAyah) < Math.abs(best.ayah - expectedAyah)) {
+            best = { found: true, surah: a.surah, ayah: a.ayah, score: effectiveScore, matchedWords };
+          }
         }
       }
     }
@@ -331,12 +349,20 @@ function _resolveRefrain(inputWords, surah, expectedAyah, startAyah, endAyah) {
     const inputCoverage = matchedWords.length / inputWords.length;
     if (inputCoverage < 0.50) continue;
 
-    // Find the next refrain instance at or after expectedAyah, within bounds
+    // Find closest refrain instance to expectedAyah (prefer at-or-after)
     let resolved = null;
+    let bestDist = Infinity;
     for (const ay of ayahs) {
       if (ay < startAyah || ay > endAyah) continue;
-      if (ay >= expectedAyah) { resolved = ay; break; }
-      if (!resolved || ay > resolved) resolved = ay;
+      const dist = Math.abs(ay - expectedAyah);
+      // Prefer at-or-after over before, break ties by distance
+      const isBetter = !resolved 
+        || dist < bestDist
+        || (dist === bestDist && ay >= expectedAyah && resolved < expectedAyah);
+      if (isBetter) {
+        resolved = ay;
+        bestDist = dist;
+      }
     }
 
     if (resolved !== null) {

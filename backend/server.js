@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v5.0.1 — spotCheck refrain fix
+ * v5.0.2 — back-correction cooldown, higher snap-back threshold, stronger fast/slow modes
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -17,6 +17,7 @@ import { closeTranscription, PROVIDER } from './transcriptionRouter.js';
 import { AudioPipeline as AudioPipelineV1 } from './audioPipeline.js';
 import { AudioPipeline as AudioPipelineV2 } from './audioPipelineV2.js';
 import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
+import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
 
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
@@ -89,14 +90,15 @@ wss.on('connection', (ws, req) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   }
 
-  let pipelineVersion = 'v3';
+  let pipelineVersion = 'v4';  // V4: Default to word-level tracking
 
   function createPipeline(preferredSurah = 0, opts = {}, version) {
     if (pipeline) pipeline.destroy();
     if (version) pipelineVersion = version;
     const Ctor = pipelineVersion === 'v1' ? AudioPipelineV1
+      : pipelineVersion === 'v2' ? AudioPipelineV2
       : pipelineVersion === 'v3' ? AudioPipelineV3
-      : AudioPipelineV2;
+      : AudioPipelineV4;
 
     const hasWhisperOverrides = opts.whisperProvider || opts.whisperEndpointUrl || opts.whisperApiKey || opts.hfToken;
     const ep = opts.whisperEndpointUrl || '';
@@ -123,13 +125,16 @@ wss.on('connection', (ws, req) => {
       onStatus: (s) => send({ type: 'sys_status', ...s }),
       onError: (err) => send({ type: 'error', error: err }),
     });
-    if (pipeline.setFastMode) pipeline.setFastMode(!!opts.fastMode);
-    if (pipeline.setSlowMode) pipeline.setSlowMode(!!opts.slowMode);
-    console.log(`[Init] Pace: ${opts.slowMode ? 'SLOW' : opts.fastMode ? 'FAST' : 'normal'}`);
+    // Ignore client fast/slow — learned pace handles it. Client localStorage
+    // may have stale fastMode=true from old defaults.
+    if (pipeline.setFastMode) pipeline.setFastMode(false);
+    if (pipeline.setSlowMode) pipeline.setSlowMode(false);
+    console.log(`[Init] Pace: normal (client sent: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'})`);
     send({ type: 'pipeline_version', version: pipelineVersion });
   }
 
-  createPipeline(0, {});
+  // Don't eagerly create — client sends 'init' message with settings.
+  // Eager creation caused duplicate pipelines (old one's callbacks leaked).
 
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
@@ -157,8 +162,13 @@ wss.on('connection', (ws, req) => {
           case 'init': {
             const surah = (typeof msg.preferredSurah === 'number' && msg.preferredSurah >= 1 && msg.preferredSurah <= 114)
               ? msg.preferredSurah : 0;
-            const ver = msg.pipelineVersion === 'v1' ? 'v1' : msg.pipelineVersion === 'v2' ? 'v2' : 'v3';
-            console.log(`[Init] preferredSurah=${surah} pipeline=${ver}`);
+            // V4: Force V4 for testing (TODO: allow client to choose)
+            const requestedVer = msg.pipelineVersion === 'v1' ? 'v1' 
+              : msg.pipelineVersion === 'v2' ? 'v2' 
+              : msg.pipelineVersion === 'v3' ? 'v3' 
+              : 'v4';
+            const ver = 'v4';  // Force V4 for now
+            console.log(`[Init] preferredSurah=${surah} pipeline=${ver} (client requested: ${requestedVer})`);
             createPipeline(surah, msg, ver);
             _binaryLogged = false;
             break;
@@ -214,6 +224,11 @@ if (httpsServer) {
 }
 
 process.on('SIGTERM', async () => {
+  console.log('[Server] SIGTERM received — shutting down');
+  // Close all WebSocket connections (triggers 'close' → pipeline.destroy())
+  wss.clients.forEach(ws => ws.terminate());
   await closeTranscription();
-  httpServer.close();
+  httpServer.close(() => process.exit(0));
+  // Force exit after 5s if graceful close hangs
+  setTimeout(() => process.exit(1), 5000).unref();
 });

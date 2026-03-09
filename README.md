@@ -311,6 +311,6 @@ This project is for personal and educational use. The Quran text data is in the 
 
 - **Even Realities** — G2 smart glasses and SDK
 - **OpenAI** — Whisper speech recognition model
-- **Tarteel AI** — Quran recitation training data
+- **Buraaq** — Quran recitation training data
 - **quran-json** — Structured Quran text corpus
 - **Sahih International** — English translation
