@@ -1123,7 +1123,7 @@ body {
             content: appTitleHdr() },
           { containerID: 2, containerName: 'body',
             xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
-            isEventCapture: 1,
+            isEventCapture: 0,
             borderWidth: 1, borderColor: 5, borderRdaius: 4, paddingLength: 8,
             content: 'Ready. Recite any verse to begin.' },
         ],
@@ -1307,10 +1307,14 @@ body {
       }
 
       case 'PAUSED': {
-        var pName = state.surahName ? clip(state.surahName, 14) : 'Paused';
-        var pHdr  = '\u23F8 ' + pName + ' ' + (state.surah ? state.surah + ':' + state.ayah : '');
-        var pMsg  = state.nonQuranType || 'Paused. Tap to resume.';
-        return { hdr: pHdr, pages: buildPages(pMsg, state.transliteration) };
+        var pName = state.surahName ? clip(state.surahName, 14) : 'Quran';
+        var pRef  = pName + ' ' + (state.surah ? state.surah + ':' + state.ayah : '');
+        var pHdr  = '\u23F8 PAUSED  ' + pRef;
+        var transForPaused = state.translationGlasses ?? state.translation;
+        var pBody = transForPaused || 'Double-tap to resume';
+        var pPages = buildPages(pBody, state.transliteration);
+        pPages[pPages.length - 1] += '\n' + G2_DIV + '\nPAUSED \u2014 double-tap to resume';
+        return { hdr: pHdr, pages: pPages };
       }
 
       case 'RESUMING': {
@@ -1610,6 +1614,12 @@ body {
       if (S.isRecording) {
         S.ws.send(JSON.stringify({ type: 'start' }));
         log('Re-sent start after reconnect', 'ok');
+      }
+      // Force full glasses rebuild on reconnect so display isn't stale/zombie
+      if (S.isG2) {
+        S.displayRebuilt = false;
+        showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0);
+        startSearchingDots();
       }
     };
 

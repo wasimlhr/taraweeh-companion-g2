@@ -4,8 +4,7 @@
  * Fallback: openai/whisper-large-v3 on HF serverless
  */
 
-const ENDPOINT_URL = process.env.WHISPER_ENDPOINT_URL
-  || 'https://r6pubw0kxkgps2e9.us-east-1.aws.endpoints.huggingface.cloud';
+const ENDPOINT_URL = process.env.WHISPER_ENDPOINT_URL;
 
 const FALLBACK_URL = 'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3';
 

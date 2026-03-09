@@ -179,6 +179,7 @@ wss.on('connection', (ws, req) => {
             break;
           case 'stop':  pipeline?.stop();  break;
           case 'reset': pipeline?.reset(); break;
+          case 'pause': pipeline?.pause(); break;
           case 'audio_return': pipeline?.audioReturn(); break;
           case 'manual_advance': pipeline?.manualAdvance(); break;
           case 'manual_prev': pipeline?.manualPrev(); break;

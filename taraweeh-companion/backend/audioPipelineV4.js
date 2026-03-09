@@ -384,17 +384,24 @@ export class AudioPipeline {
       console.log('[Pipeline] Already active — ignoring duplicate start');
       return;
     }
+    // Preserve last known position so tap-to-browse in SEARCHING starts there
+    const prevSurah = this._displaySurah || this.state.lastLockedSurah;
+    const prevAyah  = this._displayAyah  || this.state.lastLockedAyah;
     this._cancelReadAdvance();
     this._startTimerHeartbeat();
     this.active = true;
     this.state  = createState();
+    if (prevSurah > 0) {
+      this.state.lastLockedSurah = prevSurah;
+      this.state.lastLockedAyah  = prevAyah || 1;
+    }
     this._whisperSurah = 0;
     this._whisperAyah  = 0;
     this._displaySurah = 0;
     this._displayAyah  = 0;
     this._preRecitSkips = 0;
     this._resetSearchBuf();
-    console.log('[Pipeline] Started');
+    console.log(`[Pipeline] Started (last known: ${prevSurah}:${prevAyah || 0})`);
   }
 
   stop() {
@@ -419,7 +426,7 @@ export class AudioPipeline {
     this._cancelReadAdvance();
     // When in SEARCHING: user browsing to find ayah — update display, show "Auto locking…", don't lock
     if (this.state.mode === 'SEARCHING') {
-      const s = this._displaySurah || this.state.lastLockedSurah || this._restoredSurah || 2;
+      const s = this._displaySurah || this.state.lastLockedSurah || this._restoredSurah || this.preferredSurah || 1;
       const a = this._displayAyah || this.state.lastLockedAyah || this._restoredAyah || 1;
       const next = getNextAyah(s, a);
       if (!next) return;
@@ -534,7 +541,7 @@ export class AudioPipeline {
     this._bumpCountForAyah = 0;
     // When in SEARCHING: user browsing to find ayah — stay in same surah
     if (this.state.mode === 'SEARCHING') {
-      const s = this._displaySurah || this.state.lastLockedSurah || this._restoredSurah || 2;
+      const s = this._displaySurah || this.state.lastLockedSurah || this._restoredSurah || this.preferredSurah || 1;
       const a = this._displayAyah || this.state.lastLockedAyah || this._restoredAyah || 1;
       if (a > 1) {
         this._displaySurah = s;
@@ -561,8 +568,34 @@ export class AudioPipeline {
     this._emitState(null, null);
   }
 
+  pause() {
+    if (this.state.mode !== 'LOCKED' && this.state.mode !== 'RESUMING') return;
+    // Freeze display and timer — but keep listening to Whisper in the background
+    // so we track where the reciter is. On resume, snap to the latest Whisper position.
+    this._cancelReadAdvance();
+    this._pausedWhisperSurah = this._whisperSurah;
+    this._pausedWhisperAyah  = this._whisperAyah;
+    this.state = { ...this.state, mode: 'PAUSED' };
+    console.log(`[Pipeline] Paused display at ${this._displaySurah}:${this._displayAyah} (Whisper still listening)`);
+    this._emitState(null, null);
+  }
+
   audioReturn() {
-    this.state = transition(this.state, { type: 'AUDIO_RETURN' });
+    if (this.state.mode !== 'PAUSED') return;
+    // Snap display to wherever Whisper last confirmed (reciter may have moved)
+    const snapSurah = this._whisperSurah || this._displaySurah;
+    const snapAyah  = this._whisperAyah  || this._displayAyah;
+    const moved = snapSurah !== this._displaySurah || snapAyah !== this._displayAyah;
+    this._displaySurah = snapSurah;
+    this._displayAyah  = snapAyah;
+    this._ayahStartTime = Date.now();
+    this._lockTime = this._ayahStartTime;
+    this._currentWordIndex = 0;
+    this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
+      surah: snapSurah, ayah: snapAyah,
+      lastLockedSurah: snapSurah, lastLockedAyah: snapAyah };
+    console.log(`[Pipeline] Resumed → ${snapSurah}:${snapAyah}${moved ? ' (snapped to Whisper)' : ''}`);
+    this._scheduleReadAdvance(Math.max(this.state.confidence, 65));
     this._emitState(null, null);
   }
 
@@ -608,7 +641,8 @@ export class AudioPipeline {
     // silence detection, which was triggering on breaths and causing the
     // display to race ahead of the reciter.
 
-    if (this.state.mode === 'LOCKED') {
+    // PAUSED keeps listening (locked-mode audio) so Whisper tracks reciter position
+    if (this.state.mode === 'LOCKED' || this.state.mode === 'PAUSED') {
       this._lockedBuf = Buffer.concat([this._lockedBuf, pcmData]);
 
       // Keep a rolling buffer of the last 10s of audio
