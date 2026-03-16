@@ -2004,9 +2004,19 @@ body {
         }
         return;
       }
-      // Single page or last page — pause / resume
-      if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-        S.ws.send(JSON.stringify({ type: S.mode === 'PAUSED' ? 'audio_return' : 'pause' }));
+      // Single page or last page — start/stop or pause/resume
+      if (!S.isRecording) {
+        // App is stopped — double-tap starts it
+        startListening();
+      } else if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+        if (S.mode === 'PAUSED') {
+          S.ws.send(JSON.stringify({ type: 'audio_return' }));
+        } else if (S.mode === 'LOCKED' || S.mode === 'RESUMING') {
+          S.ws.send(JSON.stringify({ type: 'pause' }));
+        } else {
+          // SEARCHING mode — double-tap stops
+          stopListening();
+        }
       }
       return;
     }
