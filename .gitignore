@@ -24,3 +24,4 @@ backend/debug_*.wav
 *.tar.gz
 tar-extract/
 qr.png
+.env
