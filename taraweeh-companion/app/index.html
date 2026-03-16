@@ -2084,6 +2084,13 @@ body {
     _cancelReconnect();
     if (S.ws && S.ws.readyState === WebSocket.OPEN)
       S.ws.send(JSON.stringify({ type: 'stop' }));
+
+    // Update G2 glasses BEFORE tearing down mic/WS — bridge must still be alive
+    if (S.isG2) {
+      glassesUpdate({ hdr: appTitleHdr(), body: 'Stopped.' });
+      S.displayRebuilt = false;   // reset for next session
+    }
+
     var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
     if (useBrowserMic) stopBrowserMic();
     else stopG2Mic();
@@ -2101,10 +2108,6 @@ body {
     btn.classList.remove('recording');
     setStatus('Stopped');
     stopPageFlip(); stopCountdown(); stopSearchingDots(); stopLockingDots();
-    if (S.isG2) {
-      S.displayRebuilt = false;
-      glassesUpdate({ hdr: appTitleHdr(), body: 'Stopped.' });
-    }
     updatePhoneUI({ mode: 'SEARCHING' });
   }
 
