@@ -242,7 +242,13 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
     if (filterSurah && a.surah !== filterSurah) continue;
 
     const { score, f1, idfScore, matchedWords, coverage } = scoreCandidate(inputWords, a.words);
-    if (score < 0.01 && !(seqHint && a.surah === seqHint.surah && a.ayah >= seqHint.fromAyah && a.ayah <= seqHint.toAyah)) continue;
+    const inSeqHintRange = seqHint && a.surah === seqHint.surah && a.ayah >= seqHint.fromAyah && a.ayah <= seqHint.toAyah;
+    // seqHint candidates bypass the 0.01 score floor so they're always evaluated,
+    // BUT they must still have at least 1 matched word — zero-match candidates are noise
+    // (Whisper returned gibberish or silence). Without this guard, empty transcription +
+    // seqHint can force-include candidates with score=0 that accumulate wins over time.
+    if (score < 0.01 && !inSeqHintRange) continue;
+    if (matchedWords.length === 0) continue;  // hard gate: no matched words = skip always
 
     // Require 2+ matched words; 3+ for longer ayahs
     if (matchedWords.length < 2) continue;

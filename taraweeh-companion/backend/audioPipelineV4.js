@@ -213,6 +213,24 @@ function isTakbeer(text) {
   return TAKBEER_RE.test(n);
 }
 
+// Tasmee': "سمع الله لمن حمده" — imam says this standing up from ruku.
+// Whisper garbles: سميع/سمي/سمعا + الله + لمن + حمده/حمد/حمدا etc.
+const TASMEE_RE = /سم[عيى]\s*(الله|لله)\s*(لمن|من)\s*(حمد|حمده|حمدا)/u;
+function isTasmee(text) {
+  if (!text) return false;
+  const n = text.replace(/[\u064b-\u065f\u0670\u0640]/g, '').trim();
+  return TASMEE_RE.test(n);
+}
+
+// Combined: any prayer transition phrase (takbeer or tasmee')
+function isPrayerTransition(text) {
+  return isTakbeer(text) || isTasmee(text);
+}
+
+// Timeout for stuck states: if in RUKU/SAJDA for too long, auto-advance.
+// During prayer, each position lasts ~3-8s. 15s is generous enough.
+const TARAWEEH_STUCK_TIMEOUT_MS = 15000;
+
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
 export class AudioPipeline {
@@ -298,6 +316,8 @@ export class AudioPipeline {
 
     this.taraweehMode    = false;
     this._taraweehPos    = 'QIYAM';
+    this._expectFatiha   = false;    // set after ruku/sajda cycle — next recitation is Fatiha
+    this._taraweehPosEnteredAt = 0;  // timestamp when current taraweeh position was entered
 
     // V4: Word-level tracking fields
     this._currentWordIndex = 0;           // Current word position within ayah (0-indexed)
@@ -442,8 +462,25 @@ export class AudioPipeline {
       const prevSurah = this._displaySurah;
       this._completedSurah = prevSurah;
       this._restorePreRukuIfNeeded(prevSurah);
-      this.state = { ...createState(), mode: 'SEARCHING', lastLockedSurah: 0, lastLockedAyah: 0 };
-      this._resetSearchBuf();
+      // Taraweeh khatam: after Fatiha manual-advance past 1:7, jump to continuation
+      const taraweehResume = this.taraweehMode && prevSurah === 1 && this._preRukuSurah > 1;
+      const rAyah = taraweehResume ? this._preRukuAyah + 1 : 0;
+      const rData = taraweehResume ? getVerseData(this._preRukuSurah, rAyah, this.translationLang) : null;
+      if (taraweehResume && rData) {
+        this._displaySurah = this._preRukuSurah;
+        this._displayAyah  = rAyah;
+        this._whisperSurah = this._preRukuSurah;
+        this._whisperAyah  = rAyah;
+        this._ayahStartTime = Date.now();
+        this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
+          surah: this._preRukuSurah, ayah: rAyah,
+          lastLockedSurah: this._preRukuSurah, lastLockedAyah: rAyah };
+        console.log(`[Pipeline] Manual: Fatiha done → khatam continuation ${this._preRukuSurah}:${rAyah}`);
+        this._scheduleReadAdvance(Math.max(this.state.confidence, 65));
+      } else {
+        this.state = { ...createState(), mode: 'SEARCHING', lastLockedSurah: 0, lastLockedAyah: 0 };
+        this._resetSearchBuf();
+      }
     } else {
       const from = `${this._displaySurah}:${this._displayAyah}`;
       // Learn pace from how long user stayed on previous ayah
@@ -761,15 +798,26 @@ export class AudioPipeline {
       const cleaned = stripBismillahPrefix(cleanWhisperText(text.trim()));
 
       if (this.taraweehMode) {
-        if (isTakbeer(cleaned)) {
-          console.log(`[Pipeline] Taraweeh takbeer detected (pos=${this._taraweehPos})`);
-        } else if (/الله|اكبر|أكبر|اكبر/i.test(cleaned) && cleaned.length < 80) {
-          console.log(`[Pipeline] Taraweeh: Whisper has Allah/Akbar but no takbeer match: "${cleaned.slice(0, 60)}"`);
+        if (isPrayerTransition(cleaned)) {
+          console.log(`[Pipeline] Taraweeh transition detected: ${isTakbeer(cleaned) ? 'takbeer' : 'tasmee'} (pos=${this._taraweehPos})`);
+        } else if (/الله|اكبر|أكبر|سمع/i.test(cleaned) && cleaned.length < 80) {
+          console.log(`[Pipeline] Taraweeh: Whisper has prayer words but no match: "${cleaned.slice(0, 60)}"`);
+        }
+        // Auto-advance stuck states: if in RUKU/SAJDA for too long, the transition
+        // audio was missed. Force-advance so we don't get permanently stuck.
+        if (this._taraweehPos !== 'QIYAM' && this._taraweehPosEnteredAt > 0
+            && (Date.now() - this._taraweehPosEnteredAt) > TARAWEEH_STUCK_TIMEOUT_MS) {
+          console.log(`[Pipeline] Taraweeh auto-advance: stuck in ${this._taraweehPos} for ${Math.round((Date.now() - this._taraweehPosEnteredAt)/1000)}s — forcing transition`);
+          if (!stale()) {
+            this._handleTaraweehTakbeer(false);
+            this.processing = false;
+          }
+          return;
         }
       }
-      if (this.taraweehMode && isTakbeer(cleaned)) {
+      if (this.taraweehMode && isPrayerTransition(cleaned)) {
         if (!stale()) {
-          this._handleTaraweehTakbeer(true);
+          this._handleTaraweehTakbeer(false);
           this.processing = false;
         }
         return;
@@ -849,9 +897,14 @@ export class AudioPipeline {
         }
       }
 
+      // In taraweeh: during RUKU prefer Fatiha; after sajda2 expect Fatiha (fast-lock).
+      // _expectFatiha also overrides preferredSurah to 1 so global search biases Fatiha.
+      const expectFatiha = this.taraweehMode && this._expectFatiha && this.state.mode === 'SEARCHING';
       const preferredSurah = (this.taraweehMode && this._taraweehPos === 'RUKU') ? 1
+        : expectFatiha ? 1
         : (this._arRahmanRefrainSeen ? 55 : this.preferredSurah);
       const opts = { preferredSurah, fastMode: this.fastMode, missBeforeResuming: MISSED_BEFORE_RESUMING_V3, missBeforeLost: MISSED_BEFORE_LOST_V3 };
+      if (expectFatiha) opts.taraweehExpectFatiha = true;
       if (this.state.mode === 'RESUMING' && this._displaySurah > 0 && this._displayAyah > 0) {
         opts.displaySurah = this._displaySurah;
         opts.displayAyah = this._displayAyah;
@@ -866,6 +919,7 @@ export class AudioPipeline {
 
       if (this.state.mode === 'LOCKED') {
         this._arRahmanRefrainSeen = false;  // ayah lock achieved
+        this._expectFatiha = false;          // Fatiha (or any verse) locked — clear flag
         this._resetSearchBuf();
         this._lastLockedCall = 0;
         this._lockedBuf = Buffer.alloc(0);
@@ -1011,17 +1065,17 @@ export class AudioPipeline {
       const cleaned = stripBismillahPrefix(cleanWhisperText(text.trim()));
 
       if (this.taraweehMode) {
-        if (isTakbeer(cleaned)) {
+        if (isPrayerTransition(cleaned)) {
           if (this.state.surah > 1) {
             this._preRukuSurah = this.state.surah;
             this._preRukuAyah  = this.state.ayah;
           }
-          console.log(`[Pipeline] Taraweeh takbeer (LOCKED) pos=${this._taraweehPos} saved=${this._preRukuSurah}:${this._preRukuAyah}`);
-        } else if (/الله|اكبر|أكبر|اكبر/i.test(cleaned) && cleaned.length < 80) {
-          console.log(`[Pipeline] Taraweeh LOCKED: Whisper has Allah/Akbar but no takbeer: "${cleaned.slice(0, 60)}"`);
+          console.log(`[Pipeline] Taraweeh ${isTakbeer(cleaned) ? 'takbeer' : 'tasmee'} (LOCKED) pos=${this._taraweehPos} saved=${this._preRukuSurah}:${this._preRukuAyah}`);
+        } else if (/الله|اكبر|أكبر|سمع/i.test(cleaned) && cleaned.length < 80) {
+          console.log(`[Pipeline] Taraweeh LOCKED: Whisper has prayer words but no match: "${cleaned.slice(0, 60)}"`);
         }
       }
-      if (this.taraweehMode && isTakbeer(cleaned)) {
+      if (this.taraweehMode && isPrayerTransition(cleaned)) {
         this._handleTaraweehTakbeer(true);
         this.processing = false;
         return;
@@ -1567,15 +1621,20 @@ export class AudioPipeline {
       ? this._measuredMsPerWord : defaultMsPerWord;
     // Use totalWeight (corpus-based) instead of plain wordCount for proportional timing
     const rawMs = Math.round(totalWeight * msPerWord) + elongBonusMs;
-    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : 2500);
+    // Short ayahs (≤4 words, common in juz 30 khatam) get a lower floor — 1.5s instead
+    // of 2.5s. On khatam nights the imam races through these; 2.5s floor causes the
+    // display to lag behind by 2-3 ayahs, making tracking useless.
+    const shortAyahFloor = wordCount <= 4 ? 1500 : 2500;
+    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : (this.fastMode ? Math.min(shortAyahFloor, 2000) : shortAyahFloor));
     const baseDurationMs = Math.max(rawMs, floorMs);
     durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
     if (durationFactor < 1.0) {
       // Whisper data is ~6s old. Subtract pipeline lag — but never more than half
-      // the timer. Short ayahs (3-6 words) shouldn't get crushed to 2s.
+      // the timer. Short ayahs (3-6 words) shouldn't get crushed to 1s.
       const PIPELINE_LAG_MS = 6000;
       const maxSubtract = Math.floor(durationMs * 0.5);
-      durationMs = Math.max(3000, durationMs - Math.min(PIPELINE_LAG_MS, maxSubtract));
+      const minAfterLag = wordCount <= 4 ? 1500 : 3000;
+      durationMs = Math.max(minAfterLag, durationMs - Math.min(PIPELINE_LAG_MS, maxSubtract));
     }
 
     const modeTag = this.fastMode ? ' [FAST]' : this.slowMode ? ' [SLOW]' : '';
@@ -1614,7 +1673,28 @@ export class AudioPipeline {
         // Jump to next surah ayah 1 and keep advancing while searching
         const nextSurah = prevSurah < 114 ? prevSurah + 1 : 0;
         const nextSurahData = nextSurah > 0 ? getVerseData(nextSurah, 1, this.translationLang) : null;
-        if (nextSurahData && prevSurah !== 1) {
+
+        // Taraweeh khatam: after Fatiha (surah 1) ends and we have a saved position,
+        // pre-display the continuation immediately instead of going blank.
+        // This eliminates the "confused blank screen" after Fatiha on khatam nights.
+        const taraweehResume = this.taraweehMode && prevSurah === 1 && this._preRukuSurah > 1;
+        const resumeAyah = taraweehResume ? this._preRukuAyah + 1 : 0;
+        const resumeSurah = taraweehResume ? this._preRukuSurah : 0;
+        const resumeData = taraweehResume ? getVerseData(resumeSurah, resumeAyah, this.translationLang) : null;
+
+        if (taraweehResume && resumeData) {
+          // Pre-display continuation from where imam left off before ruku
+          this._displaySurah = resumeSurah;
+          this._displayAyah  = resumeAyah;
+          this._whisperSurah = resumeSurah;
+          this._whisperAyah  = resumeAyah;
+          this._ayahStartTime = Date.now();
+          this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
+            surah: resumeSurah, ayah: resumeAyah,
+            lastLockedSurah: resumeSurah, lastLockedAyah: resumeAyah };
+          console.log(`[Pipeline] Taraweeh: Fatiha done → pre-display khatam continuation ${resumeSurah}:${resumeAyah}`);
+          this._scheduleReadAdvance(Math.max(this.state.confidence, 50));
+        } else if (nextSurahData && prevSurah !== 1) {
           // Pre-display next surah:1, stay LOCKED, let Whisper correct if wrong
           this._displaySurah = nextSurah;
           this._displayAyah  = 1;
@@ -1675,21 +1755,40 @@ export class AudioPipeline {
       const prevSurah = this._displaySurah;
       const prevAyah  = this._displayAyah;
       this._completedSurah = prevSurah;
-      this._displaySurah = 0;
-      this._displayAyah  = 0;
-      this._whisperSurah = 0;
-      this._whisperAyah  = 0;
       this._driftMult    = 1.0;
       this._measuredWps  = READ_WORDS_PER_SEC;
       this._behindRepeatCount = 0;
       this._behindRepeatAyah  = 0;
       this._sameAyahStreak = 0;
       this._bumpCountForAyah = 0;
-      this.state = { ...createState(), mode: 'SEARCHING',
-        lastLockedSurah: prevSurah, lastLockedAyah: prevAyah };
-      this._restorePreRukuIfNeeded(prevSurah);
-      this._resetSearchBuf();
-      console.log(`[Pipeline] Pause-advance: end of surah ${prevSurah} — soft reset, searching for next`);
+
+      // Taraweeh khatam: after Fatiha, pre-display continuation
+      const taraweehResume = this.taraweehMode && prevSurah === 1 && this._preRukuSurah > 1;
+      const rAyah = taraweehResume ? this._preRukuAyah + 1 : 0;
+      const rSurah = taraweehResume ? this._preRukuSurah : 0;
+      const rData = taraweehResume ? getVerseData(rSurah, rAyah, this.translationLang) : null;
+
+      if (taraweehResume && rData) {
+        this._displaySurah = rSurah;
+        this._displayAyah  = rAyah;
+        this._whisperSurah = rSurah;
+        this._whisperAyah  = rAyah;
+        this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
+          surah: rSurah, ayah: rAyah,
+          lastLockedSurah: rSurah, lastLockedAyah: rAyah };
+        console.log(`[Pipeline] Pause-advance: Fatiha done → khatam continuation ${rSurah}:${rAyah}`);
+        this._scheduleReadAdvance(Math.max(this.state.confidence, 50));
+      } else {
+        this._displaySurah = 0;
+        this._displayAyah  = 0;
+        this._whisperSurah = 0;
+        this._whisperAyah  = 0;
+        this.state = { ...createState(), mode: 'SEARCHING',
+          lastLockedSurah: prevSurah, lastLockedAyah: prevAyah };
+        this._restorePreRukuIfNeeded(prevSurah);
+        this._resetSearchBuf();
+        console.log(`[Pipeline] Pause-advance: end of surah ${prevSurah} — soft reset, searching for next`);
+      }
     } else {
       this._sameAyahStreak = 0;
       this._bumpCountForAyah = 0;
@@ -1757,9 +1856,11 @@ export class AudioPipeline {
     });
   }
 
-  // Taraweeh takbeer state machine: QIYAM → RUKU → up → SAJDA → up → SAJDA → up → resume
-  // Sound/distortion may cause missed takbeers — recitation (lock/candidate) always wins and
-  // transitions to QIYAM. Takbeer advances best-effort; we never block verse display.
+  // Taraweeh prayer transition state machine: QIYAM → RUKU → up → SAJDA → up → SAJDA → up → resume
+  // Triggers: takbeer ("الله أكبر") AND tasmee' ("سمع الله لمن حمده") — both advance the state.
+  // Auto-advance: if stuck in RUKU/SAJDA for >15s, force transition (missed audio).
+  // Sound/distortion may cause missed transitions — recitation (lock/candidate) always wins and
+  // transitions to QIYAM. Transitions are best-effort; we never block verse display.
   _handleTaraweehTakbeer(fromLocked = false) {
     const savePreRuku = (surah, ayah) => {
       if (surah > 1) {
@@ -1782,12 +1883,14 @@ export class AudioPipeline {
       } else {
         this._taraweehLastFrom = 'sajda2';
         this._sajdaCount = 0;
+        // New rakat — imam will recite Fatiha first, then resume previous surah
+        this._expectFatiha = true;
         // Restore pre-ruku so anchor searches for continuation (resume same surah)
         if (this._preRukuSurah > 1) {
           this.state = { ...this.state, lastLockedSurah: this._preRukuSurah, lastLockedAyah: this._preRukuAyah };
-          console.log(`[Pipeline] Taraweeh takbeer: SAJDA (2nd) → up, ready for resume from ${this._preRukuSurah}:${this._preRukuAyah}`);
+          console.log(`[Pipeline] Taraweeh takbeer: SAJDA (2nd) → up, expectFatiha=true, resume from ${this._preRukuSurah}:${this._preRukuAyah}`);
         } else {
-          console.log(`[Pipeline] Taraweeh takbeer: SAJDA (2nd) → up (QIYAM), ready for new surah`);
+          console.log(`[Pipeline] Taraweeh takbeer: SAJDA (2nd) → up (QIYAM), expectFatiha=true, ready for new surah`);
         }
       }
       this._resetSearchBuf();
@@ -1827,6 +1930,7 @@ export class AudioPipeline {
         this._resetSearchBuf();
       }
     }
+    this._taraweehPosEnteredAt = Date.now();  // track when we entered this state (for stuck timeout)
     this._emitTaraweeh();
   }
 

@@ -1964,6 +1964,8 @@ body {
   //   0 (or undefined) = CLICK_EVENT, 1 = SCROLL_TOP, 2 = SCROLL_BOTTOM,
   //   3 = DOUBLE_CLICK, 4 = FOREGROUND_ENTER, 5 = FOREGROUND_EXIT
   var _lastScrollTime = 0;
+  var _scrollBurstCount = 0;    // absorb burst-queued events
+  var _scrollBurstTimer = null;
   function onG2Event(event) {
     if (event.audioEvent && event.audioEvent.audioPcm) {
       sendPcm(event.audioEvent.audioPcm);
@@ -2021,11 +2023,19 @@ body {
       return;
     }
 
-    // SCROLL: up(1) = previous ayah, down(2) = next ayah. Throttle 400ms.
+    // SCROLL: up(1) = previous ayah, down(2) = next ayah.
+    // Debounce 700ms: the G2 bridge can queue scroll events during processing,
+    // delivering a burst of 4-6 events at once. We absorb the burst and only
+    // send ONE command for the first event in each 700ms window.
     if (t === 1 || t === 2) {
       var now = Date.now();
-      if (now - _lastScrollTime < 400) return;
+      if (now - _lastScrollTime < 700) {
+        // Burst event — absorb silently
+        _scrollBurstCount++;
+        return;
+      }
       _lastScrollTime = now;
+      _scrollBurstCount = 0;
       if (S.ws && S.ws.readyState === WebSocket.OPEN) {
         S.ws.send(JSON.stringify({ type: t === 1 ? 'manual_prev' : 'manual_advance' }));
       }

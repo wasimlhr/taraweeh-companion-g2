@@ -227,17 +227,22 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // Bismillah guard: 1:1 ("بسم الله الرحمن الرحيم") is recited before EVERY surah,
   // so matching it doesn't confirm we're in Al-Fatiha. Require 2 consecutive wins
   // (i.e. the NEXT chunk must also land in Fatiha 1:2+) before locking.
-  const isBismillahAmbiguous = top.surah === 1 && top.ayah === 1;
+  // EXCEPTION: in taraweeh mode after ruku/sajda cycle, we KNOW Fatiha is next —
+  // the imam always recites Fatiha at the start of each rak'ah. Skip the guard.
+  const taraweehExpectFatiha = !!opts.taraweehExpectFatiha;
+  const isBismillahAmbiguous = top.surah === 1 && top.ayah === 1 && !taraweehExpectFatiha;
 
   const matchedWordCount = top.matchedWords?.length ?? 0;
   // Fatiha (surah 1) has genuinely short ayahs (1:3 = 2 words, 1:4 = 3 words).
   // Allow 2-word matches for Fatiha since it's the most recited surah.
-  const isFatihaCandidate = top.surah === 1 && top.ayah >= 2; // ayah 1 handled by bismillah guard
-  // 2-word minimum in four situations:
+  // When taraweehExpectFatiha, include ayah 1 too (bismillah guard is skipped).
+  const isFatihaCandidate = top.surah === 1 && (top.ayah >= 2 || taraweehExpectFatiha);
+  // 2-word minimum in five situations:
   //  1. Very high margin (≥50): gap to #2 is so large a coincidence is impossible
   //  2. Sequential context after surah completion: short ayahs (An-Naziaat style) with 2 wins
   //  3. Fatiha (surah 1): genuinely short ayahs, most common surah
-  //  4. Otherwise: standard LOCK_MIN_WORDS=3
+  //  4. Taraweeh expects Fatiha: we KNOW it's coming, 2 words is plenty
+  //  5. Otherwise: standard LOCK_MIN_WORDS=3
   const minWords = (margin >= 50)
     ? 2
     : (surahJustCompleted && wins >= 2 && margin >= 10) ? 2
@@ -391,8 +396,19 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && matchedWordCount >= 2
     && !isBismillahAmbiguous;
 
-  if (isFastLock || isSingleWinLock || isHighMarginLock || isConsistentLock || isHighScoreLock || isSeqLock || isSeqCarryLock || isSameSurahLock || isRefrainLock) {
-    const reason = isFastLock       ? `fast-lock score=${top.score.toFixed(2)}`
+  // Taraweeh Fatiha express lock: in taraweeh mode when we KNOW Fatiha is next
+  // (after ruku/sajda cycle), lock instantly on 1 win with score ≥ 0.35 and 2+ words.
+  // This cuts Fatiha lock time from ~6-9s (2 chunks) to ~3s (1 chunk), critical for
+  // khatam nights with short surahs where every second of lag means missing verses.
+  const isTaraweehFatihaLock = taraweehExpectFatiha
+    && top.surah === 1
+    && top.score >= 0.35
+    && matchedWordCount >= 2
+    && wins >= 1;
+
+  if (isFastLock || isSingleWinLock || isHighMarginLock || isConsistentLock || isHighScoreLock || isSeqLock || isSeqCarryLock || isSameSurahLock || isRefrainLock || isTaraweehFatihaLock) {
+    const reason = isTaraweehFatihaLock ? `taraweeh-fatiha-lock score=${top.score.toFixed(2)} (express)`
+                 : isFastLock       ? `fast-lock score=${top.score.toFixed(2)}`
                  : isSingleWinLock  ? `single-win score=${top.score.toFixed(2)} margin=${margin.toFixed(1)}`
                  : isHighMarginLock ? `margin-lock margin=${margin.toFixed(1)} score=${top.score.toFixed(2)}`
                  : isHighScoreLock  ? `high-score-lock wins=${wins} score=${top.score.toFixed(2)}`
