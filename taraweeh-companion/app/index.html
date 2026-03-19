@@ -1174,10 +1174,7 @@ body {
   var G2_DIV = '-'.repeat(G2_CHARS);  // single line — hyphen renders as one line (box char looked double)
 
   function appTitleHdr() {
-    var left = 'Taraweeh Companion';
-    var right = APP_VERSION;
-    var pad = Math.max(1, 65 - left.length - right.length);
-    return left + ' '.repeat(pad) + right;
+    return 'Taraweeh Companion \u00B7 ' + APP_VERSION;
   }
 
   function clip(s, n) { return (s || '').length > n ? s.slice(0, n - 1) + '\u2026' : (s || ''); }
