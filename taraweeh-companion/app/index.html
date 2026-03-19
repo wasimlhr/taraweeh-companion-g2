@@ -1107,9 +1107,9 @@ body {
   // Canvas: 576x288. 2 containers: header (40px for spacing from line), body (248px).
   // Body: borderWidth=0, paddingLength=2 → maximize usable width (no scroll bar, more text per line)
   var G2_HDR_H   = 40;
-  var G2_HDR_W   = 480;  // title container width (left)
-  var G2_VER_X   = G2_HDR_W;  // version container x (right-aligned)
-  var G2_VER_W   = 576 - G2_HDR_W;  // version container width
+  var G2_VER_W   = 55;   // version container width (snug for "v4.6")
+  var G2_HDR_W   = 576 - G2_VER_W;  // title takes the rest
+  var G2_VER_X   = G2_HDR_W;  // version flush to right edge
   var G2_BODY_Y  = G2_HDR_H;
   var G2_BODY_H  = 288 - G2_HDR_H;
 
