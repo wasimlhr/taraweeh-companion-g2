@@ -1106,22 +1106,30 @@ body {
   // Container 2 "body": main area — translation (isEventCapture=0 so ring swipe advances ayah)
   // Canvas: 576x288. 2 containers: header (40px for spacing from line), body (248px).
   // Body: borderWidth=0, paddingLength=2 → maximize usable width (no scroll bar, more text per line)
-  var G2_HDR_H  = 40;
-  var G2_BODY_Y = G2_HDR_H;
-  var G2_BODY_H = 288 - G2_HDR_H;
+  var G2_HDR_H   = 40;
+  var G2_HDR_W   = 480;  // title container width (left)
+  var G2_VER_X   = G2_HDR_W;  // version container x (right-aligned)
+  var G2_VER_W   = 576 - G2_HDR_W;  // version container width
+  var G2_BODY_Y  = G2_HDR_H;
+  var G2_BODY_H  = 288 - G2_HDR_H;
 
   function glassesStartup() {
     if (!S.bridge) return;
     try {
       S.bridge.createStartUpPageContainer({
-        containerTotalNum: 2,
+        containerTotalNum: 3,
         textObject: [
           { containerID: 1, containerName: 'hdr',
-            xPosition: 0, yPosition: 0, width: 576, height: G2_HDR_H,
+            xPosition: 0, yPosition: 0, width: G2_HDR_W, height: G2_HDR_H,
             isEventCapture: 0,
             borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
             content: appTitleHdr() },
-          { containerID: 2, containerName: 'body',
+          { containerID: 2, containerName: 'ver',
+            xPosition: G2_VER_X, yPosition: 0, width: G2_VER_W, height: G2_HDR_H,
+            isEventCapture: 0,
+            borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+            content: appVersionHdr() },
+          { containerID: 3, containerName: 'body',
             xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
             isEventCapture: 1,
             borderWidth: 0, borderColor: 5, borderRdaius: 0, paddingLength: 2,
@@ -1144,14 +1152,19 @@ body {
         var hdrContent  = (display.hdr  || '').slice(0, 200);
         var bodyContent = (display.body || '').slice(0, MAX_REBUILD_CHARS - 200);
         S.bridge.rebuildPageContainer({
-          containerTotalNum: 2,
+          containerTotalNum: 3,
           textObject: [
             { containerID: 1, containerName: 'hdr',
-              xPosition: 0, yPosition: 0, width: 576, height: G2_HDR_H,
+              xPosition: 0, yPosition: 0, width: G2_HDR_W, height: G2_HDR_H,
               isEventCapture: 0,
               borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
               content: hdrContent },
-            { containerID: 2, containerName: 'body',
+            { containerID: 2, containerName: 'ver',
+              xPosition: G2_VER_X, yPosition: 0, width: G2_VER_W, height: G2_HDR_H,
+              isEventCapture: 0,
+              borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+              content: appVersionHdr() },
+            { containerID: 3, containerName: 'body',
               xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
               isEventCapture: 1,
               borderWidth: 0, borderColor: 5, borderRdaius: 0, paddingLength: 2,
@@ -1163,7 +1176,7 @@ body {
         var hdrContent  = (display.hdr  || '').slice(0, 500);
         var bodyContent = (display.body || '').slice(0, MAX_UPGRADE_CHARS - 500);
         S.bridge.textContainerUpgrade({ containerID: 1, containerName: 'hdr', content: hdrContent });
-        S.bridge.textContainerUpgrade({ containerID: 2, containerName: 'body', content: bodyContent });
+        S.bridge.textContainerUpgrade({ containerID: 3, containerName: 'body', content: bodyContent });
       }
     } catch (e) { log('G2 display error: ' + e.message, 'err'); }
   }
@@ -1173,9 +1186,8 @@ body {
   var G2_BODY_LINES = 10; // lines per page — conservative to prevent scroll bar
   var G2_DIV = '-'.repeat(G2_CHARS);  // single line — hyphen renders as one line (box char looked double)
 
-  function appTitleHdr() {
-    return 'Taraweeh Companion \u00B7 ' + APP_VERSION;
-  }
+  function appTitleHdr() { return 'Taraweeh Companion'; }
+  function appVersionHdr() { return APP_VERSION; }
 
   function clip(s, n) { return (s || '').length > n ? s.slice(0, n - 1) + '\u2026' : (s || ''); }
 
