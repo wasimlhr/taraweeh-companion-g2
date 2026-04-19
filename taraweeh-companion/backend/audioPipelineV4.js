@@ -58,12 +58,15 @@ const MAX_SEARCH_BUF_MS = 35000;
 // Use 3s chunks continuously (same as search start) — faster feedback, consistent logic
 const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '4000', 10);
 const LOCKED_MAX_MS    = parseInt(process.env.LOCKED_MAX_MS    || '10000', 10);
+const LOCKED_SEND_MS   = parseInt(process.env.LOCKED_SEND_MS   || '6000', 10);
 // 3s chunks → 4 misses = 12s (too fast). 12 misses ≈ 36s, similar to 10s chunks × 4.
 // 2s chunks → 16 misses ≈ 32s before resuming (same effective time as 12 × 3s)
 const MISSED_BEFORE_RESUMING_V3 = parseInt(process.env.MISSED_BEFORE_RESUMING_V3 || '16', 10);
 const MISSED_BEFORE_LOST_V3     = parseInt(process.env.MISSED_BEFORE_LOST_V3 || '16', 10);
 const LOCKED_MIN_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MIN_MS);
 const LOCKED_MAX_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MAX_MS);
+const LOCKED_SEND_BYTES = Math.floor(BYTES_PER_MS * LOCKED_SEND_MS);
+const LOCKED_RESULT_STALE_MS = parseInt(process.env.LOCKED_RESULT_STALE_MS || '3000', 10);
 
 const SILENCE_THRESHOLD        = parseFloat(process.env.SILENCE_THRESHOLD        || '0.005');
 const READ_ADVANCE_CONFIDENCE  = parseInt(process.env.READ_ADVANCE_CONFIDENCE    || '40',    10);
@@ -712,24 +715,7 @@ export class AudioPipeline {
         this._lockedBuf = this._lockedBuf.subarray(this._lockedBuf.length - LOCKED_MAX_BYTES);
       }
 
-      // Overlapping windows: Send 8-10s chunks every 4s for better Whisper accuracy
-      // with faster feedback. More context = better transcription, but frequent sends
-      // = quicker corrections.
-      const now = Date.now();
-      const timeSinceLastSend = this._lastLockedCall ? (now - this._lastLockedCall) : Infinity;
-      
-      // Send when we have at least 4s accumulated AND 4s has passed since last send
-      if (this._lockedBuf.length >= LOCKED_MIN_BYTES && 
-          timeSinceLastSend >= LOCKED_MIN_MS && 
-          !this.processing) {
-        // Send the entire rolling buffer (8-10s of audio with overlap)
-        const chunk = Buffer.from(this._lockedBuf);
-        const bufMs = Math.round(chunk.length / BYTES_PER_MS);
-        this._lastLockedCall = now;
-        console.log(`[Pipeline] Locked chunk ${bufMs}ms (${Math.round(chunk.length/1024)}KB) gap=${Math.round(timeSinceLastSend)}ms overlap=true`);
-        this._processLockedChunk(chunk);
-        // Do NOT clear _lockedBuf — keep the rolling window for overlap
-      }
+      this._maybeProcessLockedBufferedChunk();
     } else {
       this._searchBuf = Buffer.concat([this._searchBuf, pcmData]);
       const bufMs = this._searchBuf.length / BYTES_PER_MS;
@@ -746,6 +732,27 @@ export class AudioPipeline {
         this._processSearchChunk();
       }
     }
+  }
+
+  _maybeProcessLockedBufferedChunk() {
+    if (!this.active) return false;
+    if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
+    if (this.processing || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
+    const now = Date.now();
+    const timeSinceLastSend = this._lastLockedCall ? (now - this._lastLockedCall) : Infinity;
+    if (timeSinceLastSend < LOCKED_MIN_MS) return false;
+
+    // Backpressure: send only the newest tail window so slow endpoint responses
+    // do not force us to keep transcribing stale 8-10s buffers.
+    const sendSlice = this._lockedBuf.length > LOCKED_SEND_BYTES
+      ? this._lockedBuf.subarray(this._lockedBuf.length - LOCKED_SEND_BYTES)
+      : this._lockedBuf;
+    const chunk = Buffer.from(sendSlice);
+    const bufMs = Math.round(chunk.length / BYTES_PER_MS);
+    this._lastLockedCall = now;
+    console.log(`[Pipeline] Locked chunk ${bufMs}ms (${Math.round(chunk.length/1024)}KB) gap=${Math.round(timeSinceLastSend)}ms tail=${Math.round(LOCKED_SEND_MS / 1000)}s`);
+    this._processLockedChunk(chunk);
+    return true;
   }
 
   // ── Search mode ────────────────────────────────────────────────────────────
@@ -1021,6 +1028,7 @@ export class AudioPipeline {
 
   async _processLockedChunk(chunk) {
     this.processing = true;
+    const startedAt = Date.now();
     try {
       const rms = computeRms(chunk);
       this.onStatus({ component: 'audio', status: 'active', rms: +rms.toFixed(4) });
@@ -1045,11 +1053,13 @@ export class AudioPipeline {
 
       let text = '';
       let words = [];  // V4: Word timestamps from Whisper
+      let resultAgeMs = 0;
       try {
         const audioToSend = applyClipGuard(chunk, rms);
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
+        resultAgeMs = Date.now() - startedAt;
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
         this.processing = false;
@@ -1116,6 +1126,20 @@ export class AudioPipeline {
         missBeforeResuming: MISSED_BEFORE_RESUMING_V3,
         missBeforeLost: MISSED_BEFORE_LOST_V3,
       });
+      const staleLockedResult = resultAgeMs > LOCKED_RESULT_STALE_MS;
+      if (staleLockedResult) {
+        // Slow/queued endpoint responses represent old audio; applying behind/same
+        // confirmations causes visible snap-back. Keep only forward-moving updates.
+        const isBehindOrSame =
+          anchorResult.surah === this._displaySurah &&
+          anchorResult.ayah <= this._displayAyah;
+        if (anchorResult.mode !== 'LOCKED' || isBehindOrSame) {
+          console.log(`[Pipeline] Dropping stale locked result age=${resultAgeMs}ms display=${this._displaySurah}:${this._displayAyah} candidate=${anchorResult.surah}:${anchorResult.ayah}`);
+          this.processing = false;
+          setTimeout(() => this._maybeProcessLockedBufferedChunk(), 0);
+          return;
+        }
+      }
 
       if (anchorResult.mode !== 'LOCKED') {
         // Don't cancel the timer — keep the display flowing at the measured
@@ -1155,6 +1179,9 @@ export class AudioPipeline {
       console.error('[Pipeline] Locked chunk error:', err.message);
     }
     this.processing = false;
+    // If enough buffered audio is already waiting, run the next spot check
+    // immediately instead of waiting for another ingest tick.
+    setTimeout(() => this._maybeProcessLockedBufferedChunk(), 0);
   }
 
   // ── Core V2: single handler for Whisper confirmations in LOCKED mode ───────

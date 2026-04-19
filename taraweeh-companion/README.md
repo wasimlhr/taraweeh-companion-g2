@@ -267,6 +267,8 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | `READ_WORDS_PER_SEC` | `1.5` | Base recitation speed estimate |
 | `READ_ADVANCE_MIN_MS` | `4000` | Minimum ayah display duration (ms) |
 | `READ_ADVANCE_MAX_MS` | `15000` | Maximum ayah display duration (ms) |
+| `LOCKED_SEND_MS` | `6000` | Latest tail window (ms) sent per locked-mode Whisper request; smaller values reduce stale buffering on queued endpoints |
+| `LOCKED_RESULT_STALE_MS` | `3000` | Drop locked-mode Whisper results older than this (ms) when they are behind/current verse to prevent snap-back from queued responses |
 | `SILENCE_THRESHOLD` | `0.005` | RMS threshold for silence detection |
 
 ---
