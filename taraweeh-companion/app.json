@@ -1,0 +1,32 @@
+{
+  "package_id": "com.taraweehcompanion.g2",
+  "edition": "202601",
+  "name": "Taraweeh Companion",
+  "version": "4.6.0",
+  "min_app_version": "2.0.0",
+  "min_sdk_version": "0.0.10",
+  "entrypoint": "index.html",
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "Loads SDK assets and connects to backend transcription endpoints.",
+      "whitelist": [
+        "https://cdn.jsdelivr.net",
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://taraweeh.up.railway.app",
+        "https://api-inference.huggingface.co",
+        "https://router.huggingface.co"
+      ]
+    },
+    {
+      "name": "g2-microphone",
+      "desc": "Captures live recitation from the G2 microphone."
+    },
+    {
+      "name": "phone-microphone",
+      "desc": "Uses phone microphone as fallback audio input."
+    }
+  ],
+  "supported_languages": ["en"]
+}

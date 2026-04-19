@@ -24,4 +24,6 @@ backend/debug_*.wav
 *.tar.gz
 tar-extract/
 qr.png
+qr-railway.png
+*.ehpk
 .env

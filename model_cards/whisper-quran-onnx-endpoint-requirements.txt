@@ -1,6 +1,0 @@
-# HuggingFace Inference Endpoint — custom deps for ONNX model
-optimum[onnxruntime]>=1.14
-onnxruntime-gpu
-transformers>=4.40
-librosa
-soundfile

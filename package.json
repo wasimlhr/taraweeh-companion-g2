@@ -11,18 +11,19 @@
     "modal:deploy-int8": "powershell -ExecutionPolicy Bypass -File scripts/deploy-modal.ps1 int8",
     "modal:deploy-int4": "powershell -ExecutionPolicy Bypass -File scripts/deploy-modal.ps1 int4",
     "modal:deploy-onnx": "powershell -ExecutionPolicy Bypass -File scripts/deploy-modal.ps1 onnx",
-    "qr": "evenhub qr --http --port 3001",
-    "qr:url": "evenhub qr --url",
+    "qr": "npx @evenrealities/evenhub-cli@0.1.12 qr --http --port 3001",
+    "qr:url": "npx @evenrealities/evenhub-cli@0.1.12 qr --url",
     "qr:railway": "node scripts/qr-web-url.js https://taraweeh.up.railway.app --png",
     "kill-backend": "node scripts/kill-port-3001.js",
-    "test-pipeline": "cd taraweeh-companion/backend && node testPipeline.js",
     "sim": "node node_modules/@evenrealities/evenhub-simulator/bin/index.js http://localhost:3001",
     "simulator": "npm run sim",
     "live-monitor": "powershell -ExecutionPolicy Bypass -File scripts/live-monitor.ps1",
-    "download-quran-db": "node scripts/download-quran-db.js"
+    "download-quran-db": "node scripts/download-quran-db.js",
+    "build:evenhub": "cd taraweeh-companion && npm run build:evenhub",
+    "pack:evenhub": "cd taraweeh-companion && npm run pack:evenhub"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.7",
+    "@evenrealities/even_hub_sdk": "^0.0.10",
     "dotenv": "^17.3.1",
     "qrcode": "^1.5.4"
   },
@@ -30,7 +31,7 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "@evenrealities/evenhub-cli": "^0.1.5",
+    "@evenrealities/evenhub-cli": "^0.1.12",
     "@evenrealities/evenhub-simulator": "^0.5.0"
   }
 }

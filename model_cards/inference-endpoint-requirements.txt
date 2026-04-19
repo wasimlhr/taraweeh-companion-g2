@@ -1,8 +1,0 @@
-# For HuggingFace Inference Endpoint: add these to custom dependencies
-# so quantized models (int8/int4) load. Default container lacks bitsandbytes.
-torch>=2.0
-transformers>=4.40
-accelerate
-bitsandbytes>=0.46.1
-librosa
-soundfile
