@@ -66,6 +66,7 @@ const MISSED_BEFORE_LOST_V3     = parseInt(process.env.MISSED_BEFORE_LOST_V3 || 
 const LOCKED_MIN_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MIN_MS);
 const LOCKED_MAX_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MAX_MS);
 const LOCKED_SEND_BYTES = Math.floor(BYTES_PER_MS * LOCKED_SEND_MS);
+const LOCKED_MAX_INFLIGHT = parseInt(process.env.LOCKED_MAX_INFLIGHT || '2', 10);
 const LOCKED_RESULT_STALE_MS = parseInt(process.env.LOCKED_RESULT_STALE_MS || '3000', 10);
 
 const SILENCE_THRESHOLD        = parseFloat(process.env.SILENCE_THRESHOLD        || '0.005');
@@ -276,6 +277,9 @@ export class AudioPipeline {
     this._lockedBuf      = Buffer.alloc(0);
     this._lastTexts      = [];
     this._lastLockedCall = 0;
+    this._lockedInFlight = 0;
+    this._lockedSeq = 0;
+    this._lockedLastAppliedSeq = 0;
 
     this._displayAdvanceTimer = null;
     this._nextAdvanceMs       = 0;
@@ -422,6 +426,9 @@ export class AudioPipeline {
     this._whisperAyah  = 0;
     this._displaySurah = 0;
     this._displayAyah  = 0;
+    this._lockedInFlight = 0;
+    this._lockedSeq = 0;
+    this._lockedLastAppliedSeq = 0;
     this._preRecitSkips = 0;
     this._resetSearchBuf();
     console.log(`[Pipeline] Started (last known: ${prevSurah}:${prevAyah || 0})`);
@@ -433,6 +440,9 @@ export class AudioPipeline {
     this._resetSearchBuf();
     this._lockedBuf          = Buffer.alloc(0);
     this._lastLockedCall     = 0;
+    this._lockedInFlight     = 0;
+    this._lockedSeq          = 0;
+    this._lockedLastAppliedSeq = 0;
     this._pauseAnalysisBuf   = Buffer.alloc(0);
     this._pauseAccumMs       = 0;
     this._cancelReadAdvance();
@@ -672,6 +682,9 @@ export class AudioPipeline {
     this._whisperAyah  = 0;
     this._displaySurah = 0;
     this._displayAyah  = 0;
+    this._lockedInFlight = 0;
+    this._lockedSeq = 0;
+    this._lockedLastAppliedSeq = 0;
     this._emitState(null, null);
   }
 
@@ -682,6 +695,9 @@ export class AudioPipeline {
     this._resetSearchBuf();         // free search buffers
     this._lockedBuf = Buffer.alloc(0);
     this.processing = false;
+    this._lockedInFlight = 0;
+    this._lockedSeq = 0;
+    this._lockedLastAppliedSeq = 0;
     this.onStateUpdate = () => {};  // swallow any late callbacks
     this.onStatus = () => {};
     this.onError = () => {};
@@ -737,7 +753,7 @@ export class AudioPipeline {
   _maybeProcessLockedBufferedChunk() {
     if (!this.active) return false;
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
-    if (this.processing || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
+    if (this._lockedInFlight >= LOCKED_MAX_INFLIGHT || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
     const timeSinceLastSend = this._lastLockedCall ? (now - this._lastLockedCall) : Infinity;
     if (timeSinceLastSend < LOCKED_MIN_MS) return false;
@@ -749,10 +765,32 @@ export class AudioPipeline {
       : this._lockedBuf;
     const chunk = Buffer.from(sendSlice);
     const bufMs = Math.round(chunk.length / BYTES_PER_MS);
+    const seq = ++this._lockedSeq;
     this._lastLockedCall = now;
-    console.log(`[Pipeline] Locked chunk ${bufMs}ms (${Math.round(chunk.length/1024)}KB) gap=${Math.round(timeSinceLastSend)}ms tail=${Math.round(LOCKED_SEND_MS / 1000)}s`);
-    this._processLockedChunk(chunk);
+    this._lockedInFlight++;
+    console.log(`[Pipeline] Locked chunk #${seq} ${bufMs}ms (${Math.round(chunk.length/1024)}KB) gap=${Math.round(timeSinceLastSend)}ms tail=${Math.round(LOCKED_SEND_MS / 1000)}s inFlight=${this._lockedInFlight}/${LOCKED_MAX_INFLIGHT}`);
+    this._processLockedChunk(chunk, seq);
     return true;
+  }
+
+  _shouldDropLockedResult(anchorResult, resultAgeMs, seq) {
+    const staleLockedResult = resultAgeMs > LOCKED_RESULT_STALE_MS;
+    if (staleLockedResult) {
+      // Slow/queued endpoint responses represent old audio; applying behind/same
+      // confirmations causes visible snap-back. Keep only forward-moving updates.
+      const isBehindOrSame =
+        anchorResult.surah === this._displaySurah &&
+        anchorResult.ayah <= this._displayAyah;
+      if (anchorResult.mode !== 'LOCKED' || isBehindOrSame) {
+        return { drop: true, reason: 'stale-behind-or-unlocked' };
+      }
+    }
+
+    const outOfOrderResult = seq > 0 && seq < this._lockedLastAppliedSeq;
+    if (outOfOrderResult) {
+      return { drop: true, reason: 'out-of-order' };
+    }
+    return { drop: false, reason: '' };
   }
 
   // ── Search mode ────────────────────────────────────────────────────────────
@@ -1026,8 +1064,8 @@ export class AudioPipeline {
 
   // ── Locked mode ────────────────────────────────────────────────────────────
 
-  async _processLockedChunk(chunk) {
-    this.processing = true;
+  async _processLockedChunk(chunk, seq = 0) {
+    this.processing = this._lockedInFlight > 0;
     const startedAt = Date.now();
     try {
       const rms = computeRms(chunk);
@@ -1044,7 +1082,6 @@ export class AudioPipeline {
           this.state = newState;
           this._emitState(null, rms);
         }
-        this.processing = false;
         return;
       }
 
@@ -1062,13 +1099,11 @@ export class AudioPipeline {
         resultAgeMs = Date.now() - startedAt;
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
-        this.processing = false;
         return;
       }
 
       if (!this.active || this.state.mode !== 'LOCKED') {
         console.log('[Pipeline] Stale locked-check result discarded');
-        this.processing = false;
         return;
       }
 
@@ -1087,12 +1122,10 @@ export class AudioPipeline {
       }
       if (this.taraweehMode && isPrayerTransition(cleaned)) {
         this._handleTaraweehTakbeer(true);
-        this.processing = false;
         return;
       }
 
       if (!cleaned || isNoise(cleaned)) {
-        this.processing = false;
         return;
       }
 
@@ -1101,12 +1134,10 @@ export class AudioPipeline {
           console.log(`[Pipeline] Ameen detected (LOCKED)`);
           this.onStateUpdate({ type: 'ameen' });
         }
-        this.processing = false;
         return;
       }
 
       if (isBismillahOnly(cleaned)) {
-        this.processing = false;
         return;  // generic — don't use to re-anchor or jump
       }
 
@@ -1115,7 +1146,6 @@ export class AudioPipeline {
       if (this._lastTexts.length > 3) this._lastTexts.shift();
       if (this._lastTexts.length >= 3 && this._lastTexts.every(t => t === cleaned)) {
         console.log(`[Pipeline] Repeated hallucination — skipping`);
-        this.processing = false;
         return;
       }
 
@@ -1126,20 +1156,16 @@ export class AudioPipeline {
         missBeforeResuming: MISSED_BEFORE_RESUMING_V3,
         missBeforeLost: MISSED_BEFORE_LOST_V3,
       });
-      const staleLockedResult = resultAgeMs > LOCKED_RESULT_STALE_MS;
-      if (staleLockedResult) {
-        // Slow/queued endpoint responses represent old audio; applying behind/same
-        // confirmations causes visible snap-back. Keep only forward-moving updates.
-        const isBehindOrSame =
-          anchorResult.surah === this._displaySurah &&
-          anchorResult.ayah <= this._displayAyah;
-        if (anchorResult.mode !== 'LOCKED' || isBehindOrSame) {
+      const dropDecision = this._shouldDropLockedResult(anchorResult, resultAgeMs, seq);
+      if (dropDecision.drop) {
+        if (dropDecision.reason === 'out-of-order') {
+          console.log(`[Pipeline] Dropping out-of-order locked result seq=${seq} lastApplied=${this._lockedLastAppliedSeq}`);
+        } else {
           console.log(`[Pipeline] Dropping stale locked result age=${resultAgeMs}ms display=${this._displaySurah}:${this._displayAyah} candidate=${anchorResult.surah}:${anchorResult.ayah}`);
-          this.processing = false;
-          setTimeout(() => this._maybeProcessLockedBufferedChunk(), 0);
-          return;
         }
+        return;
       }
+      if (seq > 0) this._lockedLastAppliedSeq = Math.max(this._lockedLastAppliedSeq, seq);
 
       if (anchorResult.mode !== 'LOCKED') {
         // Don't cancel the timer — keep the display flowing at the measured
@@ -1149,6 +1175,7 @@ export class AudioPipeline {
         this.state = anchorResult;
         this._whisperLastConfirmMs = 0;
         this._resetSearchBuf();
+        this._lockedSeq = Math.max(this._lockedSeq, seq);
         this._emitState(text, rms);
       } else if (anchorResult.surah !== prevSurah && anchorResult.surah !== 0) {
         console.log(`[Pipeline] Surah mismatch: display=${this._displaySurah} whisper=${anchorResult.surah} — releasing lock to re-search`);
@@ -1157,7 +1184,6 @@ export class AudioPipeline {
         this._resetSearchBuf();
         this.state = createState();
         this._emitState(text, rms);
-        this.processing = false;
         return;
       } else {
         // Let anchor track the reciter independently, but don't let it drift
@@ -1177,11 +1203,13 @@ export class AudioPipeline {
       }
     } catch (err) {
       console.error('[Pipeline] Locked chunk error:', err.message);
+    } finally {
+      this._lockedInFlight = Math.max(0, this._lockedInFlight - 1);
+      this.processing = this._lockedInFlight > 0;
+      // If enough buffered audio is already waiting, run the next spot check
+      // immediately instead of waiting for another ingest tick.
+      setTimeout(() => this._maybeProcessLockedBufferedChunk(), 0);
     }
-    this.processing = false;
-    // If enough buffered audio is already waiting, run the next spot check
-    // immediately instead of waiting for another ingest tick.
-    setTimeout(() => this._maybeProcessLockedBufferedChunk(), 0);
   }
 
   // ── Core V2: single handler for Whisper confirmations in LOCKED mode ───────

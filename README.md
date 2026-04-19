@@ -279,6 +279,7 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | `READ_ADVANCE_MAX_MS` | `15000` | Maximum ayah display duration (ms) |
 | `SILENCE_THRESHOLD` | `0.005` | RMS threshold for silence detection |
 | `LOCKED_SEND_MS` | `6000` | Locked-mode tail audio sent per Whisper request (ms) to reduce stale queue buildup |
+| `LOCKED_MAX_INFLIGHT` | `2` | Max concurrent locked-mode Whisper requests per client (higher can improve responsiveness on async endpoints) |
 | `LOCKED_RESULT_STALE_MS` | `3000` | Drop locked-mode confirmations older than this age when they point to the same/older ayah |
 
 ---
