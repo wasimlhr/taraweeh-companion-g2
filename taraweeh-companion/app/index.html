@@ -1159,10 +1159,9 @@ body {
     return S.bridgeCallQueue;
   }
 
-  // ─── G2 display (2-container layout) ──────────────────────────────────────
-  // Container 1 "hdr": top bar — status, surah, ayah (no event capture)
-  // Container 2 "body": main area — translation (isEventCapture=0 so ring swipe advances ayah)
-  // Canvas: 576x288. 2 containers: header (40px for spacing from line), body (248px).
+  // ─── G2 display (startup + runtime containers) ────────────────────────────
+  // Startup uses 3 text containers + 1 image container. Runtime keeps text updates.
+  // Canvas: 576x288. Header: 40px, body: 248px.
   // Body: borderWidth=0, paddingLength=2 → maximize usable width (no scroll bar, more text per line)
   var G2_HDR_H   = 40;
   var G2_VER_W   = 55;   // version container width (snug for "v4.6")
@@ -1170,13 +1169,84 @@ body {
   var G2_VER_X   = G2_HDR_W;  // version flush to right edge
   var G2_BODY_Y  = G2_HDR_H;
   var G2_BODY_H  = 288 - G2_HDR_H;
+  var G2_SPLASH_ID = 4;
+  var G2_SPLASH_NAME = 'splash';
+  var G2_SPLASH_W = 180;
+  var G2_SPLASH_H = 96;
+  var G2_SPLASH_X = Math.floor((576 - G2_SPLASH_W) / 2);
+  var G2_SPLASH_Y = 88;
+  var G2_SPLASH_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="180" height="96" viewBox="0 0 180 96" role="img" aria-label="Quran startup splash"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f0f0f0"/><stop offset="100%" stop-color="#c7c7c7"/></linearGradient></defs><rect x="1" y="1" width="178" height="94" rx="9" fill="url(#bg)" stroke="#2f2f2f" stroke-width="2"/><rect x="10" y="10" width="160" height="76" rx="7" fill="#e9e9e9" stroke="#4a4a4a" stroke-width="1.2"/><path d="M24 73 L90 22 L156 73" fill="none" stroke="#2e2e2e" stroke-width="2.5" stroke-linecap="round"/><path d="M44 61 L90 30 L136 61" fill="none" stroke="#4b4b4b" stroke-width="2" stroke-linecap="round"/><rect x="72" y="36" width="36" height="26" rx="2" fill="#ffffff" stroke="#3a3a3a" stroke-width="1.3"/><line x1="90" y1="36" x2="90" y2="62" stroke="#3a3a3a" stroke-width="1.2"/><line x1="76" y1="43" x2="86" y2="43" stroke="#707070" stroke-width="1"/><line x1="94" y1="43" x2="104" y2="43" stroke="#707070" stroke-width="1"/><line x1="76" y1="48" x2="86" y2="48" stroke="#707070" stroke-width="1"/><line x1="94" y1="48" x2="104" y2="48" stroke="#707070" stroke-width="1"/><line x1="76" y1="53" x2="86" y2="53" stroke="#707070" stroke-width="1"/><line x1="94" y1="53" x2="104" y2="53" stroke="#707070" stroke-width="1"/><circle cx="30" cy="24" r="4.5" fill="#606060"/><circle cx="150" cy="24" r="4.5" fill="#606060"/></svg>';
+  var _splashBytesPromise = null;
+
+  function loadStartupSplashBytes() {
+    if (_splashBytesPromise) return _splashBytesPromise;
+    _splashBytesPromise = Promise.resolve(G2_SPLASH_SVG)
+      .then(function (svg) {
+        return new Promise(function (resolve, reject) {
+          var blob = new Blob([svg], { type: 'image/svg+xml' });
+          var blobUrl = URL.createObjectURL(blob);
+          var img = new Image();
+          img.onload = function () {
+            try {
+              var canvas = document.createElement('canvas');
+              canvas.width = G2_SPLASH_W;
+              canvas.height = G2_SPLASH_H;
+              var ctx = canvas.getContext('2d');
+              if (!ctx) throw new Error('canvas context unavailable');
+              ctx.drawImage(img, 0, 0, G2_SPLASH_W, G2_SPLASH_H);
+              canvas.toBlob(function (pngBlob) {
+                if (!pngBlob) { reject(new Error('png conversion failed')); return; }
+                pngBlob.arrayBuffer().then(function (ab) {
+                  resolve(new Uint8Array(ab));
+                }, reject);
+              }, 'image/png');
+            } catch (err) {
+              reject(err);
+            } finally {
+              URL.revokeObjectURL(blobUrl);
+            }
+          };
+          img.onerror = function () {
+            URL.revokeObjectURL(blobUrl);
+            reject(new Error('splash image load failed'));
+          };
+          img.src = blobUrl;
+        });
+      })
+      .catch(function (err) {
+        _splashBytesPromise = null;
+        throw err;
+      });
+    return _splashBytesPromise;
+  }
+
+  function pushStartupSplashImage() {
+    return loadStartupSplashBytes()
+      .then(function (bytes) {
+        if (!S.bridge || !bytes || !bytes.length) return;
+        return S.bridge.updateImageRawData({
+          containerID: G2_SPLASH_ID,
+          containerName: G2_SPLASH_NAME,
+          imageData: bytes,
+        }).then(function (status) {
+          var normalized = String(status || '').toLowerCase();
+          if (normalized && normalized !== 'success' && normalized !== '0' && normalized !== 'true') {
+            throw new Error('updateImageRawData status=' + status);
+          }
+          log('G2: startup splash image loaded', 'ok');
+        });
+      })
+      .catch(function (err) {
+        log('G2: splash image skipped (' + (err && err.message ? err.message : String(err)) + ')', 'w');
+      });
+  }
 
   function glassesStartup() {
     if (!S.bridge) return;
     S.startupPageCreated = false;
     queueBridgeCall('createStartUpPageContainer', function () {
       return S.bridge.createStartUpPageContainer({
-        containerTotalNum: 3,
+        containerTotalNum: 4,
         textObject: [
           { containerID: 1, containerName: 'hdr',
             xPosition: 0, yPosition: 0, width: G2_HDR_W, height: G2_HDR_H,
@@ -1194,11 +1264,17 @@ body {
             borderWidth: 0, borderColor: 5, borderRdaius: 0, paddingLength: 2,
             content: 'Ready. Recite any verse to begin.' },
         ],
+        imageObject: [
+          { containerID: G2_SPLASH_ID, containerName: G2_SPLASH_NAME,
+            xPosition: G2_SPLASH_X, yPosition: G2_SPLASH_Y,
+            width: G2_SPLASH_W, height: G2_SPLASH_H },
+        ],
       }).then(function (result) {
         if (result !== 0) throw new Error('startup result=' + result);
         S.startupPageCreated = true;
         S.displayRebuilt = false;
         log('G2: startup screen shown', 'ok');
+        return pushStartupSplashImage();
       });
     });
   }

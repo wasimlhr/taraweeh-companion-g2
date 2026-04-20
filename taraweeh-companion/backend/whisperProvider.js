@@ -13,6 +13,7 @@ import { pcmToWav } from './pcmToWav.js';
 const USE_LOCAL     = process.env.USE_LOCAL_WHISPER === 'true';
 const LOCAL_URL     = process.env.LOCAL_WHISPER_URL || 'http://localhost:8000/transcribe';
 const FALLBACK_URL  = 'https://router.huggingface.co/hf-inference/models/wasimlhr/whisper-quran-v1';
+const PROBE_WAV_BUFFER = pcmToWav(Buffer.alloc(16000)); // 0.5s silence @16kHz mono 16-bit PCM
 
 function getWhisperConfig(opts = {}) {
   opts = opts || {};
@@ -258,7 +259,7 @@ export async function probeWhisperEndpoint(optsOrToken, emit) {
     const res = await fetch(url, {
       method: 'POST',
       headers,
-      body: Buffer.alloc(0),
+      body: PROBE_WAV_BUFFER,
       signal: AbortSignal.timeout(15000),
     });
     const latencyMs = Date.now() - t0;
