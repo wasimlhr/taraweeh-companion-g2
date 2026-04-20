@@ -2053,6 +2053,7 @@ body {
       } else if (st === 6 || st === 7) {
         log('G2 exit event ' + st + ' — cleaning up', 'w');
         _cleanupBridgeResources();
+        return;
       }
     }
 
@@ -2100,8 +2101,8 @@ body {
         } else if (S.mode === 'LOCKED' || S.mode === 'RESUMING') {
           S.ws.send(JSON.stringify({ type: 'pause' }));
         } else {
-          // SEARCHING mode — double-tap stops
-          stopListening();
+          // SEARCHING mode — open system exit confirmation (do not clean up yet)
+          requestSystemExit();
         }
       }
       return;
@@ -2227,6 +2228,15 @@ body {
     try { stopG2Mic(); } catch (_) {}
     try { stopBrowserMic(); } catch (_) {}
     _flushSessionState();
+  }
+
+  function requestSystemExit() {
+    if (!S.bridge) return;
+    queueBridgeCall('shutDownPageContainer', function () {
+      return S.bridge.shutDownPageContainer(1).then(function () {
+        log('Exit confirmation opened', 'ok');
+      });
+    });
   }
 
   // ─── G2 bridge detection ──────────────────────────────────────────────────
