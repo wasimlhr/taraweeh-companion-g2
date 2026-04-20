@@ -533,6 +533,9 @@ body {
   padding: 20px 0;
   line-height: 1.8;
 }
+.advanced-only { display: none; }
+#settingsView.settings-advanced .advanced-only { display: block; }
+#settingsView.settings-advanced .s-row.advanced-only { display: flex; }
 .s-life {
   display: inline-flex;
   align-items: center;
@@ -713,9 +716,20 @@ body {
     <div style="width:60px"></div>
   </div>
 
-  <div class="s-section">Connection</div>
   <div class="s-card">
     <div class="s-row">
+      <span class="s-label">View</span>
+      <div class="toggle-group" role="group">
+        <button type="button" class="toggle-btn active" id="btnSimpleSettings" onclick="setSettingsMode(false)">Simple</button>
+        <button type="button" class="toggle-btn" id="btnAdvancedSettings" onclick="setSettingsMode(true)">Advanced</button>
+      </div>
+      <span class="s-hint">Use Advanced only when setting up hosting or custom servers.</span>
+    </div>
+  </div>
+
+  <div class="s-section">Connection</div>
+  <div class="s-card">
+    <div class="s-row advanced-only" id="rowBackendUrl">
       <span class="s-label">Backend URL</span>
       <span class="s-hint">Leave empty to use current host</span>
       <input id="settingBackend" type="url" placeholder="Optional — uses same host by default" />
@@ -739,10 +753,10 @@ body {
   <div class="s-section">Recitation</div>
   <div class="s-card">
     <div class="s-row">
-      <span class="s-label">Pipeline Engine</span>
+      <span class="s-label">Tracking style</span>
       <select id="settingPipeline">
-        <option value="v4">V4 (word-level tracking, progress bar) ⭐ NEW</option>
-        <option value="v3">V3 (half-timer prev, bump cap, re-lock)</option>
+        <option value="v4">Recommended (smoother tracking)</option>
+        <option value="v3">Compatibility mode</option>
       </select>
       <span class="s-hint">Only V3 and V4 are supported.</span>
     </div>
@@ -772,9 +786,9 @@ body {
     </div>
   </div>
 
-  <div class="s-section">Whisper / ASR</div>
+  <div class="s-section">Speech server</div>
   <div class="s-card">
-    <div class="s-row">
+    <div class="s-row advanced-only">
       <span class="s-label">Endpoint</span>
       <div class="toggle-group" role="group">
         <button type="button" class="toggle-btn active" id="btnHfDefault" onclick="setWhisperProvider('hf-public')">HF</button>
@@ -782,27 +796,27 @@ body {
       </div>
     </div>
     <div class="s-row">
-      <span class="s-label">Endpoint lifecycle</span>
+      <span class="s-label">Server status</span>
       <div id="endpointLifecycleBadge" class="s-life asleep">Checking…</div>
-      <span class="s-hint" id="endpointLifecycleHint">Checking endpoint state…</span>
+      <span class="s-hint" id="endpointLifecycleHint">Checking server state…</span>
       <div class="s-actions">
-        <button type="button" class="s-action-btn" id="endpointRefreshBtn">Refresh status</button>
-        <button type="button" class="s-action-btn" id="endpointWakeBtn" style="display:none">Wake endpoint</button>
+        <button type="button" class="s-action-btn" id="endpointRefreshBtn">Check status</button>
+        <button type="button" class="s-action-btn" id="endpointWakeBtn" style="display:none">Wake server</button>
       </div>
-      <span class="s-hint" id="endpointEnvHint" style="margin-top:6px">On-demand wake is controlled by backend env.</span>
+      <span class="s-hint" id="endpointEnvHint" style="margin-top:6px">Wake button is controlled by app host settings.</span>
     </div>
-    <p class="s-hint" style="margin:0 0 10px 0;font-size:12px;color:var(--tc-2)">HF: set token + endpoint URL in backend .env where you host the app. Custom: override with in-app token + endpoint (another HF cluster, CTranslate local, or Modal).</p>
-    <div class="s-row" id="rowWhisperEndpoint" style="display:none">
+    <p class="s-hint advanced-only" style="margin:0 0 10px 0;font-size:12px;color:var(--tc-2)">HF: set token + endpoint URL in backend .env where you host the app. Custom: override with in-app token + endpoint (another HF cluster, CTranslate local, or Modal).</p>
+    <div class="s-row advanced-only" id="rowWhisperEndpoint" style="display:none">
       <span class="s-label">Endpoint URL</span>
       <span class="s-hint">HF: *.endpoints.huggingface.cloud — Modal: *.modal.run — Local: http://localhost:...</span>
       <input id="settingWhisperEndpoint" type="url" placeholder="https://..." autocomplete="off" oninput="toggleWhisperFields()" />
     </div>
-    <div class="s-row" id="rowWhisperApiKey" style="display:none">
+    <div class="s-row advanced-only" id="rowWhisperApiKey" style="display:none">
       <span class="s-label">API Key</span>
       <span class="s-hint" id="hintApiKey">HF token (required for HF) — leave empty to use backend .env</span>
       <input id="settingWhisperApiKey" type="text" placeholder="hf_..." autocomplete="off" />
     </div>
-    <div class="s-row" id="rowWhisperModalSecret" style="display:none">
+    <div class="s-row advanced-only" id="rowWhisperModalSecret" style="display:none">
       <span class="s-label">Modal Secret</span>
       <span class="s-hint">Only if Modal endpoint uses proxy auth</span>
       <input id="settingWhisperModalSecret" type="text" placeholder="Optional" autocomplete="off" />
@@ -1010,6 +1024,7 @@ body {
   const MAX_UPGRADE_CHARS = 2000;  // textContainerUpgrade limit
   const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
   const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+  var _settingsAdvanced = false;
   var _backendStatusInfo = {
     endpointOnDemandEnabled: false,
     mobileOnlyMode: false,
@@ -1054,6 +1069,17 @@ body {
   function saveSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(S.settings));
   }
+
+  window.setSettingsMode = function (isAdvanced) {
+    _settingsAdvanced = !!isAdvanced;
+    var simpleBtn = document.getElementById('btnSimpleSettings');
+    var advancedBtn = document.getElementById('btnAdvancedSettings');
+    var settingsView = document.getElementById('settingsView');
+    if (simpleBtn) simpleBtn.classList.toggle('active', !_settingsAdvanced);
+    if (advancedBtn) advancedBtn.classList.toggle('active', _settingsAdvanced);
+    if (settingsView) settingsView.classList.toggle('settings-advanced', _settingsAdvanced);
+    toggleWhisperFields();
+  };
 
   function getWsUrl() {
     return S.settings.backendUrl || defaultWsUrl();
@@ -2330,8 +2356,8 @@ body {
     if (wakeBtn) wakeBtn.style.display = _backendStatusInfo.endpointOnDemandEnabled ? '' : 'none';
     if (envHint) {
       envHint.textContent = _backendStatusInfo.endpointOnDemandEnabled
-        ? 'On-demand wake is enabled by backend env.'
-        : 'On-demand wake is disabled by backend env.';
+        ? 'You can tap "Wake server" when needed.'
+        : 'Wake is off for this hosted app.';
     }
 
     var mobileRow = document.getElementById('mobileOnlyHintRow');
@@ -2376,14 +2402,15 @@ body {
   };
 
   window.toggleWhisperFields = function () {
+    if (!_settingsAdvanced) return;
     var isCustom = document.getElementById('btnCustomDeployed').classList.contains('active');
     var epVal = (document.getElementById('settingWhisperEndpoint') || {}).value || '';
     var rowEp = document.getElementById('rowWhisperEndpoint');
     var rowKey = document.getElementById('rowWhisperApiKey');
     var rowSecret = document.getElementById('rowWhisperModalSecret');
-    if (rowEp) rowEp.style.display = isCustom ? '' : 'none';
-    if (rowKey) rowKey.style.display = isCustom ? '' : 'none';
-    if (rowSecret) rowSecret.style.display = (isCustom && /modal\.run|modal\.com/i.test(epVal)) ? '' : 'none';
+    if (rowEp) rowEp.style.display = isCustom ? 'flex' : 'none';
+    if (rowKey) rowKey.style.display = isCustom ? 'flex' : 'none';
+    if (rowSecret) rowSecret.style.display = (isCustom && /modal\.run|modal\.com/i.test(epVal)) ? 'flex' : 'none';
   };
 
   window.showSettings = function () {
@@ -2407,6 +2434,7 @@ body {
     document.getElementById('settingMicTest').onclick = requestMicFromSettings;
     document.getElementById('endpointRefreshBtn').onclick = checkBackend;
     document.getElementById('endpointWakeBtn').onclick = warmupEndpoint;
+    window.setSettingsMode(false);
   };
 
   function reinitPipeline() {
