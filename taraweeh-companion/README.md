@@ -270,6 +270,9 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | `LOCKED_SEND_MS` | `6000` | Latest tail window (ms) sent per locked-mode Whisper request; smaller values reduce stale buffering on queued endpoints |
 | `LOCKED_MAX_INFLIGHT` | `2` | Max concurrent locked-mode Whisper requests per client; allows overlap while preserving sequence guard |
 | `LOCKED_RESULT_STALE_MS` | `3000` | Drop locked-mode Whisper results older than this (ms) when they are behind/current verse to prevent snap-back from queued responses |
+| `ENDPOINT_ON_DEMAND_ENABLED` | `false` | Enables Settings "Wake endpoint" control (`/api/endpoint/warmup`) for on-demand endpoint spin-up |
+| `MOBILE_ONLY_MODE` | `false` | Forces phone mic mode in Settings and labels deployment as mobile-only |
+| `WHISPER_PROBE_ON_INIT` | `true` | If `false`, skips automatic endpoint probe on init (manual warmup can still probe) |
 | `SILENCE_THRESHOLD` | `0.005` | RMS threshold for silence detection |
 
 ---

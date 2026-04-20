@@ -16,6 +16,9 @@ See **[docs/SETUP.md](../docs/SETUP.md)** for full instructions. Quick start:
 |----------|----------|--------------|
 | `HUGGINGFACE_TOKEN` | Yes | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
 | `GEMINI_API_KEY` | No (Pro) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| `ENDPOINT_ON_DEMAND_ENABLED` | No | `true` enables `/api/endpoint/warmup` and the "Wake endpoint" button in Settings |
+| `MOBILE_ONLY_MODE` | No | `true` enforces phone mic in UI and exposes mobile-only status in Settings |
+| `WHISPER_PROBE_ON_INIT` | No | `false` disables automatic endpoint probing on init (manual warmup still works when enabled) |
 | `PORT` | No | Default 3001 |
 
 ```bash

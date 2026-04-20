@@ -14,16 +14,27 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { loadQuran } from './keywordMatcher.js';
 import { closeTranscription, PROVIDER } from './transcriptionRouter.js';
-import { AudioPipeline as AudioPipelineV1 } from './audioPipeline.js';
-import { AudioPipeline as AudioPipelineV2 } from './audioPipelineV2.js';
 import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
 import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
+import { probeWhisperEndpoint } from './whisperProvider.js';
 
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const SAMPLE_RATE = 16000;
+const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
+const ENDPOINT_ON_DEMAND_ENABLED = process.env.ENDPOINT_ON_DEMAND_ENABLED === 'true';
+const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
+const LOCAL_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+
+let lastEndpointLifecycle = {
+  component: 'model',
+  status: 'unknown',
+  provider: 'unknown',
+  source: 'startup',
+  updatedAt: Date.now(),
+};
 
 loadQuran();
 
@@ -31,6 +42,42 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
 
 const app = express();
+
+function sanitizePipelineVersion(version) {
+  const v = String(version || '').toLowerCase().trim();
+  return ALLOWED_PIPELINES.has(v) ? v : 'v4';
+}
+
+function sanitizeTranslationLang(lang) {
+  const normalized = (lang && String(lang).trim()) || '';
+  return LOCAL_TRANSLATION_LANGS.has(normalized) ? normalized : '';
+}
+
+function buildWhisperOpts(opts = {}) {
+  const hasWhisperOverrides = opts.whisperProvider || opts.whisperEndpointUrl || opts.whisperApiKey || opts.hfToken;
+  const ep = opts.whisperEndpointUrl || '';
+  const isModalUrl = /modal\.run|modal\.com/i.test(ep);
+  return hasWhisperOverrides
+    ? {
+        provider: opts.whisperProvider || undefined,
+        endpointUrl: ep || undefined,
+        apiKey: opts.whisperApiKey || opts.hfToken || HF_TOKEN || undefined,
+        modalKey: isModalUrl ? (opts.whisperApiKey || opts.hfToken) : undefined,
+        modalSecret: opts.whisperModalSecret || undefined,
+      }
+    : HF_TOKEN ? { apiKey: HF_TOKEN } : null;
+}
+
+function updateEndpointLifecycle(status, source = 'runtime') {
+  if (!status || status.component !== 'model') return;
+  lastEndpointLifecycle = {
+    ...lastEndpointLifecycle,
+    ...status,
+    source,
+    updatedAt: Date.now(),
+  };
+}
+
 app.get('/', (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(join(rootDir, 'app', 'index.html'));
@@ -46,7 +93,44 @@ app.get('/api/status', (req, res) => {
     provider: PROVIDER,
     model: modelName,
     endpoint: ep ? 'dedicated' : 'public-api',
+    endpointOnDemandEnabled: ENDPOINT_ON_DEMAND_ENABLED,
+    mobileOnlyMode: MOBILE_ONLY_MODE,
+    probeOnInit: process.env.WHISPER_PROBE_ON_INIT !== 'false',
+    allowedPipelines: ['v3', 'v4'],
+    translationSource: 'local-bundled',
+    allowedTranslationLangs: ['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv'],
+    endpointLifecycle: lastEndpointLifecycle,
   });
+});
+
+app.get('/api/endpoint/warmup', async (req, res) => {
+  if (!ENDPOINT_ON_DEMAND_ENABLED) {
+    return res.status(403).json({
+      ok: false,
+      message: 'Endpoint on-demand warmup is disabled. Set ENDPOINT_ON_DEMAND_ENABLED=true to enable.',
+    });
+  }
+
+  try {
+    let latest = null;
+    await probeWhisperEndpoint({ ...(buildWhisperOpts({}) || {}), forceProbe: true }, (s) => {
+      latest = s;
+      updateEndpointLifecycle(s, 'warmup');
+    });
+    res.json({
+      ok: true,
+      lifecycle: latest || lastEndpointLifecycle,
+      endpointLifecycle: lastEndpointLifecycle,
+    });
+  } catch (err) {
+    const message = err?.message || 'Endpoint warmup failed';
+    updateEndpointLifecycle({ component: 'model', status: 'error', message }, 'warmup');
+    res.status(500).json({
+      ok: false,
+      message,
+      endpointLifecycle: lastEndpointLifecycle,
+    });
+  }
 });
 app.use(express.static(rootDir));
 
@@ -90,30 +174,20 @@ wss.on('connection', (ws, req) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   }
 
-  let pipelineVersion = 'v4';  // V4: Default to word-level tracking
+  let pipelineVersion = 'v4';
 
   function createPipeline(preferredSurah = 0, opts = {}, version) {
     if (pipeline) pipeline.destroy();
-    if (version) pipelineVersion = version;
-    const Ctor = pipelineVersion === 'v1' ? AudioPipelineV1
-      : pipelineVersion === 'v2' ? AudioPipelineV2
-      : pipelineVersion === 'v3' ? AudioPipelineV3
-      : AudioPipelineV4;
+    pipelineVersion = sanitizePipelineVersion(version || pipelineVersion);
+    const Ctor = pipelineVersion === 'v3' ? AudioPipelineV3 : AudioPipelineV4;
 
-    const hasWhisperOverrides = opts.whisperProvider || opts.whisperEndpointUrl || opts.whisperApiKey || opts.hfToken;
-    const ep = opts.whisperEndpointUrl || '';
-    const isModalUrl = /modal\.run|modal\.com/i.test(ep);
-    const whisperOpts = hasWhisperOverrides
-      ? {
-          provider: opts.whisperProvider || undefined,
-          endpointUrl: ep || undefined,
-          apiKey: opts.whisperApiKey || opts.hfToken || HF_TOKEN || undefined,
-          modalKey: isModalUrl ? (opts.whisperApiKey || opts.hfToken) : undefined,
-          modalSecret: opts.whisperModalSecret || undefined,
-        }
-      : HF_TOKEN ? { apiKey: HF_TOKEN } : null;
+    const whisperOpts = buildWhisperOpts(opts);
+    const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
+    const translationLang = sanitizeTranslationLang(requestedTranslation);
+    if (requestedTranslation && requestedTranslation !== translationLang) {
+      console.warn(`[Init] Unsupported translation "${requestedTranslation}" requested; falling back to built-in local English`);
+    }
 
-    const translationLang = (opts.lang && String(opts.lang).trim()) || '';
     console.log(`[Init] Creating pipeline ${pipelineVersion.toUpperCase()} translationLang=${translationLang || '(built-in)'}`);
     pipeline = new Ctor({
       preferredSurah,
@@ -122,7 +196,10 @@ wss.on('connection', (ws, req) => {
       whisperOpts,
       geminiKey: opts.geminiKey || GEMINI_KEY,
       onStateUpdate: (msg) => send(msg),
-      onStatus: (s) => send({ type: 'sys_status', ...s }),
+      onStatus: (s) => {
+        updateEndpointLifecycle(s, 'pipeline');
+        send({ type: 'sys_status', ...s });
+      },
       onError: (err) => send({ type: 'error', error: err }),
     });
     // Ignore client fast/slow — learned pace handles it. Client localStorage
@@ -162,12 +239,8 @@ wss.on('connection', (ws, req) => {
           case 'init': {
             const surah = (typeof msg.preferredSurah === 'number' && msg.preferredSurah >= 1 && msg.preferredSurah <= 114)
               ? msg.preferredSurah : 0;
-            // V4: Force V4 for testing (TODO: allow client to choose)
-            const requestedVer = msg.pipelineVersion === 'v1' ? 'v1' 
-              : msg.pipelineVersion === 'v2' ? 'v2' 
-              : msg.pipelineVersion === 'v3' ? 'v3' 
-              : 'v4';
-            const ver = 'v4';  // Force V4 for now
+            const requestedVer = sanitizePipelineVersion(msg.pipelineVersion);
+            const ver = requestedVer;
             console.log(`[Init] preferredSurah=${surah} pipeline=${ver} (client requested: ${requestedVer})`);
             createPipeline(surah, msg, ver);
             _binaryLogged = false;

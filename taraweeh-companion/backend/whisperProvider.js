@@ -225,6 +225,11 @@ async function callModal(url, wavBuffer, modalKey, modalSecret, emit = null) {
  */
 export async function probeWhisperEndpoint(optsOrToken, emit) {
   const opts = typeof optsOrToken === 'object' ? optsOrToken : { apiKey: optsOrToken };
+  const forceProbe = !!opts.forceProbe;
+  if (process.env.WHISPER_PROBE_ON_INIT === 'false' && !forceProbe) {
+    emit?.({ component: 'model', status: 'standby', provider: 'probe-disabled', message: 'Probe disabled by env' });
+    return;
+  }
   const cfg = getWhisperConfig(opts);
 
   let provider, url;

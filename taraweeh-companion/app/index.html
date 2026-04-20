@@ -533,6 +533,52 @@ body {
   padding: 20px 0;
   line-height: 1.8;
 }
+.s-life {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  width: fit-content;
+}
+.s-life::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #999;
+}
+.s-life.ready { background: #ecfdf3; color: #166534; }
+.s-life.ready::before { background: #16a34a; }
+.s-life.warming { background: #fffbeb; color: #92400e; }
+.s-life.warming::before { background: #d97706; animation: s-blink 1s ease-in-out infinite; }
+.s-life.asleep { background: #f5f5f4; color: #44403c; }
+.s-life.asleep::before { background: #78716c; }
+.s-life.active { background: #eff6ff; color: #1e40af; }
+.s-life.active::before { background: #3b82f6; }
+.s-life.error { background: #fef2f2; color: #b91c1c; }
+.s-life.error::before { background: #ef4444; }
+.s-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.s-action-btn {
+  background: var(--bc-2);
+  border: 1px solid var(--bc-4);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--tc-1);
+  font-size: 12px;
+  cursor: pointer;
+}
+.s-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
   </style>
 </head>
 <body>
@@ -697,9 +743,8 @@ body {
       <select id="settingPipeline">
         <option value="v4">V4 (word-level tracking, progress bar) ⭐ NEW</option>
         <option value="v3">V3 (half-timer prev, bump cap, re-lock)</option>
-        <option value="v2">V2 (cap-based)</option>
-        <option value="v1">V1 (legacy — penalty-based)</option>
       </select>
+      <span class="s-hint">Only V3 and V4 are supported.</span>
     </div>
     <div class="s-row">
       <span class="s-label">Default Surah</span>
@@ -720,21 +765,9 @@ body {
           <option value="tr">Turkish</option>
           <option value="ur">Urdu</option>
         </optgroup>
-        <optgroup label="English (Quran DB)">
-          <option value="db:yahiyaemerick" title="A translator offering a modern and relatable interpretation.">Yahiya Emerick</option>
-          <option value="db:ummmuhammadsahihinternational" title="A widely used modern English translation.">Umm Muhammad (Sahih International)</option>
-          <option value="db:wahiduddinkhan" title="Known for presenting the Qur'an's message of peace and universal harmony.">Wahiduddin Khan</option>
-          <option value="db:wordbyword2021" title="Provides a detailed word-by-word translation for study.">Word by Word (2021)</option>
-          <option value="db:wordforword2020" title="Provides a detailed word-by-word translation for study.">Word for Word (2020)</option>
-          <option value="db:talalitani2012" title="Modern translation emphasizing clarity and readability.">Talal Itani (2012)</option>
-          <option value="db:talalitaniampampai2024" title="Modern translation emphasizing clarity and readability.">Talal Itani (2024)</option>
-          <option value="db:muhammadmarmadukepickthall" title="A highly regarded literary English translation.">Muhammad Marmaduke Pickthall</option>
-          <option value="db:mfarookmalik" title="Focused on clarity and easy comprehension for English readers.">M. Farook Malik</option>
-          <option value="db:abdulhye" title="Known for providing traditional Islamic perspectives in translation.">Abdul Hye</option>
-          <option value="db:mustafakhattab2018" title="Known for The Clear Quran, a simple and accurate translation.">Mustafa Khattab (Clear Quran)</option>
-        </optgroup>
       </select>
       <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;font-style:normal;min-height:1.4em"></span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Translations are local app bundles only (no cloud translation fetch).</span>
       <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">No Urdu, Farsi, Hindi, Bengali, or Arabic on glasses — those show English instead.</span>
     </div>
   </div>
@@ -747,6 +780,16 @@ body {
         <button type="button" class="toggle-btn active" id="btnHfDefault" onclick="setWhisperProvider('hf-public')">HF</button>
         <button type="button" class="toggle-btn" id="btnCustomDeployed" onclick="setWhisperProvider('custom')">Custom</button>
       </div>
+    </div>
+    <div class="s-row">
+      <span class="s-label">Endpoint lifecycle</span>
+      <div id="endpointLifecycleBadge" class="s-life asleep">Checking…</div>
+      <span class="s-hint" id="endpointLifecycleHint">Checking endpoint state…</span>
+      <div class="s-actions">
+        <button type="button" class="s-action-btn" id="endpointRefreshBtn">Refresh status</button>
+        <button type="button" class="s-action-btn" id="endpointWakeBtn" style="display:none">Wake endpoint</button>
+      </div>
+      <span class="s-hint" id="endpointEnvHint" style="margin-top:6px">On-demand wake is controlled by backend env.</span>
     </div>
     <p class="s-hint" style="margin:0 0 10px 0;font-size:12px;color:var(--tc-2)">HF: set token + endpoint URL in backend .env where you host the app. Custom: override with in-app token + endpoint (another HF cluster, CTranslate local, or Modal).</p>
     <div class="s-row" id="rowWhisperEndpoint" style="display:none">
@@ -763,6 +806,10 @@ body {
       <span class="s-label">Modal Secret</span>
       <span class="s-hint">Only if Modal endpoint uses proxy auth</span>
       <input id="settingWhisperModalSecret" type="text" placeholder="Optional" autocomplete="off" />
+    </div>
+    <div class="s-row" id="mobileOnlyHintRow" style="display:none">
+      <span class="s-label">Mobile-only mode</span>
+      <span class="s-hint">Enabled by host env. Phone mic is enforced for this deployment.</span>
     </div>
   </div>
 
@@ -961,6 +1008,13 @@ body {
   const TARGET_SR = 16000;
   const MAX_REBUILD_CHARS = 1000;  // rebuildPageContainer limit per G2 SDK docs
   const MAX_UPGRADE_CHARS = 2000;  // textContainerUpgrade limit
+  const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
+  const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+  var _backendStatusInfo = {
+    endpointOnDemandEnabled: false,
+    mobileOnlyMode: false,
+    endpointLifecycle: null,
+  };
 
   // ─── Settings ─────────────────────────────────────────────────────────────
   function defaultWsUrl() {
@@ -976,12 +1030,25 @@ body {
     slowMode: false,
   };
 
+  function sanitizePipelineVersion(v) {
+    var normalized = String(v || '').toLowerCase().trim();
+    return ALLOWED_PIPELINES.has(normalized) ? normalized : 'v4';
+  }
+
+  function sanitizeTranslationLang(lang) {
+    var normalized = String(lang || '').trim();
+    return ALLOWED_TRANSLATION_LANGS.has(normalized) ? normalized : '';
+  }
+
   function loadSettings() {
     try {
       const s = localStorage.getItem(SETTINGS_KEY);
       const saved = s ? JSON.parse(s) : {};
-      return { ...DEFAULT_SETTINGS, ...saved };
-    } catch { return { ...DEFAULT_SETTINGS }; }
+      const merged = { ...DEFAULT_SETTINGS, ...saved };
+      merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
+      merged.lang = sanitizeTranslationLang(merged.lang);
+      return merged;
+    } catch { return { ...DEFAULT_SETTINGS, pipelineVersion: 'v4', lang: '' }; }
   }
 
   function saveSettings() {
@@ -1022,6 +1089,7 @@ body {
 
   function handleSysStatus(s) {
     if (s.component === 'model') {
+      updateEndpointLifecycleUI(s);
       if (s.provider) _modelProvider = s.provider;
       var pLabel = _modelProvider ? ' (' + _providerLabel(_modelProvider) + ')' : '';
       switch (s.status) {
@@ -2202,10 +2270,101 @@ body {
   };
 
   window.setMicSource = function (src) {
+    if (_backendStatusInfo.mobileOnlyMode) src = 'phone';
     var isPhone = src === 'phone';
     document.getElementById('btnG2Mic').classList.toggle('active', !isPhone);
     document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
   };
+
+  function updateEndpointLifecycleUI(lifecycle) {
+    if (!lifecycle || lifecycle.component !== 'model') return;
+    _backendStatusInfo.endpointLifecycle = lifecycle;
+    var badge = document.getElementById('endpointLifecycleBadge');
+    var hint = document.getElementById('endpointLifecycleHint');
+    if (!badge || !hint) return;
+
+    var status = lifecycle.status || 'unknown';
+    var label = 'Unknown';
+    var cls = 'asleep';
+    var provider = lifecycle.provider ? (' (' + _providerLabel(lifecycle.provider) + ')') : '';
+    var suffix = '';
+
+    if (status === 'probing') {
+      label = 'Checking endpoint';
+      cls = 'warming';
+    } else if (status === 'standby') {
+      label = 'Asleep / standby';
+      cls = 'asleep';
+      if (lifecycle.latencyMs) suffix = ' • ' + lifecycle.latencyMs + 'ms';
+    } else if (status === 'loading') {
+      label = 'Starting up';
+      cls = 'warming';
+      if (lifecycle.retryIn) suffix = ' • retry ~' + lifecycle.retryIn + 's';
+    } else if (status === 'pending') {
+      label = 'Processing request';
+      cls = 'active';
+    } else if (status === 'ready') {
+      label = 'Ready for recitation';
+      cls = 'ready';
+    } else if (status === 'fallback') {
+      label = 'Fallback active';
+      cls = 'active';
+      if (lifecycle.message) suffix = ' • ' + lifecycle.message.slice(0, 60);
+    } else if (status === 'error') {
+      label = 'Unavailable';
+      cls = 'error';
+      if (lifecycle.message) suffix = ' • ' + lifecycle.message.slice(0, 60);
+    }
+
+    badge.className = 's-life ' + cls;
+    badge.textContent = label;
+    hint.textContent = 'Provider: ' + (provider ? provider.slice(2, -1) : 'Unknown') + suffix;
+  }
+
+  function applyBackendModeSettings(status) {
+    _backendStatusInfo.endpointOnDemandEnabled = !!status.endpointOnDemandEnabled;
+    _backendStatusInfo.mobileOnlyMode = !!status.mobileOnlyMode;
+
+    var wakeBtn = document.getElementById('endpointWakeBtn');
+    var envHint = document.getElementById('endpointEnvHint');
+    if (wakeBtn) wakeBtn.style.display = _backendStatusInfo.endpointOnDemandEnabled ? '' : 'none';
+    if (envHint) {
+      envHint.textContent = _backendStatusInfo.endpointOnDemandEnabled
+        ? 'On-demand wake is enabled by backend env.'
+        : 'On-demand wake is disabled by backend env.';
+    }
+
+    var mobileRow = document.getElementById('mobileOnlyHintRow');
+    if (mobileRow) mobileRow.style.display = _backendStatusInfo.mobileOnlyMode ? '' : 'none';
+
+    var g2Btn = document.getElementById('btnG2Mic');
+    var phoneBtn = document.getElementById('btnPhoneMic');
+    if (g2Btn && phoneBtn) {
+      g2Btn.disabled = _backendStatusInfo.mobileOnlyMode;
+      if (_backendStatusInfo.mobileOnlyMode) {
+        S.settings.forcePhoneMic = true;
+        setMicSource('phone');
+      }
+    }
+  }
+
+  function warmupEndpoint() {
+    var wakeBtn = document.getElementById('endpointWakeBtn');
+    if (wakeBtn) wakeBtn.disabled = true;
+    var base = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
+    fetch(base + '/api/endpoint/warmup')
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.body.message || 'Warmup failed');
+        updateEndpointLifecycleUI(res.body.lifecycle || res.body.endpointLifecycle);
+      })
+      .catch(function (err) {
+        updateEndpointLifecycleUI({ component: 'model', status: 'error', message: err.message || 'Warmup failed' });
+      })
+      .finally(function () {
+        if (wakeBtn) wakeBtn.disabled = false;
+      });
+  }
 
   window.updateTranslationDesc = function () {
     var sel = document.getElementById('settingLang');
@@ -2236,9 +2395,9 @@ body {
     document.getElementById('settingWhisperEndpoint').value = S.settings.whisperEndpointUrl || '';
     document.getElementById('settingWhisperApiKey').value = S.settings.whisperApiKey || S.settings.hfToken || '';
     document.getElementById('settingWhisperModalSecret').value = S.settings.whisperModalSecret || '';
-    document.getElementById('settingLang').value = S.settings.lang || '';
+    document.getElementById('settingLang').value = sanitizeTranslationLang(S.settings.lang || '');
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
-    document.getElementById('settingPipeline').value = S.settings.pipelineVersion || 'v4';
+    document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     updateTranslationDesc();
@@ -2246,6 +2405,8 @@ body {
     checkBackend();
     updateMicStatus();
     document.getElementById('settingMicTest').onclick = requestMicFromSettings;
+    document.getElementById('endpointRefreshBtn').onclick = checkBackend;
+    document.getElementById('endpointWakeBtn').onclick = warmupEndpoint;
   };
 
   function reinitPipeline() {
@@ -2276,10 +2437,12 @@ body {
     S.settings.whisperApiKey = document.getElementById('settingWhisperApiKey').value.trim();
     S.settings.whisperModalSecret = document.getElementById('settingWhisperModalSecret').value.trim();
     S.settings.hfToken = S.settings.whisperApiKey;
-    S.settings.lang = document.getElementById('settingLang').value;
+    S.settings.lang = sanitizeTranslationLang(document.getElementById('settingLang').value);
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
-    S.settings.pipelineVersion = document.getElementById('settingPipeline').value;
-    S.settings.forcePhoneMic = document.getElementById('btnPhoneMic').classList.contains('active');
+    S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);
+    S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
+      ? true
+      : document.getElementById('btnPhoneMic').classList.contains('active');
     saveSettings();
     reinitPipeline();
     document.getElementById('settingsView').style.display = 'none';
@@ -2293,9 +2456,12 @@ body {
       var used = getWsUrl();
       el.textContent = '\u2713 Connected \u2014 ' + (s.provider || 'whisper') + (s.endpoint ? ' (' + s.endpoint + ')' : '') + (used ? ' \u2022 ' + used : '');
       el.style.color = 'var(--tc-green)';
+      applyBackendModeSettings(s || {});
+      updateEndpointLifecycleUI(s.endpointLifecycle || { component: 'model', status: 'unknown' });
     }).catch(function () {
       el.textContent = '\u2715 Not reachable at ' + url;
       el.style.color = 'var(--tc-red)';
+      updateEndpointLifecycleUI({ component: 'model', status: 'error', message: 'Backend not reachable' });
     });
   }
 
