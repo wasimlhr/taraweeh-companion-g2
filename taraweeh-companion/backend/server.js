@@ -25,6 +25,7 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const SAMPLE_RATE = 16000;
 const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
 const ENDPOINT_ON_DEMAND_ENABLED = process.env.ENDPOINT_ON_DEMAND_ENABLED === 'true';
+const G2_SPLASH_IMAGE_DATA_URL = (process.env.G2_SPLASH_IMAGE_DATA_URL || '').trim();
 const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
 const LOCAL_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
 
@@ -78,7 +79,21 @@ function updateEndpointLifecycle(status, source = 'runtime') {
 
 app.get('/', (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-  res.sendFile(join(rootDir, 'app', 'index.html'));
+  const indexPath = join(rootDir, 'app', 'index.html');
+  if (!G2_SPLASH_IMAGE_DATA_URL) {
+    return res.sendFile(indexPath);
+  }
+  try {
+    const html = readFileSync(indexPath, 'utf8');
+    const injected = html.replace(
+      'var G2_SPLASH_IMAGE_SRC = \'\';',
+      `var G2_SPLASH_IMAGE_SRC = ${JSON.stringify(G2_SPLASH_IMAGE_DATA_URL)};`
+    );
+    res.type('html').send(injected);
+  } catch (err) {
+    console.warn(`[Splash] Failed to inject G2 splash image: ${err.message}`);
+    res.sendFile(indexPath);
+  }
 });
 app.get('/api/status', (req, res) => {
   const ep = process.env.WHISPER_ENDPOINT_URL || '';

@@ -198,6 +198,7 @@ The app is designed to use a **custom Whisper endpoint**. Choose one:
 | `HUGGINGFACE_TOKEN` | Yes (HF endpoint) | [Get token](https://huggingface.co/settings/tokens) — required for HF Inference Endpoint. Not needed for Modal or local. |
 | `WHISPER_ENDPOINT_URL` | No | Dedicated endpoint URL — HF (`*.endpoints.huggingface.cloud`) or Modal (`*.modal.run`) |
 | `MODAL_KEY` / `MODAL_SECRET` | No | Modal proxy auth (only if your endpoint uses `requires_proxy_auth`) |
+| `G2_SPLASH_IMAGE_DATA_URL` | No | Optional base64 image (`data:image/jpeg;base64,...`) used only for glasses startup splash, center-cropped to 180x96 |
 | `PORT` | No | Default 3001 |
 
 ---
