@@ -533,9 +533,6 @@ body {
   padding: 20px 0;
   line-height: 1.8;
 }
-.advanced-only { display: none; }
-#settingsView.settings-advanced .advanced-only { display: block; }
-#settingsView.settings-advanced .s-row.advanced-only { display: flex; }
 .s-life {
   display: inline-flex;
   align-items: center;
@@ -716,24 +713,8 @@ body {
     <div style="width:60px"></div>
   </div>
 
-  <div class="s-card">
-    <div class="s-row">
-      <span class="s-label">View</span>
-      <div class="toggle-group" role="group">
-        <button type="button" class="toggle-btn active" id="btnSimpleSettings" onclick="setSettingsMode(false)">Simple</button>
-        <button type="button" class="toggle-btn" id="btnAdvancedSettings" onclick="setSettingsMode(true)">Advanced</button>
-      </div>
-      <span class="s-hint">Use Advanced only when setting up hosting or custom servers.</span>
-    </div>
-  </div>
-
   <div class="s-section">Connection</div>
   <div class="s-card">
-    <div class="s-row advanced-only" id="rowBackendUrl">
-      <span class="s-label">Backend URL</span>
-      <span class="s-hint">Leave empty to use current host</span>
-      <input id="settingBackend" type="url" placeholder="Optional — uses same host by default" />
-    </div>
     <div class="s-status" id="backendStatus">Checking...</div>
     <div class="s-row" style="margin-top:12px">
       <span class="s-label">Microphone</span>
@@ -788,13 +769,6 @@ body {
 
   <div class="s-section">Speech server</div>
   <div class="s-card">
-    <div class="s-row advanced-only">
-      <span class="s-label">Endpoint</span>
-      <div class="toggle-group" role="group">
-        <button type="button" class="toggle-btn active" id="btnHfDefault" onclick="setWhisperProvider('hf-public')">HF</button>
-        <button type="button" class="toggle-btn" id="btnCustomDeployed" onclick="setWhisperProvider('custom')">Custom</button>
-      </div>
-    </div>
     <div class="s-row">
       <span class="s-label">Server status</span>
       <div id="endpointLifecycleBadge" class="s-life asleep">Checking…</div>
@@ -805,22 +779,7 @@ body {
       </div>
       <span class="s-hint" id="endpointEnvHint" style="margin-top:6px">Wake button is controlled by app host settings.</span>
     </div>
-    <p class="s-hint advanced-only" style="margin:0 0 10px 0;font-size:12px;color:var(--tc-2)">HF: set token + endpoint URL in backend .env where you host the app. Custom: override with in-app token + endpoint (another HF cluster, CTranslate local, or Modal).</p>
-    <div class="s-row advanced-only" id="rowWhisperEndpoint" style="display:none">
-      <span class="s-label">Endpoint URL</span>
-      <span class="s-hint">HF: *.endpoints.huggingface.cloud — Modal: *.modal.run — Local: http://localhost:...</span>
-      <input id="settingWhisperEndpoint" type="url" placeholder="https://..." autocomplete="off" oninput="toggleWhisperFields()" />
-    </div>
-    <div class="s-row advanced-only" id="rowWhisperApiKey" style="display:none">
-      <span class="s-label">API Key</span>
-      <span class="s-hint" id="hintApiKey">HF token (required for HF) — leave empty to use backend .env</span>
-      <input id="settingWhisperApiKey" type="text" placeholder="hf_..." autocomplete="off" />
-    </div>
-    <div class="s-row advanced-only" id="rowWhisperModalSecret" style="display:none">
-      <span class="s-label">Modal Secret</span>
-      <span class="s-hint">Only if Modal endpoint uses proxy auth</span>
-      <input id="settingWhisperModalSecret" type="text" placeholder="Optional" autocomplete="off" />
-    </div>
+    <p class="s-hint" style="margin:0 0 10px 0;font-size:12px;color:var(--tc-2)">This app uses server-side endpoint settings. No token or endpoint setup is required from users.</p>
     <div class="s-row" id="mobileOnlyHintRow" style="display:none">
       <span class="s-label">Mobile-only mode</span>
       <span class="s-hint">Enabled by host env. Phone mic is enforced for this deployment.</span>
@@ -1024,7 +983,7 @@ body {
   const MAX_UPGRADE_CHARS = 2000;  // textContainerUpgrade limit
   const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
   const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
-  var _settingsAdvanced = false;
+  const DEFAULT_HOSTED_PROVIDER = 'hf-public';
   var _backendStatusInfo = {
     endpointOnDemandEnabled: false,
     mobileOnlyMode: false,
@@ -1070,19 +1029,8 @@ body {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(S.settings));
   }
 
-  window.setSettingsMode = function (isAdvanced) {
-    _settingsAdvanced = !!isAdvanced;
-    var simpleBtn = document.getElementById('btnSimpleSettings');
-    var advancedBtn = document.getElementById('btnAdvancedSettings');
-    var settingsView = document.getElementById('settingsView');
-    if (simpleBtn) simpleBtn.classList.toggle('active', !_settingsAdvanced);
-    if (advancedBtn) advancedBtn.classList.toggle('active', _settingsAdvanced);
-    if (settingsView) settingsView.classList.toggle('settings-advanced', _settingsAdvanced);
-    toggleWhisperFields();
-  };
-
   function getWsUrl() {
-    return S.settings.backendUrl || defaultWsUrl();
+    return defaultWsUrl();
   }
 
   // ─── Status Bar ───────────────────────────────────────────────────────────
@@ -1722,11 +1670,6 @@ body {
         type: 'init',
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
-        hfToken: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
-        whisperProvider: S.settings.whisperProvider || null,
-        whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
-        whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
-        whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         fastMode: _fastMode,
         slowMode: _slowMode,
@@ -2175,11 +2118,6 @@ body {
         type: 'init',
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
-        hfToken: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
-        whisperProvider: S.settings.whisperProvider || null,
-        whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
-        whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
-        whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
       }));
       S.ws.send(JSON.stringify({ type: 'start' }));
@@ -2288,13 +2226,6 @@ body {
   };
 
   // ─── Settings UI ──────────────────────────────────────────────────────────
-  window.setWhisperProvider = function (value) {
-    var isCustom = value === 'custom';
-    document.getElementById('btnHfDefault').classList.toggle('active', !isCustom);
-    document.getElementById('btnCustomDeployed').classList.toggle('active', isCustom);
-    toggleWhisperFields();
-  };
-
   window.setMicSource = function (src) {
     if (_backendStatusInfo.mobileOnlyMode) src = 'phone';
     var isPhone = src === 'phone';
@@ -2401,40 +2332,20 @@ body {
     descEl.textContent = title || '';
   };
 
-  window.toggleWhisperFields = function () {
-    if (!_settingsAdvanced) return;
-    var isCustom = document.getElementById('btnCustomDeployed').classList.contains('active');
-    var epVal = (document.getElementById('settingWhisperEndpoint') || {}).value || '';
-    var rowEp = document.getElementById('rowWhisperEndpoint');
-    var rowKey = document.getElementById('rowWhisperApiKey');
-    var rowSecret = document.getElementById('rowWhisperModalSecret');
-    if (rowEp) rowEp.style.display = isCustom ? 'flex' : 'none';
-    if (rowKey) rowKey.style.display = isCustom ? 'flex' : 'none';
-    if (rowSecret) rowSecret.style.display = (isCustom && /modal\.run|modal\.com/i.test(epVal)) ? 'flex' : 'none';
-  };
-
   window.showSettings = function () {
     document.getElementById('mainView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'block';
-    document.getElementById('settingBackend').value = S.settings.backendUrl || '';
-    var wp = S.settings.whisperProvider || 'hf-public';
-    setWhisperProvider(wp === 'custom' ? 'custom' : 'hf-public');
-    document.getElementById('settingWhisperEndpoint').value = S.settings.whisperEndpointUrl || '';
-    document.getElementById('settingWhisperApiKey').value = S.settings.whisperApiKey || S.settings.hfToken || '';
-    document.getElementById('settingWhisperModalSecret').value = S.settings.whisperModalSecret || '';
     document.getElementById('settingLang').value = sanitizeTranslationLang(S.settings.lang || '');
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     updateTranslationDesc();
-    toggleWhisperFields();
     checkBackend();
     updateMicStatus();
     document.getElementById('settingMicTest').onclick = requestMicFromSettings;
     document.getElementById('endpointRefreshBtn').onclick = checkBackend;
     document.getElementById('endpointWakeBtn').onclick = warmupEndpoint;
-    window.setSettingsMode(false);
   };
 
   function reinitPipeline() {
@@ -2443,11 +2354,6 @@ body {
       type: 'init',
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       lang: (S.settings.lang || '').trim() || null,
-      hfToken: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
-      whisperProvider: S.settings.whisperProvider || null,
-      whisperEndpointUrl: (S.settings.whisperEndpointUrl || '').trim() || null,
-      whisperApiKey: (S.settings.whisperApiKey || S.settings.hfToken || '').trim() || null,
-      whisperModalSecret: (S.settings.whisperModalSecret || '').trim() || null,
       pipelineVersion: S.settings.pipelineVersion || 'v4',
       fastMode: _fastMode,
       slowMode: _slowMode,
@@ -2459,12 +2365,6 @@ body {
   }
 
   window.hideSettings = function () {
-    S.settings.backendUrl = document.getElementById('settingBackend').value.trim();
-    S.settings.whisperProvider = document.getElementById('btnCustomDeployed').classList.contains('active') ? 'custom' : 'hf-public';
-    S.settings.whisperEndpointUrl = document.getElementById('settingWhisperEndpoint').value.trim();
-    S.settings.whisperApiKey = document.getElementById('settingWhisperApiKey').value.trim();
-    S.settings.whisperModalSecret = document.getElementById('settingWhisperModalSecret').value.trim();
-    S.settings.hfToken = S.settings.whisperApiKey;
     S.settings.lang = sanitizeTranslationLang(document.getElementById('settingLang').value);
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);

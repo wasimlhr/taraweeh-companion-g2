@@ -53,19 +53,17 @@ function sanitizeTranslationLang(lang) {
   return LOCAL_TRANSLATION_LANGS.has(normalized) ? normalized : '';
 }
 
-function buildWhisperOpts(opts = {}) {
-  const hasWhisperOverrides = opts.whisperProvider || opts.whisperEndpointUrl || opts.whisperApiKey || opts.hfToken;
-  const ep = opts.whisperEndpointUrl || '';
-  const isModalUrl = /modal\.run|modal\.com/i.test(ep);
-  return hasWhisperOverrides
-    ? {
-        provider: opts.whisperProvider || undefined,
-        endpointUrl: ep || undefined,
-        apiKey: opts.whisperApiKey || opts.hfToken || HF_TOKEN || undefined,
-        modalKey: isModalUrl ? (opts.whisperApiKey || opts.hfToken) : undefined,
-        modalSecret: opts.whisperModalSecret || undefined,
-      }
-    : HF_TOKEN ? { apiKey: HF_TOKEN } : null;
+function buildWhisperOpts() {
+  // Endpoint auth/config is host-managed only; never take client overrides.
+  const endpointUrl = process.env.WHISPER_ENDPOINT_URL || '';
+  const isModalUrl = /modal\.run|modal\.com/i.test(endpointUrl);
+  return {
+    provider: endpointUrl ? (isModalUrl ? 'modal' : 'hf-dedicated') : 'hf-public',
+    endpointUrl: endpointUrl || undefined,
+    apiKey: HF_TOKEN || undefined,
+    modalKey: isModalUrl ? (process.env.MODAL_KEY || undefined) : undefined,
+    modalSecret: isModalUrl ? (process.env.MODAL_SECRET || undefined) : undefined,
+  };
 }
 
 function updateEndpointLifecycle(status, source = 'runtime') {
@@ -113,7 +111,7 @@ app.get('/api/endpoint/warmup', async (req, res) => {
 
   try {
     let latest = null;
-    await probeWhisperEndpoint({ ...(buildWhisperOpts({}) || {}), forceProbe: true }, (s) => {
+    await probeWhisperEndpoint({ ...(buildWhisperOpts() || {}), forceProbe: true }, (s) => {
       latest = s;
       updateEndpointLifecycle(s, 'warmup');
     });
@@ -181,7 +179,7 @@ wss.on('connection', (ws, req) => {
     pipelineVersion = sanitizePipelineVersion(version || pipelineVersion);
     const Ctor = pipelineVersion === 'v3' ? AudioPipelineV3 : AudioPipelineV4;
 
-    const whisperOpts = buildWhisperOpts(opts);
+    const whisperOpts = buildWhisperOpts();
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
     const translationLang = sanitizeTranslationLang(requestedTranslation);
     if (requestedTranslation && requestedTranslation !== translationLang) {
@@ -192,7 +190,7 @@ wss.on('connection', (ws, req) => {
     pipeline = new Ctor({
       preferredSurah,
       translationLang,
-      hfToken: opts.hfToken || HF_TOKEN,
+      hfToken: HF_TOKEN,
       whisperOpts,
       geminiKey: opts.geminiKey || GEMINI_KEY,
       onStateUpdate: (msg) => send(msg),
