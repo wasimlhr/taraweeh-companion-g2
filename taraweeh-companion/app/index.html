@@ -1173,6 +1173,7 @@ body {
 
   function glassesStartup() {
     if (!S.bridge) return;
+    S.startupPageCreated = false;
     queueBridgeCall('createStartUpPageContainer', function () {
       return S.bridge.createStartUpPageContainer({
         containerTotalNum: 3,
@@ -1195,6 +1196,7 @@ body {
         ],
       }).then(function (result) {
         if (result !== 0) throw new Error('startup result=' + result);
+        S.startupPageCreated = true;
         S.displayRebuilt = false;
         log('G2: startup screen shown', 'ok');
       });
@@ -2216,6 +2218,7 @@ body {
   }
 
   function _cleanupBridgeResources() {
+    S.startupPageCreated = false;
     stopSearchingDots();
     stopLockingDots();
     stopPageFlip();
