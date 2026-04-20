@@ -815,6 +815,13 @@ body {
     lastWhisper: '',
     displayRebuilt: false,
     wakeLock: null,
+    bridgeReady: false,
+    startupPageCreated: false,
+    bridgeCallQueue: Promise.resolve(),
+    isShuttingDown: false,
+    unsubs: {
+      evenHubEvent: null,
+    },
   };
 
   // ── Screen Wake Lock + NoSleep audio fallback ────────────────────────────
@@ -1143,6 +1150,15 @@ body {
     el.className = type || '';
   }
 
+  function queueBridgeCall(name, fn) {
+    S.bridgeCallQueue = S.bridgeCallQueue
+      .then(function () { return fn(); })
+      .catch(function (err) {
+        log(name + ' failed: ' + (err && err.message ? err.message : String(err)), 'err');
+      });
+    return S.bridgeCallQueue;
+  }
+
   // ─── G2 display (2-container layout) ──────────────────────────────────────
   // Container 1 "hdr": top bar — status, surah, ayah (no event capture)
   // Container 2 "body": main area — translation (isEventCapture=0 so ring swipe advances ayah)
@@ -1157,8 +1173,8 @@ body {
 
   function glassesStartup() {
     if (!S.bridge) return;
-    try {
-      S.bridge.createStartUpPageContainer({
+    queueBridgeCall('createStartUpPageContainer', function () {
+      return S.bridge.createStartUpPageContainer({
         containerTotalNum: 3,
         textObject: [
           { containerID: 1, containerName: 'hdr',
@@ -1177,10 +1193,12 @@ body {
             borderWidth: 0, borderColor: 5, borderRdaius: 0, paddingLength: 2,
             content: 'Ready. Recite any verse to begin.' },
         ],
+      }).then(function (result) {
+        if (result !== 0) throw new Error('startup result=' + result);
+        S.displayRebuilt = false;
+        log('G2: startup screen shown', 'ok');
       });
-      S.displayRebuilt = false;
-      log('G2: startup screen shown', 'ok');
-    } catch (e) { log('G2: startup error: ' + e.message, 'err'); }
+    });
   }
 
   // glassesUpdate receives { hdr, body } object from buildGlassesText
@@ -1189,11 +1207,11 @@ body {
   function glassesUpdate(display) {
     if (!S.bridge) return;
     if (typeof display === 'string') display = { hdr: '', body: display };
-    try {
+    queueBridgeCall('glassesUpdate', function () {
       if (!S.displayRebuilt) {
         var hdrContent  = (display.hdr  || '').slice(0, 200);
         var bodyContent = (display.body || '').slice(0, MAX_REBUILD_CHARS - 200);
-        S.bridge.rebuildPageContainer({
+        return S.bridge.rebuildPageContainer({
           containerTotalNum: 3,
           textObject: [
             { containerID: 1, containerName: 'hdr',
@@ -1212,15 +1230,16 @@ body {
               borderWidth: 0, borderColor: 5, borderRdaius: 0, paddingLength: 2,
               content: bodyContent },
           ],
+        }).then(function () {
+          S.displayRebuilt = true;
         });
-        S.displayRebuilt = true;
-      } else {
-        var hdrContent  = (display.hdr  || '').slice(0, 500);
-        var bodyContent = (display.body || '').slice(0, MAX_UPGRADE_CHARS - 500);
-        S.bridge.textContainerUpgrade({ containerID: 1, containerName: 'hdr', content: hdrContent });
-        S.bridge.textContainerUpgrade({ containerID: 3, containerName: 'body', content: bodyContent });
       }
-    } catch (e) { log('G2 display error: ' + e.message, 'err'); }
+      var hdrContent2  = (display.hdr  || '').slice(0, 500);
+      var bodyContent2 = (display.body || '').slice(0, MAX_UPGRADE_CHARS - 500);
+      return S.bridge.textContainerUpgrade({ containerID: 1, containerName: 'hdr', content: hdrContent2 }).then(function () {
+        return S.bridge.textContainerUpgrade({ containerID: 3, containerName: 'body', content: bodyContent2 });
+      });
+    });
   }
 
   // ─── Glasses text helpers (from g2-quran-app reference) ─────────────────
@@ -1949,14 +1968,19 @@ body {
   }
 
   function startG2Mic() {
-    try {
-      S.bridge.audioControl(true);
-      log('G2 mic opened', 'ok');
-    } catch (e) { log('G2 audioControl failed: ' + e.message, 'err'); }
+    if (!S.bridge || !S.startupPageCreated) return;
+    queueBridgeCall('audioControl(true)', function () {
+      return S.bridge.audioControl(true).then(function () {
+        log('G2 mic opened', 'ok');
+      });
+    });
   }
 
   function stopG2Mic() {
-    if (S.bridge) { try { S.bridge.audioControl(false); } catch (_) {} }
+    if (!S.bridge || !S.startupPageCreated) return;
+    queueBridgeCall('audioControl(false)', function () {
+      return S.bridge.audioControl(false);
+    });
   }
 
   function startBrowserMic() {
@@ -2017,11 +2041,25 @@ body {
       sendPcm(event.audioEvent.audioPcm);
       return;
     }
+    if (event.sysEvent) {
+      var st = (event.sysEvent.eventType == null ? 0 : event.sysEvent.eventType);
+      if (st === 4) {
+        log('G2 foreground enter', 'ok');
+        if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN) {
+          S.ws.send(JSON.stringify({ type: 'start' }));
+        }
+      } else if (st === 5) {
+        log('G2 foreground exit', 'w');
+      } else if (st === 6 || st === 7) {
+        log('G2 exit event ' + st + ' — cleaning up', 'w');
+        _cleanupBridgeResources();
+      }
+    }
 
     var ev = event.textEvent || event.sysEvent || event.listEvent;
     if (!ev) return;
 
-    var t = ev.eventType;
+    var t = (ev.eventType == null ? 0 : ev.eventType);
 
     // TAP (Click) → advance one ayah forward
     if (t === 0 || t === undefined) {
@@ -2172,6 +2210,25 @@ body {
     updatePhoneUI({ mode: 'SEARCHING' });
   }
 
+  function _flushSessionState() {
+    try { saveSettings(); } catch (_) {}
+  }
+
+  function _cleanupBridgeResources() {
+    stopSearchingDots();
+    stopLockingDots();
+    stopPageFlip();
+    stopCountdown();
+    releaseWakeLock();
+    if (S.unsubs.evenHubEvent) {
+      try { S.unsubs.evenHubEvent(); } catch (_) {}
+      S.unsubs.evenHubEvent = null;
+    }
+    try { stopG2Mic(); } catch (_) {}
+    try { stopBrowserMic(); } catch (_) {}
+    _flushSessionState();
+  }
+
   // ─── G2 bridge detection ──────────────────────────────────────────────────
   // Copied exactly from invendor/even-bridge (the proven working pattern)
   async function detectBridge() {
@@ -2202,9 +2259,15 @@ body {
       btn.textContent = '\u25CF Start Listening (G2 mic)';
       btn.disabled = false;
 
-      // Register event handler
-      try { S.bridge.onEvenHubEvent(onG2Event); log('G2 event handler set', 'ok'); }
-      catch (e) { log('onEvenHubEvent failed: ' + e.message, 'err'); }
+      // Register event handler (store unsubscribe for cleanup)
+      try {
+        if (S.unsubs.evenHubEvent) {
+          try { S.unsubs.evenHubEvent(); } catch (_) {}
+          S.unsubs.evenHubEvent = null;
+        }
+        S.unsubs.evenHubEvent = S.bridge.onEvenHubEvent(onG2Event);
+        log('G2 event handler set', 'ok');
+      } catch (e) { log('onEvenHubEvent failed: ' + e.message, 'err'); }
 
       // Show startup screen on glasses
       glassesStartup();
