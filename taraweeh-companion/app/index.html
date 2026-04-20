@@ -1072,32 +1072,32 @@ body {
     if (s.component === 'model') {
       updateEndpointLifecycleUI(s);
       if (s.provider) _modelProvider = s.provider;
-      var pLabel = _modelProvider ? ' (' + _providerLabel(_modelProvider) + ')' : '';
+      // Collapsed 3-state model: Waking (amber), Ready (green), Down (red).
+      // standby/pending/probing/loading all read as "Waking" from the user's POV —
+      // the server can't transcribe until warm, so the distinction isn't useful on
+      // the main screen (detailed states remain in settings for debugging).
       switch (s.status) {
         case 'probing':
-          setPill('sPillModel', 'warn', 'Model: checking' + pLabel); break;
-        case 'standby':
-          var ms = s.latencyMs ? ' ' + s.latencyMs + 'ms' : '';
-          setPill('sPillModel', 'ok', 'Model: standby' + pLabel + ms);
-          break;
         case 'pending':
-          setPill('sPillModel', 'warn', 'Model: calling' + pLabel); break;
+        case 'standby':
         case 'loading':
           var eta = s.retryIn ? ' ~' + s.retryIn + 's' : '';
-          setPill('sPillModel', 'warn', 'Model: loading' + pLabel + eta); break;
+          setPill('sPillModel', 'warn', 'Server waking' + eta + '\u2026');
+          break;
         case 'ready':
-          setPill('sPillModel', 'ok', 'Model: ready' + pLabel);
-          document.getElementById('sPillEndpoint').style.display = 'none'; break;
+          setPill('sPillModel', 'ok', 'Ready');
+          document.getElementById('sPillEndpoint').style.display = 'none';
+          break;
         case 'fallback':
           _modelProvider = 'fallback';
-          setPill('sPillModel', 'info', 'Model: HF Public (dedicated unavailable)');
+          setPill('sPillModel', 'info', 'Ready (public HF)');
           var fe = document.getElementById('sPillEndpoint');
           fe.style.display = '';
           fe.querySelector('.s-label').textContent = 'whisper-v3';
           break;
         case 'error':
-          var eMsg = s.message ? ': ' + s.message.slice(0, 30) : '';
-          setPill('sPillModel', 'err', 'Model: error' + pLabel + eMsg); break;
+          setPill('sPillModel', 'err', 'Server down \u2014 tap settings');
+          break;
       }
     } else if (s.type === 'fast_mode') {
       _fastMode = !!s.enabled;
@@ -1913,7 +1913,7 @@ body {
     if (msg.type === 'connected') {
       log('Backend ready', 'ok');
       _modelProvider = '';
-      setPill('sPillModel', 'warn', 'Model: probing\u2026');
+      setPill('sPillModel', 'warn', 'Server waking\u2026');
       setPill('sPillConf', '', 'Match: --');
       // Send start if recording button was already active (reconnect case)
       if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN)
