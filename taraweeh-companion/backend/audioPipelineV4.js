@@ -828,7 +828,11 @@ export class AudioPipeline {
       const rms = computeRms(this._searchBuf);
       this.onStatus({ component: 'audio', status: 'active', rms: +rms.toFixed(4) });
 
-      if (rms < SILENCE_THRESHOLD) {
+      // G2 mic via phone runs at 0.002–0.015 RMS — well below HF's 0.005 silence gate.
+      // Lower gate for Groq mode so quiet chunks still reach transcription; the
+      // clip-guard boosts them to ~0.08 before sending.
+      const silenceGate = this.isGroqMode ? 0.002 : SILENCE_THRESHOLD;
+      if (rms < silenceGate) {
         console.log(`[Pipeline] Search silent (${bufMs}ms, rms=${rms.toFixed(4)})`);
         if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
         return;
@@ -1089,7 +1093,8 @@ export class AudioPipeline {
       const displayCapped = this._whisperAyah > 0
         && (this._displayAyah - this._whisperAyah) >= this._maxDisplayLead;
 
-      if (rms < SILENCE_THRESHOLD && !displayCapped) {
+      const lockedSilenceGate = this.isGroqMode ? 0.002 : SILENCE_THRESHOLD;
+      if (rms < lockedSilenceGate && !displayCapped) {
         const newState = transition(this.state, { type: 'SILENCE' });
         if (newState.mode !== this.state.mode) {
           this.state = newState;
