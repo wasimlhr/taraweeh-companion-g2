@@ -13,6 +13,7 @@ import { networkInterfaces } from 'os';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { loadQuran } from './keywordMatcher.js';
+import { buildMushafIndex } from './mushafIndex.js';
 import { closeTranscription, PROVIDER } from './transcriptionRouter.js';
 import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
 import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
@@ -37,6 +38,7 @@ let lastEndpointLifecycle = {
 };
 
 loadQuran();
+try { buildMushafIndex(); } catch (e) { console.warn('[MushafIndex] build failed:', e.message); }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -140,6 +142,17 @@ app.get('/api/endpoint/warmup', async (req, res) => {
     });
   }
 });
+// Mushaf page JSONs + Arabic font for on-device rendering on G2 glasses.
+// Copied from noor-recite (GPL v3). These are lazy-fetched by the frontend.
+app.use('/mushaf', express.static(join(__dirname, 'public', 'mushaf'), {
+  maxAge: '7d',  // long cache — mushaf layout never changes
+  setHeaders: (res) => { res.set('Access-Control-Allow-Origin', '*'); },
+}));
+app.use('/fonts', express.static(join(__dirname, 'public', 'fonts'), {
+  maxAge: '30d',
+  setHeaders: (res) => { res.set('Access-Control-Allow-Origin', '*'); },
+}));
+
 app.use(express.static(rootDir));
 
 const httpServer = createHttpServer(app);

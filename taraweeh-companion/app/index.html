@@ -1309,6 +1309,250 @@ body {
       });
   }
 
+  // ─── Mushaf Arabic image renderer (ported from noor-recite, GPL v3) ─────────
+  // Renders the matched ayah in UthmanicHafs font on a 400x200 canvas, slices
+  // into 4x (200x100) quadrants, pushes each to its G2 image container.
+  // The G2 SDK doesn't render Arabic text well; rendering client-side and
+  // pushing bitmaps sidesteps that entirely.
+  var MUSHAF_ENABLED = true;          // toggle in settings when we add it
+  var MUSHAF_IMG_W = 400, MUSHAF_IMG_H = 200;
+  var MUSHAF_QUAD_W = 200, MUSHAF_QUAD_H = 100;
+  var MUSHAF_OFFSET_X = Math.floor((576 - MUSHAF_IMG_W) / 2);    // 88
+  var MUSHAF_OFFSET_Y = G2_BODY_Y + 4;                           // 44 (4px gap under header)
+  var MUSHAF_TEXT_AREA_H = 174;                                  // same as noor-recite
+  var MUSHAF_FOOTER_H = MUSHAF_IMG_H - MUSHAF_TEXT_AREA_H;       // 26
+  var MUSHAF_LINES_PER_SCREEN = 5;
+  var MUSHAF_FONT_FAMILY = 'UthmanicHafs';
+  var MUSHAF_TEXT_FONT = 20;
+  var MUSHAF_HEADER_FONT = 16;
+  var MUSHAF_TEXT_COL_W = 380;
+  var MUSHAF_COL_LEFT = Math.floor((MUSHAF_IMG_W - MUSHAF_TEXT_COL_W) / 2);   // 10
+  var MUSHAF_COL_RIGHT = MUSHAF_COL_LEFT + MUSHAF_TEXT_COL_W;
+  var MUSHAF_Q_IDS = { tl: 5, tr: 6, bl: 7, br: 8 };
+  var _mushafFontLoaded = false;
+  var _mushafPageCache = new Map();
+  var _mushafIndex = null;             // {surah:ayah} → page
+  var _lastRenderedAyah = '';          // dedupe — avoid re-rendering same ayah
+  var _mushafRenderRunning = false;
+  var _mushafRenderQueued = null;      // latest pending render (we only care about the last)
+
+  function _mushafEnsureFont() {
+    if (_mushafFontLoaded) return Promise.resolve();
+    try {
+      var f = new FontFace(MUSHAF_FONT_FAMILY, "url('/fonts/UthmanicHafs.woff2')");
+      return f.load().then(function (loaded) {
+        document.fonts.add(loaded);
+        _mushafFontLoaded = true;
+        log('Mushaf font loaded', 'ok');
+      }).catch(function (e) {
+        log('Mushaf font load failed (' + e.message + '), using system fallback', 'w');
+        _mushafFontLoaded = true;  // stop retrying
+      });
+    } catch (e) { _mushafFontLoaded = true; return Promise.resolve(); }
+  }
+
+  function _mushafEnsureIndex() {
+    if (_mushafIndex) return Promise.resolve(_mushafIndex);
+    return fetch('/mushaf/index.json').then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (idx) { _mushafIndex = idx; return idx; });
+  }
+
+  function _mushafFetchPage(n) {
+    if (_mushafPageCache.has(n)) return Promise.resolve(_mushafPageCache.get(n));
+    var padded = String(n).padStart(3, '0');
+    return fetch('/mushaf/page-' + padded + '.json').then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' for page ' + n);
+      return r.json();
+    }).then(function (data) {
+      if (_mushafPageCache.size >= 12) _mushafPageCache.delete(_mushafPageCache.keys().next().value);
+      _mushafPageCache.set(n, data);
+      return data;
+    });
+  }
+
+  function _mushafMakeCanvas(w, h) {
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var ctx = c.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+    return [c, ctx];
+  }
+
+  function _mushafCanvasToPng(canvas) {
+    var b64 = canvas.toDataURL('image/png').split(',')[1];
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  function _mushafSliceQuadrants(canvas) {
+    function quad(sx, sy) {
+      var pair = _mushafMakeCanvas(MUSHAF_QUAD_W, MUSHAF_QUAD_H);
+      pair[1].drawImage(canvas, sx, sy, MUSHAF_QUAD_W, MUSHAF_QUAD_H, 0, 0, MUSHAF_QUAD_W, MUSHAF_QUAD_H);
+      return _mushafCanvasToPng(pair[0]);
+    }
+    return [quad(0, 0), quad(MUSHAF_QUAD_W, 0), quad(0, MUSHAF_QUAD_H), quad(MUSHAF_QUAD_W, MUSHAF_QUAD_H)];
+  }
+
+  function _mushafPushQuads(quads) {
+    if (!S.bridge) return Promise.resolve();
+    return Promise.all([
+      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS.tl, containerName: 'q_tl', imageData: quads[0] }),
+      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS.tr, containerName: 'q_tr', imageData: quads[1] }),
+      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS.bl, containerName: 'q_bl', imageData: quads[2] }),
+      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS.br, containerName: 'q_br', imageData: quads[3] }),
+    ]);
+  }
+
+  function _mushafStripWaqf(text) {
+    return (text || '').replace(/[\u06DF-\u06E8\u06EA-\u06ED\u0600-\u0605]/g, '');
+  }
+  function _mushafArabicNum(n) {
+    return String(n).replace(/\d/g, function (d) { return String.fromCharCode(0x0660 + parseInt(d, 10)); });
+  }
+
+  function _mushafFindAyahLines(lines, surah, ayah) {
+    var out = [];
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (!line.verseRange) continue;
+      var parts = line.verseRange.split('-');
+      if (parts.length !== 2) continue;
+      var sp = parts[0].split(':').map(Number);
+      var ep = parts[1].split(':').map(Number);
+      var startV = sp[0] * 10000 + sp[1];
+      var endV = ep[0] * 10000 + ep[1];
+      var tgt = surah * 10000 + ayah;
+      if (tgt >= startV && tgt <= endV) out.push(i);
+    }
+    return out;
+  }
+
+  function _mushafDrawFooter(ctx, left, right) {
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(MUSHAF_COL_LEFT, MUSHAF_TEXT_AREA_H);
+    ctx.lineTo(MUSHAF_COL_RIGHT, MUSHAF_TEXT_AREA_H); ctx.stroke();
+    var y = MUSHAF_TEXT_AREA_H + MUSHAF_FOOTER_H / 2;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#888'; ctx.font = '11px monospace'; ctx.direction = 'ltr';
+    ctx.textAlign = 'left'; ctx.fillText(left, MUSHAF_COL_LEFT, y);
+    ctx.font = "11px '" + MUSHAF_FONT_FAMILY + "', serif"; ctx.direction = 'rtl';
+    ctx.textAlign = 'right'; ctx.fillText(right, MUSHAF_COL_RIGHT, y);
+  }
+
+  function _mushafRenderLine(ctx, line, y, lineH, highlighted) {
+    if (line.type === 'surah-header') {
+      ctx.strokeStyle = highlighted ? '#666' : '#333'; ctx.lineWidth = 1;
+      var top = y - lineH / 2 + 3, bot = y + lineH / 2 - 3;
+      ctx.beginPath(); ctx.moveTo(MUSHAF_COL_LEFT, top); ctx.lineTo(MUSHAF_COL_RIGHT, top); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(MUSHAF_COL_LEFT, bot); ctx.lineTo(MUSHAF_COL_RIGHT, bot); ctx.stroke();
+      ctx.font = "bold " + MUSHAF_HEADER_FONT + "px '" + MUSHAF_FONT_FAMILY + "', serif";
+      ctx.fillStyle = highlighted ? '#ffffff' : '#888';
+      ctx.textAlign = 'center'; ctx.direction = 'rtl';
+      ctx.fillText(line.text || '', MUSHAF_IMG_W / 2, y);
+      return;
+    }
+    if (line.type === 'basmala') {
+      ctx.font = MUSHAF_HEADER_FONT + "px '" + MUSHAF_FONT_FAMILY + "', serif";
+      ctx.fillStyle = highlighted ? '#ddd' : '#666';
+      ctx.textAlign = 'center'; ctx.direction = 'rtl';
+      ctx.fillText('\u0628\u0650\u0633\u0652\u0645\u0650 \u0627\u0644\u0644\u064e\u0651\u0647\u0650 \u0627\u0644\u0631\u064e\u0651\u062d\u0652\u0645\u064e\u0670\u0646\u0650 \u0627\u0644\u0631\u064e\u0651\u062d\u0650\u064a\u0645\u0650', MUSHAF_IMG_W / 2, y);
+      return;
+    }
+    var raw = (line.words && line.words.length > 0)
+      ? line.words.map(function (w) { return w.word; }).join(' ')
+      : (line.text || '');
+    var text = _mushafStripWaqf(raw);
+    var fs = MUSHAF_TEXT_FONT;
+    ctx.font = fs + "px '" + MUSHAF_FONT_FAMILY + "', serif";
+    while (ctx.measureText(text).width > MUSHAF_TEXT_COL_W && fs > 12) {
+      fs--; ctx.font = fs + "px '" + MUSHAF_FONT_FAMILY + "', serif";
+    }
+    ctx.fillStyle = highlighted ? '#ffffff' : '#666666';
+    ctx.direction = 'rtl';
+    var words = text.split(' ').filter(Boolean);
+    if (words.length <= 1) {
+      ctx.textAlign = 'center'; ctx.fillText(text, MUSHAF_IMG_W / 2, y);
+    } else {
+      var widths = words.map(function (w) { return ctx.measureText(w).width; });
+      var total = widths.reduce(function (a, b) { return a + b; }, 0);
+      var gap = Math.max(2, (MUSHAF_TEXT_COL_W - total) / (words.length - 1));
+      ctx.textAlign = 'left';
+      var x = MUSHAF_COL_RIGHT;
+      for (var wi = 0; wi < words.length; wi++) {
+        x -= widths[wi];
+        ctx.fillText(words[wi], x, y);
+        if (wi < words.length - 1) x -= gap;
+      }
+    }
+  }
+
+  async function _mushafDoRender(surah, ayah) {
+    var key = surah + ':' + ayah;
+    if (key === _lastRenderedAyah) return;  // dedupe
+    await _mushafEnsureFont();
+    var index = await _mushafEnsureIndex();
+    var page = index[key];
+    if (!page) { log('Mushaf: no page for ' + key, 'w'); return; }
+
+    var pageData;
+    try { pageData = await _mushafFetchPage(page); }
+    catch (e) { log('Mushaf fetch page ' + page + ' failed: ' + e.message, 'err'); return; }
+
+    var lines = pageData.lines || [];
+    var ayahLines = _mushafFindAyahLines(lines, surah, ayah);
+    var start;
+    if (ayahLines.length === 0) {
+      start = 0;
+    } else {
+      var mid = ayahLines[Math.floor(ayahLines.length / 2)];
+      start = Math.max(0, mid - Math.floor(MUSHAF_LINES_PER_SCREEN / 2));
+      start = Math.min(start, Math.max(0, lines.length - MUSHAF_LINES_PER_SCREEN));
+    }
+    var window_ = lines.slice(start, start + MUSHAF_LINES_PER_SCREEN);
+    var highlightSet = new Set(ayahLines);
+
+    var pair = _mushafMakeCanvas(MUSHAF_IMG_W, MUSHAF_IMG_H);
+    var canvas = pair[0], ctx = pair[1];
+    var lineH = Math.floor(MUSHAF_TEXT_AREA_H / MUSHAF_LINES_PER_SCREEN);
+    ctx.textBaseline = 'middle';
+    window_.forEach(function (line, i) {
+      var hi = highlightSet.has(start + i);
+      _mushafRenderLine(ctx, line, i * lineH + lineH / 2, lineH, hi);
+    });
+    var ayahRef = _mushafArabicNum(surah) + ':' + _mushafArabicNum(ayah);
+    _mushafDrawFooter(ctx, 'p.' + page, ayahRef);
+
+    var quads = _mushafSliceQuadrants(canvas);
+    await _mushafPushQuads(quads);
+    _lastRenderedAyah = key;
+    log('Mushaf rendered ' + key + ' (p.' + page + ')', 'ok');
+  }
+
+  function renderMushafAyah(surah, ayah) {
+    if (!MUSHAF_ENABLED || !S.isG2 || !S.startupPageCreated) return;
+    if (!surah || !ayah) return;
+    // Keep only the LAST requested render; skip superseded ones.
+    _mushafRenderQueued = { surah: surah, ayah: ayah };
+    if (_mushafRenderRunning) return;
+    (async function drainMushaf() {
+      _mushafRenderRunning = true;
+      try {
+        while (_mushafRenderQueued) {
+          var job = _mushafRenderQueued; _mushafRenderQueued = null;
+          await _mushafDoRender(job.surah, job.ayah);
+        }
+      } catch (e) {
+        log('Mushaf render error: ' + e.message, 'err');
+      } finally {
+        _mushafRenderRunning = false;
+      }
+    })();
+  }
+
   function _startupTextContainers() {
     return [
       { containerID: 1, containerName: 'hdr',
@@ -1329,14 +1573,49 @@ body {
     ];
   }
 
+  function _mushafImageContainers() {
+    // 4 image containers forming a 2x2 grid of 200x100 quadrants, placed below the header.
+    return [
+      { containerID: MUSHAF_Q_IDS.tl, containerName: 'q_tl',
+        xPosition: MUSHAF_OFFSET_X,                   yPosition: MUSHAF_OFFSET_Y,
+        width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
+      { containerID: MUSHAF_Q_IDS.tr, containerName: 'q_tr',
+        xPosition: MUSHAF_OFFSET_X + MUSHAF_QUAD_W,    yPosition: MUSHAF_OFFSET_Y,
+        width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
+      { containerID: MUSHAF_Q_IDS.bl, containerName: 'q_bl',
+        xPosition: MUSHAF_OFFSET_X,                   yPosition: MUSHAF_OFFSET_Y + MUSHAF_QUAD_H,
+        width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
+      { containerID: MUSHAF_Q_IDS.br, containerName: 'q_br',
+        xPosition: MUSHAF_OFFSET_X + MUSHAF_QUAD_W,    yPosition: MUSHAF_OFFSET_Y + MUSHAF_QUAD_H,
+        width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
+    ];
+  }
+
   function _createStartupContainerWithFallback() {
     if (!G2_SPLASH_ENABLED) {
-      return S.bridge.createStartUpPageContainer({
-        containerTotalNum: 3,
+      var useMushaf = MUSHAF_ENABLED;
+      var config = {
+        containerTotalNum: useMushaf ? 7 : 3,
         textObject: _startupTextContainers(),
-      }).then(function (result0) {
-        if (result0 !== 0) throw new Error('startup text-only result=' + result0);
-        return 'text-only';
+      };
+      if (useMushaf) config.imageObject = _mushafImageContainers();
+      return S.bridge.createStartUpPageContainer(config).then(function (result0) {
+        if (result0 !== 0) {
+          // If the 7-container form fails, fall back to text-only (3 containers).
+          if (useMushaf) {
+            log('G2: 7-container startup failed (' + result0 + '), falling back to text-only', 'w');
+            return S.bridge.createStartUpPageContainer({
+              containerTotalNum: 3,
+              textObject: _startupTextContainers(),
+            }).then(function (r2) {
+              if (r2 !== 0) throw new Error('startup text-only fallback result=' + r2);
+              MUSHAF_ENABLED = false;   // disable Mushaf for this session
+              return 'text-only';
+            });
+          }
+          throw new Error('startup text-only result=' + result0);
+        }
+        return useMushaf ? 'mushaf' : 'text-only';
       });
     }
     return S.bridge.createStartUpPageContainer({
@@ -2052,6 +2331,8 @@ body {
             // Force full rebuild so glasses reliably receive the new verse
             // (textContainerUpgrade can fail to push over BLE in some cases)
             S.displayRebuilt = false;
+            // Render the authentic Mushaf page image on G2 (overlays the text body).
+            try { renderMushafAyah(msg.state.surah, msg.state.ayah); } catch (_) {}
             var wc = (msg.state.arabic || '').split(/\s+/).length || 4;
             var rawMs = msg.state.timerMs || Math.max(3000, wc * 700);
             // Shave 500ms so the visual countdown finishes just before the next
