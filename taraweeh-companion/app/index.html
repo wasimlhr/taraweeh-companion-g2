@@ -822,7 +822,11 @@ body {
       </span>
       <div id="groqKeyRow" style="display:none;margin-top:10px">
         <input id="settingGroqKey" type="password" placeholder="gsk_... (your Groq API key)" autocomplete="off" spellcheck="false" />
-        <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+          <button type="button" class="back-btn" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
+          <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+        </div>
+        <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
           <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a free key →</a>
           Key stays on your phone (localStorage). Sent to server only when you start listening.
         </span>
@@ -1141,12 +1145,20 @@ body {
       // the main screen (detailed states remain in settings for debugging).
       switch (s.status) {
         case 'probing':
-        case 'pending':
         case 'standby':
+          // 'standby' = endpoint awake but idle, 'probing' = initial health-check
+          setPill('sPillModel', 'ok', 'Ready');
+          if (!S.isRecording) setStatus('Ready to listen — tap Start Listening', 'result');
+          break;
         case 'loading':
+          // Only 'loading' means a genuine cold-start wake-up is happening.
           var eta = s.retryIn ? ' ~' + s.retryIn + 's' : '';
           setPill('sPillModel', 'warn', 'Server waking' + eta + '\u2026');
           if (!S.isRecording) setStatus('Server waking up' + eta + '\u2026 (takes ~30s on cold start)', 'result');
+          break;
+        case 'pending':
+          // Request in flight — don't change the pill, it's just normal processing.
+          // (Keep whatever state the pill was in.)
           break;
         case 'ready':
           setPill('sPillModel', 'ok', 'Ready');
@@ -1577,11 +1589,13 @@ body {
   }
 
   function renderMushafAyah(surah, ayah) {
-    if (!MUSHAF_ENABLED || !S.isG2 || !S.startupPageCreated) return;
+    if (!MUSHAF_ENABLED) { log('Mushaf skip: disabled (startup probably failed)', 'w'); return; }
+    if (!S.isG2) { log('Mushaf skip: not G2', 'w'); return; }
+    if (!S.startupPageCreated) { log('Mushaf skip: startup page not ready', 'w'); return; }
     if (!surah || !ayah) return;
-    // Only render Arabic image when that mode is selected — in transliteration mode
-    // the text body fills the bottom line instead.
-    if ((S.settings && S.settings.glassesBottom) !== 'arabic') return;
+    var mode = (S.settings && S.settings.glassesBottom) || 'arabic';
+    if (mode !== 'arabic') { log('Mushaf skip: glassesBottom=' + mode, 'w'); return; }
+    log('Mushaf render start: ' + surah + ':' + ayah, 'ok');
     // Keep only the LAST requested render; skip superseded ones.
     _mushafRenderQueued = { surah: surah, ayah: ayah };
     if (_mushafRenderRunning) return;
@@ -2706,19 +2720,13 @@ body {
         }
         return;
       }
-      // Single page or last page — start/stop or pause/resume
+      // Single page or last page — double-tap is a simple START/STOP toggle.
+      // No pause/resume, no system-exit prompt. If user wants to exit the plugin
+      // they use the glasses main-menu — double-tap shouldn't hijack that.
       if (!S.isRecording) {
-        // App is stopped — double-tap starts it
         startListening();
-      } else if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-        if (S.mode === 'PAUSED') {
-          S.ws.send(JSON.stringify({ type: 'audio_return' }));
-        } else if (S.mode === 'LOCKED' || S.mode === 'RESUMING') {
-          S.ws.send(JSON.stringify({ type: 'pause' }));
-        } else {
-          // SEARCHING mode — open system exit confirmation (do not clean up yet)
-          requestSystemExit();
-        }
+      } else {
+        stopListening();
       }
       return;
     }
@@ -2942,6 +2950,42 @@ body {
     var isPhone = src === 'phone';
     document.getElementById('btnG2Mic').classList.toggle('active', !isPhone);
     document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
+  };
+
+  window.testGroqKey = async function () {
+    var keyEl = document.getElementById('settingGroqKey');
+    var resultEl = document.getElementById('groqTestResult');
+    var key = (keyEl && keyEl.value || '').trim();
+    if (!key) {
+      resultEl.textContent = 'Paste a key first';
+      resultEl.style.color = '#e53e3e';
+      return;
+    }
+    resultEl.textContent = 'Testing…';
+    resultEl.style.color = 'var(--tc-2)';
+    try {
+      // Groq's /v1/models endpoint — auth check without using transcription quota
+      var res = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: { 'Authorization': 'Bearer ' + key },
+      });
+      if (res.status === 401 || res.status === 403) {
+        resultEl.textContent = 'Invalid key (' + res.status + ')';
+        resultEl.style.color = '#e53e3e';
+        return;
+      }
+      if (!res.ok) {
+        resultEl.textContent = 'HTTP ' + res.status;
+        resultEl.style.color = '#e53e3e';
+        return;
+      }
+      var data = await res.json();
+      var count = (data.data || []).length;
+      resultEl.textContent = '\u2713 Valid — ' + count + ' models available';
+      resultEl.style.color = '#2d9e4f';
+    } catch (e) {
+      resultEl.textContent = 'Network error: ' + (e.message || e);
+      resultEl.style.color = '#e53e3e';
+    }
   };
 
   window.setMainLang = function (v) {
