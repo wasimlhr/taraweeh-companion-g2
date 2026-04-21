@@ -588,7 +588,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.7.4</span>
+      <span class="version" id="versionEl">v4.7.5</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -785,7 +785,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.7.4';
+  const APP_VERSION = 'v4.7.5';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1005,7 +1005,7 @@ body {
 
   // ─── Settings ─────────────────────────────────────────────────────────────
   function defaultWsUrl() {
-    return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
+    return 'wss://taraweeh.up.railway.app/ws';
   }
 
   var DEFAULT_SETTINGS = {
