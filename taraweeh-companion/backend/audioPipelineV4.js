@@ -1247,6 +1247,27 @@ export class AudioPipeline {
       }
       const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
       const lag = this._displayAyah - confirmedAyah;
+      // SNAP-BACK: when we're WAY off (lag ≥ 4), don't wait for repeats —
+      // confidence ≥60% with a large gap almost certainly means display
+      // raced ahead of the reciter. Snap immediately so the user isn't
+      // stuck reading the wrong ayah for 10s+ while repeat counters climb.
+      if (!refrainVerse && lag >= 4 && score >= 60) {
+        console.log(`[Pipeline] Snap-back: way off — display :${this._displayAyah}, Whisper :${confirmedAyah} (lag=${lag}, conf=${score}%)`);
+        this._sameAyahStreak = 0;
+        this._bumpCountForAyah = 0;
+        this._cancelReadAdvance();
+        this._displayAyah  = confirmedAyah;
+        this._driftMult    = 1.0;
+        this._ayahStartTime = Date.now();
+        this._lastBackCorrectMs = Date.now();
+        this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
+          lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
+        this._behindRepeatCount = 0;
+        this._behindRepeatAyah  = 0;
+        this._emitState(text, rms);
+        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
+        return;
+      }
       // High confidence (≥80%) = immediate back-correct (1 confirm)
       // Medium confidence: lag=1 needs 2, lag≥2 needs 3
       const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1 : (lag === 1 ? 2 : 3);
