@@ -596,6 +596,23 @@ body {
 
   <div id="status">Initializing...</div>
 
+  <!-- Quick translation picker on main view -->
+  <div style="display:flex;align-items:center;gap:8px;margin:6px 0 10px">
+    <span style="font-size:12px;color:var(--tc-2)">Translation:</span>
+    <select id="mainLangPicker" onchange="setMainLang(this.value)" style="flex:1;padding:6px 8px;font-size:13px;border:1px solid var(--bc-4);border-radius:6px;background:var(--bc-1);color:var(--tc-1)">
+      <option value="">English</option>
+      <option value="ur">Urdu</option>
+      <option value="fr">French</option>
+      <option value="es">Spanish</option>
+      <option value="id">Indonesian</option>
+      <option value="tr">Turkish</option>
+      <option value="bn">Bengali</option>
+      <option value="zh">Chinese</option>
+      <option value="ru">Russian</option>
+      <option value="sv">Swedish</option>
+    </select>
+  </div>
+
   <!-- System status bar -->
   <div id="statusBar">
     <div class="s-pill" id="sPillG2">
@@ -791,18 +808,25 @@ body {
     </div>
   </div>
 
-  <div class="s-section">Transcription (advanced)</div>
+  <div class="s-section">Transcription engine</div>
   <div class="s-card">
     <div class="s-row">
-      <span class="s-label">Use your own Groq API key</span>
-      <input id="settingGroqKey" type="password" placeholder="gsk_... (optional)" autocomplete="off" spellcheck="false" />
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">
-        Paste a Groq API key to use <b>whisper-large-v3-turbo</b> instead of the default server. Free tier: ~6k requests/day.
-        <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a key →</a>
+      <span class="s-label">Speech recognition</span>
+      <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
+        <button type="button" class="toggle-btn active" id="btnProviderWhisper" onclick="setProvider('whisper')">Whisper-Quran (custom)</button>
+        <button type="button" class="toggle-btn" id="btnProviderGroq" onclick="setProvider('groq')">Groq API</button>
+      </div>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">
+        <b>Whisper-Quran:</b> our Quran-finetuned model (~1-2% WER on Arabic recitation). Default, uses hosted endpoint.<br>
+        <b>Groq API:</b> <code>whisper-large-v3-turbo</code> via Groq (~10× faster, free tier ~6k/day, needs your own key).
       </span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px;font-style:italic">
-        Stored only in your phone (localStorage). Sent to server only when you start listening, never logged.
-      </span>
+      <div id="groqKeyRow" style="display:none;margin-top:10px">
+        <input id="settingGroqKey" type="password" placeholder="gsk_... (your Groq API key)" autocomplete="off" spellcheck="false" />
+        <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a free key →</a>
+          Key stays on your phone (localStorage). Sent to server only when you start listening.
+        </span>
+      </div>
     </div>
   </div>
 
@@ -1046,6 +1070,7 @@ body {
     fastMode: true,
     slowMode: false,
     groqApiKey: '',  // User's optional Groq API key — if set, overrides host HF endpoint for this session
+    transcriptionProvider: 'whisper',  // 'whisper' (host Whisper-Quran) | 'groq' (user's Groq key)
     glassesBottom: 'arabic',  // 'arabic' (Mushaf image) | 'transliteration' (Latin text)
   };
 
@@ -1121,10 +1146,12 @@ body {
         case 'loading':
           var eta = s.retryIn ? ' ~' + s.retryIn + 's' : '';
           setPill('sPillModel', 'warn', 'Server waking' + eta + '\u2026');
+          if (!S.isRecording) setStatus('Server waking up' + eta + '\u2026 (takes ~30s on cold start)', 'result');
           break;
         case 'ready':
           setPill('sPillModel', 'ok', 'Ready');
           document.getElementById('sPillEndpoint').style.display = 'none';
+          if (!S.isRecording) setStatus('Ready to listen — tap Start Listening', 'result');
           break;
         case 'fallback':
           _modelProvider = 'fallback';
@@ -1132,9 +1159,11 @@ body {
           var fe = document.getElementById('sPillEndpoint');
           fe.style.display = '';
           fe.querySelector('.s-label').textContent = 'whisper-v3';
+          if (!S.isRecording) setStatus('Ready (public HF fallback) — tap Start', 'result');
           break;
         case 'error':
           setPill('sPillModel', 'warn', 'Server warming up…');
+          if (!S.isRecording) setStatus('Server warming up\u2026 retrying', 'result');
           break;
       }
     } else if (s.type === 'fast_mode') {
@@ -2187,9 +2216,12 @@ body {
 
     S.ws.onopen = function () {
       setWsPill('ok', 'Service: online');
-      setStatus('Service online — ready to listen', 'result');
+      // Don't claim "ready to listen" until the transcription server is actually ready.
+      // Real status comes from the sys_status 'model' component callback.
+      setStatus('Connecting to transcription server\u2026', 'result');
       log('WS connected', 'ok');
       _startWsPing();
+      var useGroq = S.settings.transcriptionProvider === 'groq';
       S.ws.send(JSON.stringify({
         type: 'init',
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
@@ -2197,7 +2229,7 @@ body {
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         fastMode: _fastMode,
         slowMode: _slowMode,
-        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
+        groqApiKey: (useGroq && (S.settings.groqApiKey || '').trim()) || null,
       }));
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -2912,6 +2944,27 @@ body {
     document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
   };
 
+  window.setMainLang = function (v) {
+    var clean = sanitizeTranslationLang(v);
+    S.settings.lang = clean;
+    saveSettings();
+    updateTranslationDesc && updateTranslationDesc();
+    // Re-init so the pipeline fetches the right translation bundle
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
+    log('Translation: ' + (clean || 'English (built-in)'), 'ok');
+  };
+
+  window.setProvider = function (p) {
+    p = (p === 'groq') ? 'groq' : 'whisper';
+    S.settings.transcriptionProvider = p;
+    var whisperBtn = document.getElementById('btnProviderWhisper');
+    var groqBtn = document.getElementById('btnProviderGroq');
+    if (whisperBtn) whisperBtn.classList.toggle('active', p === 'whisper');
+    if (groqBtn) groqBtn.classList.toggle('active', p === 'groq');
+    var keyRow = document.getElementById('groqKeyRow');
+    if (keyRow) keyRow.style.display = (p === 'groq') ? '' : 'none';
+  };
+
   window.setGlassesBottom = function (mode) {
     mode = (mode === 'transliteration') ? 'transliteration' : 'arabic';
     S.settings.glassesBottom = mode;
@@ -3015,6 +3068,7 @@ body {
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
+    setProvider(S.settings.transcriptionProvider === 'groq' ? 'groq' : 'whisper');
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'transliteration' ? 'transliteration' : 'arabic');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
@@ -3028,6 +3082,7 @@ body {
 
   function reinitPipeline() {
     if (!S.ws || S.ws.readyState !== WebSocket.OPEN) return;
+    var useGroq = S.settings.transcriptionProvider === 'groq';
     S.ws.send(JSON.stringify({
       type: 'init',
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
@@ -3035,7 +3090,7 @@ body {
       pipelineVersion: S.settings.pipelineVersion || 'v4',
       fastMode: _fastMode,
       slowMode: _slowMode,
-      groqApiKey: (S.settings.groqApiKey || '').trim() || null,
+      groqApiKey: (useGroq && (S.settings.groqApiKey || '').trim()) || null,
     }));
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
     S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -3048,6 +3103,8 @@ body {
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);
     S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
+    S.settings.transcriptionProvider = document.getElementById('btnProviderGroq').classList.contains('active')
+      ? 'groq' : 'whisper';
     S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')
       ? 'transliteration' : 'arabic';
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
@@ -3156,6 +3213,9 @@ body {
     if (_slowMode) _fastMode = false;
     _updatePaceButtons();
     document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v4').toUpperCase();
+    // Sync the main-screen translation picker with saved settings
+    var mlp = document.getElementById('mainLangPicker');
+    if (mlp) mlp.value = sanitizeTranslationLang(S.settings.lang || '');
     populateSurahs();
     initWave();
 
