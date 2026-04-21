@@ -588,7 +588,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.7.6</span>
+      <span class="version" id="versionEl">v4.7.7</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -785,7 +785,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.7.6';
+  const APP_VERSION = 'v4.7.7';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1102,7 +1102,7 @@ body {
           fe.querySelector('.s-label').textContent = 'whisper-v3';
           break;
         case 'error':
-          setPill('sPillModel', 'warn', 'Server waking… tap Wake server');
+          setPill('sPillModel', 'warn', 'Server warming up…');
           break;
       }
     } else if (s.type === 'fast_mode') {
@@ -1598,6 +1598,16 @@ body {
     var hdr = _hdrWithPage(display.hdr, idx, total);
     glassesUpdate({ hdr: hdr, body: display.pages[idx] });
     return hdr;
+  }
+
+  function mirrorManualNavOnGlasses() {
+    if (!S.isG2) return;
+    var st = S._lastGlassesState || { mode: 'SEARCHING' };
+    var d = buildGlassesText(st);
+    stopPageFlip();
+    stopCountdown();
+    S.displayRebuilt = false;
+    showGlassesPage(d, 0);
   }
 
   // ─── Auto page-flip timer ─────────────────────────────────────────────────
@@ -2334,6 +2344,7 @@ body {
       if (S.ws && S.ws.readyState === WebSocket.OPEN) {
         S.ws.send(JSON.stringify({ type: t === 1 ? 'manual_prev' : 'manual_advance' }));
       }
+      mirrorManualNavOnGlasses();
     }
   }
 
@@ -2341,11 +2352,13 @@ body {
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'manual_prev' }));
     }
+    mirrorManualNavOnGlasses();
   };
   window.manualNextAyah = function () {
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'manual_advance' }));
     }
+    mirrorManualNavOnGlasses();
   };
 
   // ─── Record button ────────────────────────────────────────────────────────
@@ -2579,7 +2592,7 @@ body {
         checkBackend();
       })
       .catch(function (err) {
-        if (hint) hint.textContent = (err && err.message) ? err.message : 'Unable to start service';
+        if (hint) hint.textContent = 'Warming up server… please wait';
       })
       .finally(function () {
         if (btn) btn.disabled = false;
