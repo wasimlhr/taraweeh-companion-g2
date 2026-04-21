@@ -1697,6 +1697,10 @@ export class AudioPipeline {
   // ── Timer: reading-pace advance (uncapped — Whisper corrects, never blocks) ─
 
   _canDisplayAdvance() {
+    // Auto-next OFF: blanket block on all auto-advance paths (timer, pause-advance,
+    // smooth-advance). Groq confirmations still move the display via _onWhisperConfirm.
+    if (!this.autoNext) return false;
+
     // End-of-surah exception: if we're on the last ayah, let the timer run even
     // during silence. Firing it is the trigger that resets state to SEARCHING;
     // blocking it would leave us frozen on the final ayah waiting for words
