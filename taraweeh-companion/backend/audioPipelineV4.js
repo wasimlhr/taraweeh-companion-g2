@@ -245,6 +245,10 @@ export class AudioPipeline {
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
+    // Groq returns in ~300ms vs HF ~1500ms. When in Groq mode we drop the pipeline
+    // lag compensation, trust single confirmations, and use shorter floors.
+    this.isGroqMode      = this.whisperOpts?.provider === 'groq';
+    if (this.isGroqMode) console.log('[Pipeline] Groq mode: fast-path timing (no 6s lag, 1-confirm back-correct)');
 
     this.state     = createState();
     this.active    = false;
@@ -583,6 +587,27 @@ export class AudioPipeline {
         console.log(`[Pipeline] Timer adjusted: ${Math.round(remaining/1000)}s → ${Math.round(adjusted/1000)}s (pace ${prev}→${median}ms/w)`);
       }
     }
+  }
+
+  // User-requested pace nudge: ×0.8 = speed up 20%, ×1.2 = slow down 20%.
+  // Applies to learned pace AND the currently running timer so effect is immediate.
+  paceNudge(factor) {
+    if (!factor || factor < 0.3 || factor > 3) return;
+    if (this._measuredMsPerWord > 0) {
+      this._measuredMsPerWord = Math.max(250, Math.round(this._measuredMsPerWord * factor));
+      console.log(`[Pipeline] Pace nudge ×${factor.toFixed(2)} → ${this._measuredMsPerWord}ms/w`);
+    } else {
+      console.log(`[Pipeline] Pace nudge ×${factor.toFixed(2)} (no measured pace yet — will apply next ayah)`);
+    }
+    // Adjust the currently running timer so the user sees immediate effect
+    if (this._displayAdvanceTimer && this._timerStartedAt && this._nextAdvanceMs > 0) {
+      const elapsed = Date.now() - this._timerStartedAt;
+      const remaining = Math.max(0, this._nextAdvanceMs - elapsed);
+      const adjusted = Math.max(500, Math.round(remaining * factor));
+      this._cancelReadAdvance();
+      this._scheduleReadAdvance(this.state.confidence, 0, 1.0, adjusted);
+    }
+    this._emitState(null, null);
   }
 
   manualPrev() {
@@ -1251,8 +1276,11 @@ export class AudioPipeline {
       // confidence ≥60% with a large gap almost certainly means display
       // raced ahead of the reciter. Snap immediately so the user isn't
       // stuck reading the wrong ayah for 10s+ while repeat counters climb.
-      if (!refrainVerse && lag >= 4 && score >= 60) {
-        console.log(`[Pipeline] Snap-back: way off — display :${this._displayAyah}, Whisper :${confirmedAyah} (lag=${lag}, conf=${score}%)`);
+      // In Groq mode, snap at lag ≥ 2 since transcription is authoritative.
+      const snapLagThreshold = this.isGroqMode ? 2 : 4;
+      const snapConfThreshold = this.isGroqMode ? 55 : 60;
+      if (!refrainVerse && lag >= snapLagThreshold && score >= snapConfThreshold) {
+        console.log(`[Pipeline] Snap-back: ${this.isGroqMode ? 'Groq-fast' : 'way off'} — display :${this._displayAyah}, Whisper :${confirmedAyah} (lag=${lag}, conf=${score}%)`);
         this._sameAyahStreak = 0;
         this._bumpCountForAyah = 0;
         this._cancelReadAdvance();
@@ -1268,10 +1296,10 @@ export class AudioPipeline {
         this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
         return;
       }
-      // High confidence (≥80%) = immediate back-correct (1 confirm)
-      // Medium confidence: lag=1 needs 2, lag≥2 needs 3
-      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1 : (lag === 1 ? 2 : 3);
-      const REPEAT_BACK_CORRECT_MIN_CONF = 65;
+      // Groq: trust single confirmations at any lag. HF: graduated.
+      const REPEAT_BACK_CORRECT_WINS = this.isGroqMode ? 1
+        : (score >= 80 ? 1 : (lag === 1 ? 2 : 3));
+      const REPEAT_BACK_CORRECT_MIN_CONF = this.isGroqMode ? 55 : 65;
 
       // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
       if (!refrainVerse && confirmedAyah === this._behindRepeatAyah && score >= REPEAT_BACK_CORRECT_MIN_CONF) {
@@ -1715,11 +1743,11 @@ export class AudioPipeline {
     const baseDurationMs = Math.max(rawMs, floorMs);
     durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
     if (durationFactor < 1.0) {
-      // Whisper data is ~6s old. Subtract pipeline lag — but never more than half
-      // the timer. Short ayahs (3-6 words) shouldn't get crushed to 1s.
-      const PIPELINE_LAG_MS = 6000;
+      // Whisper data is ~6s old on HF (4s capture + 2s RTT); Groq is ~4.4s
+      // (4s capture + 0.4s RTT) so we subtract much less there.
+      const PIPELINE_LAG_MS = this.isGroqMode ? 1500 : 6000;
       const maxSubtract = Math.floor(durationMs * 0.5);
-      const minAfterLag = wordCount <= 4 ? 1500 : 3000;
+      const minAfterLag = wordCount <= 4 ? (this.isGroqMode ? 800 : 1500) : (this.isGroqMode ? 1800 : 3000);
       durationMs = Math.max(minAfterLag, durationMs - Math.min(PIPELINE_LAG_MS, maxSubtract));
     }
 
