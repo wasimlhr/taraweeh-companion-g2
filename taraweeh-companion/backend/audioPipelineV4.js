@@ -249,9 +249,10 @@ export class AudioPipeline {
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
-    // Groq mode flag — used ONLY for anchor cross-surah detection aggressiveness
-    // (faster break-lock when user jumped surahs). No timer-path changes.
+    // Groq mode flag — drives snap-back/snap-forward aggressiveness, pacer blend,
+    // and pace-learning override.
     this.isGroqMode      = this.whisperOpts?.provider === 'groq';
+    console.log(`[Pipeline] Constructed — provider=${this.whisperOpts?.provider || 'default'}, isGroqMode=${this.isGroqMode}`);
 
     this.state     = createState();
     this.active    = false;
@@ -1259,7 +1260,7 @@ export class AudioPipeline {
       // is a real race-ahead, not stale audio. Lag=1 still waits for the
       // existing repeat-count path (avoids bouncing on single-confirm mishears
       // between adjacent short ayahs).
-      if (this.isGroqMode && !refrainVerse && lag >= 2 && score >= 50) {
+      if (this.isGroqMode && !refrainVerse && lag >= 2 && score >= 35) {
         console.log(`[Pipeline] Groq snap-back: display :${this._displayAyah} → :${confirmedAyah} (lag=${lag}, conf=${score}%)`);
         this._sameAyahStreak = 0;
         this._bumpCountForAyah = 0;
@@ -1410,7 +1411,7 @@ export class AudioPipeline {
       // smooth-step delay (2s per ayah) was letting display lag 4-8s behind on
       // gap=4 cases. HF keeps smooth catch-up because its mishears need the
       // buffer to avoid wild jumps.
-      if (this.isGroqMode && score >= 50) {
+      if (this.isGroqMode && score >= 35) {
         this._cancelReadAdvance();
         console.log(`[Pipeline] Groq catch-up snap: :${this._displayAyah} → :${confirmedAyah} (gap=${gap}, conf=${score}%)`);
         this._displaySurah = confirmedSurah;
