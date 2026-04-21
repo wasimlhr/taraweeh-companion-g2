@@ -179,7 +179,13 @@ wss.on('connection', (ws, req) => {
     pipelineVersion = sanitizePipelineVersion(version || pipelineVersion);
     const Ctor = pipelineVersion === 'v3' ? AudioPipelineV3 : AudioPipelineV4;
 
-    const whisperOpts = buildWhisperOpts();
+    let whisperOpts = buildWhisperOpts();
+    // Client-supplied Groq key — user brings their own API key, overrides provider.
+    // Everything else in whisperOpts remains host-managed.
+    if (opts && typeof opts === 'object' && opts.groqApiKey && typeof opts.groqApiKey === 'string') {
+      whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: opts.groqApiKey.trim() };
+      console.log('[Init] Client provided Groq API key — using Groq provider for this session');
+    }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
     const translationLang = sanitizeTranslationLang(requestedTranslation);
     if (requestedTranslation && requestedTranslation !== translationLang) {

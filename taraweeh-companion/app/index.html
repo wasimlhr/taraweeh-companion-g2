@@ -772,6 +772,21 @@ body {
     <span class="s-hint">Enabled by host env. Phone mic is enforced for this deployment.</span>
   </div>
 
+  <div class="s-section">Transcription (advanced)</div>
+  <div class="s-card">
+    <div class="s-row">
+      <span class="s-label">Use your own Groq API key</span>
+      <input id="settingGroqKey" type="password" placeholder="gsk_... (optional)" autocomplete="off" spellcheck="false" />
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">
+        Paste a Groq API key to use <b>whisper-large-v3-turbo</b> instead of the default server. Free tier: ~6k requests/day.
+        <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a key →</a>
+      </span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px;font-style:italic">
+        Stored only in your phone (localStorage). Sent to server only when you start listening, never logged.
+      </span>
+    </div>
+  </div>
+
   <div class="settings-footer">
     <div id="settingsVersion"></div>
     Built with ♥ for the Ummah<br>by wasimlhr
@@ -996,6 +1011,7 @@ body {
     forcePhoneMic: false,
     fastMode: true,
     slowMode: false,
+    groqApiKey: '',  // User's optional Groq API key — if set, overrides host HF endpoint for this session
   };
 
   function sanitizePipelineVersion(v) {
@@ -1850,6 +1866,7 @@ body {
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         fastMode: _fastMode,
         slowMode: _slowMode,
+        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
       }));
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -2557,6 +2574,7 @@ body {
     document.getElementById('settingLang').value = sanitizeTranslationLang(S.settings.lang || '');
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
+    document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     updateTranslationDesc();
@@ -2574,6 +2592,7 @@ body {
       pipelineVersion: S.settings.pipelineVersion || 'v4',
       fastMode: _fastMode,
       slowMode: _slowMode,
+      groqApiKey: (S.settings.groqApiKey || '').trim() || null,
     }));
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
     S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -2585,6 +2604,7 @@ body {
     S.settings.lang = sanitizeTranslationLang(document.getElementById('settingLang').value);
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);
+    S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');
