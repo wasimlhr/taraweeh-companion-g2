@@ -1619,6 +1619,11 @@ export class AudioPipeline {
 
   _scheduleReadAdvance(confidence, afterPauseMinMs = 0, durationFactor = 1.0, overrideDurationMs = 0) {
     this._cancelReadAdvance();
+    // Groq mode: we're purely event-driven. Groq confirms reciter position
+    // every ~500ms-1s — way more reliable than any timer estimate. A safety
+    // fallback timer would only cause the display to race ahead of a slow
+    // reciter. Skip entirely; transcription drives advancement.
+    if (this.isGroqMode) return;
     if (!this._canDisplayAdvance()) return;
 
     let durationMs;
