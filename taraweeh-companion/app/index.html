@@ -1283,40 +1283,63 @@ body {
       });
   }
 
+  function _startupTextContainers() {
+    return [
+      { containerID: 1, containerName: 'hdr',
+        xPosition: 0, yPosition: 0, width: G2_HDR_W, height: G2_HDR_H,
+        isEventCapture: 0,
+        borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+        content: appTitleHdr() },
+      { containerID: 2, containerName: 'ver',
+        xPosition: G2_VER_X, yPosition: 0, width: G2_VER_W, height: G2_HDR_H,
+        isEventCapture: 0,
+        borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+        content: appVersionHdr() },
+      { containerID: 3, containerName: 'body',
+        xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
+        isEventCapture: 1,
+        borderWidth: 0, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+        content: 'Ready. Recite any verse to begin.' },
+    ];
+  }
+
+  function _createStartupContainerWithFallback() {
+    return S.bridge.createStartUpPageContainer({
+      containerTotalNum: 4,
+      textObject: _startupTextContainers(),
+      imageObject: [
+        { containerID: G2_SPLASH_ID, containerName: G2_SPLASH_NAME,
+          xPosition: G2_SPLASH_X, yPosition: G2_SPLASH_Y,
+          width: G2_SPLASH_W, height: G2_SPLASH_H },
+      ],
+    }).then(function (result) {
+      if (result === 0) return 'image';
+      throw new Error('startup result=' + result);
+    }).catch(function (err) {
+      log('G2: startup image container failed, retrying text-only (' + (err && err.message ? err.message : String(err)) + ')', 'w');
+      return S.bridge.createStartUpPageContainer({
+        containerTotalNum: 3,
+        textObject: _startupTextContainers(),
+      }).then(function (result2) {
+        if (result2 !== 0) throw new Error('startup fallback result=' + result2);
+        return 'text-only';
+      });
+    });
+  }
+
   function glassesStartup() {
     if (!S.bridge) return;
     S.startupPageCreated = false;
     queueBridgeCall('createStartUpPageContainer', function () {
-      return S.bridge.createStartUpPageContainer({
-        containerTotalNum: 4,
-        textObject: [
-          { containerID: 1, containerName: 'hdr',
-            xPosition: 0, yPosition: 0, width: G2_HDR_W, height: G2_HDR_H,
-            isEventCapture: 0,
-            borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
-            content: appTitleHdr() },
-          { containerID: 2, containerName: 'ver',
-            xPosition: G2_VER_X, yPosition: 0, width: G2_VER_W, height: G2_HDR_H,
-            isEventCapture: 0,
-            borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
-            content: appVersionHdr() },
-          { containerID: 3, containerName: 'body',
-            xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
-            isEventCapture: 1,
-            borderWidth: 0, borderColor: 5, borderRdaius: 0, paddingLength: 2,
-            content: 'Ready. Recite any verse to begin.' },
-        ],
-        imageObject: [
-          { containerID: G2_SPLASH_ID, containerName: G2_SPLASH_NAME,
-            xPosition: G2_SPLASH_X, yPosition: G2_SPLASH_Y,
-            width: G2_SPLASH_W, height: G2_SPLASH_H },
-        ],
-      }).then(function (result) {
-        if (result !== 0) throw new Error('startup result=' + result);
+      return _createStartupContainerWithFallback().then(function (mode) {
         S.startupPageCreated = true;
         S.displayRebuilt = false;
-        log('G2: startup screen shown', 'ok');
-        return pushStartupSplashImage();
+        if (mode === 'image') {
+          log('G2: startup screen shown (image container)', 'ok');
+          return pushStartupSplashImage();
+        }
+        log('G2: startup screen shown (text-only fallback)', 'ok');
+        return null;
       });
     });
   }
