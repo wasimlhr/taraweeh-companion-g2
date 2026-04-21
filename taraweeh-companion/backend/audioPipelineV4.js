@@ -1296,8 +1296,12 @@ export class AudioPipeline {
       }
       // High confidence (≥80%) = immediate back-correct (1 confirm)
       // Medium confidence: lag=1 needs 2, lag≥2 needs 3
-      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1 : (lag === 1 ? 2 : 3);
-      const REPEAT_BACK_CORRECT_MIN_CONF = 65;
+      // Groq mode: lag=1 with score ≥50% snaps on 1 confirm — slow recitations
+      // drift display 1 ahead; trust Groq's hint rather than proving it twice.
+      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1
+        : (this.isGroqMode && lag === 1 && score >= 50) ? 1
+        : (lag === 1 ? 2 : 3);
+      const REPEAT_BACK_CORRECT_MIN_CONF = this.isGroqMode ? 45 : 65;
 
       // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
       if (!refrainVerse && confirmedAyah === this._behindRepeatAyah && score >= REPEAT_BACK_CORRECT_MIN_CONF) {
@@ -1790,6 +1794,12 @@ export class AudioPipeline {
       : wordCount <= 20 ? 16000
       : 25000;
     durationMs = Math.min(Math.round(baseDurationMs), perCountCap, READ_ADVANCE_MAX_MS);
+    // Groq cushion: pad by 20% so display naturally lingers toward Groq's heard
+    // position instead of racing 1 ayah ahead on slow recitations. Groq will
+    // snap us forward if we truly fall behind.
+    if (this.isGroqMode) {
+      durationMs = Math.min(Math.round(durationMs * 1.2), READ_ADVANCE_MAX_MS);
+    }
     if (durationFactor < 1.0) {
       // Whisper data is ~6s old. Subtract pipeline lag — but never more than half
       // the timer. Short ayahs (3-6 words) shouldn't get crushed to 1s.
