@@ -148,9 +148,13 @@ const CLIP_THRESHOLD = parseFloat(process.env.CLIP_THRESHOLD || '0.10');
 const CLIP_TARGET    = parseFloat(process.env.CLIP_TARGET    || '0.04');
 const QUIET_BOOST_THRESHOLD = 0.015;  // G2 mic often 0.001–0.009 — boost to proper speech level
 const QUIET_BOOST_TARGET   = 0.08;   // target normal speech RMS for better Whisper accuracy
-function applyClipGuard(pcm, rms) {
+function applyClipGuard(pcm, rms, skipQuietBoost = false) {
   let gain = 1;
-  if (rms > 0 && rms < QUIET_BOOST_THRESHOLD) {
+  if (!skipQuietBoost && rms > 0 && rms < QUIET_BOOST_THRESHOLD) {
+    // Quiet boost is a Whisper-specific trick — amplifying weak audio helps
+    // whisper-large-v3 pull signal out. Groq's turbo model handles quiet audio
+    // natively and the amplification turns silence/noise into "music"/"translation"
+    // hallucinations instead. Skip for Groq (caller passes skipQuietBoost=true).
     gain = QUIET_BOOST_TARGET / rms;
     console.log(`[Pipeline] G2 quiet boost: rms=${rms.toFixed(4)} → ${QUIET_BOOST_TARGET} (gain=${gain.toFixed(0)})`);
   } else if (rms > CLIP_THRESHOLD) {
@@ -831,7 +835,7 @@ export class AudioPipeline {
       let text = '';
       let words = [];  // V4: Word timestamps from Whisper
       try {
-        const audioToSend = applyClipGuard(this._searchBuf, rms);
+        const audioToSend = applyClipGuard(this._searchBuf, rms, this.isGroqMode);
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
@@ -1096,7 +1100,7 @@ export class AudioPipeline {
       let words = [];  // V4: Word timestamps from Whisper
       let resultAgeMs = 0;
       try {
-        const audioToSend = applyClipGuard(chunk, rms);
+        const audioToSend = applyClipGuard(chunk, rms, this.isGroqMode);
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
@@ -1619,12 +1623,40 @@ export class AudioPipeline {
 
   _scheduleReadAdvance(confidence, afterPauseMinMs = 0, durationFactor = 1.0, overrideDurationMs = 0) {
     this._cancelReadAdvance();
-    // Groq mode: we're purely event-driven. Groq confirms reciter position
-    // every ~500ms-1s — way more reliable than any timer estimate. A safety
-    // fallback timer would only cause the display to race ahead of a slow
-    // reciter. Skip entirely; transcription drives advancement.
-    if (this.isGroqMode) return;
     if (!this._canDisplayAdvance()) return;
+    // Groq mode: use a long safety timer (12s) instead of the word-weight
+    // estimate. Groq confirms reciter position every ~500ms and will preempt
+    // this timer via the normal gap≥1 snap path. The safety exists only to
+    // prevent lockup if Groq misses several chunks (e.g. silence, music
+    // hallucination). Display advance on fire is cheap — Groq will snap
+    // back if it was wrong to advance.
+    if (this.isGroqMode && !overrideDurationMs) {
+      const safetyMs = 12000;
+      this._nextAdvanceMs = safetyMs;
+      this._timerStartedAt = Date.now();
+      console.log(`[Pipeline] Groq safety timer: ${safetyMs}ms (will be preempted by Groq confirmation)`);
+      this._displayAdvanceTimer = setTimeout(() => {
+        this._displayAdvanceTimer = null;
+        this._nextAdvanceMs = 0;
+        this._timerStartedAt = 0;
+        if (!this._canDisplayAdvance()) return;
+        const nextData = getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
+        if (!nextData) {
+          this._scheduleReadAdvance(this.state.confidence);
+          return;
+        }
+        this._sameAyahStreak = 0;
+        this._bumpCountForAyah = 0;
+        this._displayAyah++;
+        this._ayahStartTime = Date.now();
+        this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
+          lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
+        console.log(`[Pipeline] Groq safety-advance → ${this._displaySurah}:${this._displayAyah}`);
+        this._emitState(null, null);
+        this._scheduleReadAdvance(this.state.confidence);
+      }, safetyMs);
+      return;
+    }
 
     let durationMs;
     if (overrideDurationMs > 0) {
