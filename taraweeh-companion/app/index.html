@@ -819,6 +819,7 @@ body {
     startupPageCreated: false,
     bridgeCallQueue: Promise.resolve(),
     isShuttingDown: false,
+    g2MicPermissionState: 'unknown',
     unsubs: {
       evenHubEvent: null,
     },
@@ -1175,6 +1176,9 @@ body {
   var G2_SPLASH_H = 96;
   var G2_SPLASH_X = Math.floor((576 - G2_SPLASH_W) / 2);
   var G2_SPLASH_Y = 88;
+  // Disabled for now to keep startup fully stable on all glasses builds.
+  // Re-enable later once splash behavior is finalized end-to-end on device.
+  var G2_SPLASH_ENABLED = false;
   // Optional host override:
   // - window.G2_SPLASH_IMAGE_SRC = "data:image/jpeg;base64,..."
   // - window.G2_SPLASH_IMAGE_SRC = "/assets/my-quran-photo.jpg"
@@ -1304,6 +1308,15 @@ body {
   }
 
   function _createStartupContainerWithFallback() {
+    if (!G2_SPLASH_ENABLED) {
+      return S.bridge.createStartUpPageContainer({
+        containerTotalNum: 3,
+        textObject: _startupTextContainers(),
+      }).then(function (result0) {
+        if (result0 !== 0) throw new Error('startup text-only result=' + result0);
+        return 'text-only';
+      });
+    }
     return S.bridge.createStartUpPageContainer({
       containerTotalNum: 4,
       textObject: _startupTextContainers(),
@@ -2114,6 +2127,7 @@ body {
     if (!S.bridge || !S.startupPageCreated) return;
     queueBridgeCall('audioControl(true)', function () {
       return S.bridge.audioControl(true).then(function () {
+        S.g2MicPermissionState = 'granted';
         log('G2 mic opened', 'ok');
       });
     });
@@ -2124,6 +2138,38 @@ body {
     queueBridgeCall('audioControl(false)', function () {
       return S.bridge.audioControl(false);
     });
+  }
+
+  function requestG2MicPermission() {
+    if (!S.bridge || !S.isG2 || !S.startupPageCreated) {
+      return Promise.reject(new Error('G2 bridge not ready'));
+    }
+    return queueBridgeCall('audioControl(true)-preflight', function () {
+      return S.bridge.audioControl(true).then(function () {
+        S.g2MicPermissionState = 'granted';
+        return S.bridge.audioControl(false).then(function () {
+          log('G2 mic permission preflight complete', 'ok');
+          return true;
+        });
+      });
+    }).catch(function (err) {
+      S.g2MicPermissionState = 'denied';
+      throw err;
+    });
+  }
+
+  function ensureMicPermissionForCurrentSource() {
+    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+    if (useBrowserMic) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        return Promise.reject(new Error('Microphone API not available'));
+      }
+      return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        return true;
+      });
+    }
+    return requestG2MicPermission();
   }
 
   function startBrowserMic() {
@@ -2306,19 +2352,35 @@ body {
       log('Reused existing WS, sent start', 'ok');
     }
 
-    acquireWakeLock();
-    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
-    if (useBrowserMic) { startBrowserMic(); if (S.isG2) { showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); startSearchingDots(); } }
-    else { startG2Mic(); showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); startSearchingDots(); }
-
-    // Show matching panel, hide idle state
-    document.getElementById('matchIdle').style.display = 'none';
-    document.getElementById('matchPanel').style.display = '';
-    resetMatchPanel();
-
     var btn = document.getElementById('recordBtn');
-    btn.textContent = 'Stop Listening';
-    btn.classList.add('recording');
+    btn.disabled = true;
+    ensureMicPermissionForCurrentSource().then(function () {
+      acquireWakeLock();
+      var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+      if (useBrowserMic) { startBrowserMic(); if (S.isG2) { showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); startSearchingDots(); } }
+      else { startG2Mic(); showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); startSearchingDots(); }
+
+      // Show matching panel, hide idle state
+      document.getElementById('matchIdle').style.display = 'none';
+      document.getElementById('matchPanel').style.display = '';
+      resetMatchPanel();
+
+      btn.textContent = 'Stop Listening';
+      btn.classList.add('recording');
+    }).catch(function (err) {
+      S.isRecording = false;
+      releaseWakeLock();
+      var msg = err && err.message ? err.message : 'Microphone permission failed';
+      setStatus('Mic permission required', 'error');
+      log('Mic permission failed: ' + msg, 'err');
+      if (S.isG2 && !(S.settings.forcePhoneMic || !S.isG2)) {
+        log('Tip: Tap Start once on glasses-connected app to grant G2 mic access.', 'info');
+      }
+      btn.textContent = S.isG2 ? '● Start Listening (G2 mic)' : 'Start Listening';
+      btn.classList.remove('recording');
+    }).finally(function () {
+      btn.disabled = false;
+    });
   }
 
   function stopListening() {
@@ -2613,6 +2675,24 @@ body {
   function updateMicStatus() {
     var el = document.getElementById('micStatusHint');
     if (!el) return;
+    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+    if (!useBrowserMic && S.isG2) {
+      if (!S.startupPageCreated) {
+        el.textContent = 'G2 startup not ready yet';
+        return;
+      }
+      if (S.g2MicPermissionState === 'granted') {
+        el.textContent = '✓ G2 mic ready';
+        el.style.color = 'var(--tc-green)';
+      } else if (S.g2MicPermissionState === 'denied') {
+        el.textContent = '✕ G2 mic permission blocked';
+        el.style.color = 'var(--tc-red)';
+      } else {
+        el.textContent = 'Tap "Request mic" to grant G2 mic permission';
+        el.style.color = '';
+      }
+      return;
+    }
     if (!navigator.permissions || !navigator.permissions.query) {
       el.textContent = 'Tap "Request mic" to grant permission';
       return;
@@ -2627,6 +2707,16 @@ body {
 
   function requestMicFromSettings() {
     var el = document.getElementById('micStatusHint');
+    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+    if (!useBrowserMic && S.isG2) {
+      if (el) el.textContent = 'Requesting G2 mic...';
+      requestG2MicPermission().then(function () {
+        if (el) { el.textContent = '✓ G2 mic ready'; el.style.color = 'var(--tc-green)'; }
+      }).catch(function (err) {
+        if (el) { el.textContent = '✕ ' + (err && err.message ? err.message : 'G2 mic blocked'); el.style.color = 'var(--tc-red)'; }
+      });
+      return;
+    }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       if (el) el.textContent = 'Microphone API not available';
       return;
@@ -2671,12 +2761,7 @@ body {
 
     await detectBridge();
 
-    // G2: auto-start listening on page load/refresh so glasses are immediately active
-    // No need to manually tap "Start Listening" every time the page reloads
-    if (S.isG2 && !S.isRecording) {
-      log('G2 detected — auto-starting listener', 'ok');
-      startListening();
-    }
+    // Permission requests must be user-gesture initiated. Do not auto-start on G2.
   });
 
 })();
