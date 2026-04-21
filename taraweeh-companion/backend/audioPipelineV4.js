@@ -1272,13 +1272,13 @@ export class AudioPipeline {
       }
       const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
       const lag = this._displayAyah - confirmedAyah;
-      // SNAP-BACK: when we're WAY off (lag ≥ 4), don't wait for repeats —
-      // confidence ≥60% with a large gap almost certainly means display
-      // raced ahead of the reciter. Snap immediately so the user isn't
-      // stuck reading the wrong ayah for 10s+ while repeat counters climb.
-      // In Groq mode, snap at lag ≥ 2 since transcription is authoritative.
-      const snapLagThreshold = this.isGroqMode ? 2 : 4;
-      const snapConfThreshold = this.isGroqMode ? 55 : 60;
+      // SNAP-BACK: when display has moved past the reciter, snap immediately.
+      // In Groq mode, snap at lag ≥ 1 — Groq's 300ms latency means any
+      // confirmed-ayah-behind-display is a real reciter repeat/rewind, not
+      // stale audio. Refrain verses protected separately via the counting path.
+      // In HF mode, wait for lag ≥ 4 to protect against occasional mishears.
+      const snapLagThreshold = this.isGroqMode ? 1 : 4;
+      const snapConfThreshold = this.isGroqMode ? 60 : 60;
       if (!refrainVerse && lag >= snapLagThreshold && score >= snapConfThreshold) {
         console.log(`[Pipeline] Snap-back: ${this.isGroqMode ? 'Groq-fast' : 'way off'} — display :${this._displayAyah}, Whisper :${confirmedAyah} (lag=${lag}, conf=${score}%)`);
         this._sameAyahStreak = 0;
