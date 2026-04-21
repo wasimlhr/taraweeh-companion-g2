@@ -777,6 +777,20 @@ body {
     <span class="s-hint" id="wakeServerHint" style="margin-top:6px;display:block">Use this if service is sleeping.</span>
   </div>
 
+  <div class="s-section">Glasses display</div>
+  <div class="s-card">
+    <div class="s-row">
+      <span class="s-label">Second line on glasses</span>
+      <div class="toggle-group" role="group">
+        <button type="button" class="toggle-btn active" id="btnBottomArabic" onclick="setGlassesBottom('arabic')">Arabic (Mushaf)</button>
+        <button type="button" class="toggle-btn" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
+      </div>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">
+        English translation always shows on top. Bottom line is either the authentic Arabic Mushaf image or Latin transliteration.
+      </span>
+    </div>
+  </div>
+
   <div class="s-section">Transcription (advanced)</div>
   <div class="s-card">
     <div class="s-row">
@@ -1032,6 +1046,7 @@ body {
     fastMode: true,
     slowMode: false,
     groqApiKey: '',  // User's optional Groq API key — if set, overrides host HF endpoint for this session
+    glassesBottom: 'arabic',  // 'arabic' (Mushaf image) | 'transliteration' (Latin text)
   };
 
   function sanitizePipelineVersion(v) {
@@ -1535,6 +1550,9 @@ body {
   function renderMushafAyah(surah, ayah) {
     if (!MUSHAF_ENABLED || !S.isG2 || !S.startupPageCreated) return;
     if (!surah || !ayah) return;
+    // Only render Arabic image when that mode is selected — in transliteration mode
+    // the text body fills the bottom line instead.
+    if ((S.settings && S.settings.glassesBottom) !== 'arabic') return;
     // Keep only the LAST requested render; skip superseded ones.
     _mushafRenderQueued = { surah: surah, ayah: ayah };
     if (_mushafRenderRunning) return;
@@ -1738,10 +1756,14 @@ body {
 
   // Paginate translation first, then transliteration. Translation fills the screen;
   // when user scrolls to next page, transliteration appears (on last page if it fits, else its own page).
+  // When glassesBottom='arabic', transliteration is suppressed here (Arabic is rendered
+  // as a Mushaf image below the text via renderMushafAyah instead).
   function buildPages(translation, transliteration, reserveLines) {
     var maxLines = G2_BODY_LINES - (reserveLines || 0);
     var transLines = wrapText(translation || '', G2_CHARS);
-    var tlitLines  = transliteration ? wrapText(transliteration, G2_CHARS) : [];
+    var bottomMode = (S.settings && S.settings.glassesBottom) || 'arabic';
+    var effectiveTransliteration = (bottomMode === 'arabic') ? '' : transliteration;
+    var tlitLines  = effectiveTransliteration ? wrapText(effectiveTransliteration, G2_CHARS) : [];
     var tlitBlock  = tlitLines.length > 0 ? [G2_DIV].concat(tlitLines) : [];
     var tlitCost   = tlitBlock.length;
 
@@ -2332,6 +2354,7 @@ body {
             // (textContainerUpgrade can fail to push over BLE in some cases)
             S.displayRebuilt = false;
             // Render the authentic Mushaf page image on G2 (overlays the text body).
+            _lastStateForMushaf = { surah: msg.state.surah, ayah: msg.state.ayah };
             try { renderMushafAyah(msg.state.surah, msg.state.ayah); } catch (_) {}
             var wc = (msg.state.arabic || '').split(/\s+/).length || 4;
             var rawMs = msg.state.timerMs || Math.max(3000, wc * 700);
@@ -2889,6 +2912,40 @@ body {
     document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
   };
 
+  window.setGlassesBottom = function (mode) {
+    mode = (mode === 'transliteration') ? 'transliteration' : 'arabic';
+    S.settings.glassesBottom = mode;
+    var arabicBtn  = document.getElementById('btnBottomArabic');
+    var translitBtn = document.getElementById('btnBottomTranslit');
+    if (arabicBtn)  arabicBtn.classList.toggle('active', mode === 'arabic');
+    if (translitBtn) translitBtn.classList.toggle('active', mode === 'transliteration');
+    // If switching away from arabic, blank the Mushaf image so old verse doesn't stick.
+    if (mode === 'transliteration' && S.isG2 && S.startupPageCreated && S.bridge) {
+      _lastRenderedAyah = '';
+      try { _mushafClearImage(); } catch (_) {}
+    }
+    // If switching to arabic mid-session, re-render current ayah.
+    if (mode === 'arabic' && S.mode === 'LOCKED' && S.isG2) {
+      // trigger a render via last known state — cheap; guarded by dedupe inside.
+      var lastState = _lastStateForMushaf || {};
+      if (lastState.surah && lastState.ayah) renderMushafAyah(lastState.surah, lastState.ayah);
+    }
+  };
+
+  // Remember last LOCKED state for toggling bottom-line mode mid-session
+  var _lastStateForMushaf = null;
+
+  // Push a blank 1x1 transparent PNG to each quad to clear the Mushaf image
+  function _mushafClearImage() {
+    if (!S.bridge) return;
+    // Tiny black 200x100 PNG — simpler than pushing actual transparent alpha
+    var pair = _mushafMakeCanvas(MUSHAF_QUAD_W, MUSHAF_QUAD_H);
+    var blankBytes = _mushafCanvasToPng(pair[0]);
+    ['tl','tr','bl','br'].forEach(function (q) {
+      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS[q], containerName: 'q_' + q, imageData: blankBytes });
+    });
+  }
+
   function updateEndpointLifecycleUI(lifecycle) {
     if (!lifecycle || lifecycle.component !== 'model') return;
     _backendStatusInfo.endpointLifecycle = lifecycle;
@@ -2959,6 +3016,7 @@ body {
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
+    setGlassesBottom(S.settings.glassesBottom === 'transliteration' ? 'transliteration' : 'arabic');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     updateTranslationDesc();
     checkBackend();
@@ -2990,6 +3048,8 @@ body {
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);
     S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
+    S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')
+      ? 'transliteration' : 'arabic';
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');
