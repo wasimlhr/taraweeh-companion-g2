@@ -588,7 +588,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.7</span>
+      <span class="version" id="versionEl">v4.7.1</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -718,16 +718,12 @@ body {
     <div class="s-status" id="backendStatus">Checking...</div>
     <div class="s-row" style="margin-top:12px">
       <span class="s-label">Microphone</span>
-      <div class="toggle-group" role="group">
-        <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">G2 mic</button>
-        <button type="button" class="toggle-btn" id="btnPhoneMic" onclick="setMicSource('phone')">Phone mic</button>
-      </div>
-      <span class="s-hint" style="margin-top:4px;display:block">G2 = glasses mic. Phone = force browser mic if no prompt.</span>
+      <span class="s-hint" style="margin-top:4px;display:block">G2 mic only.</span>
       <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">—</span>
       <button type="button" id="settingMicTest" class="back-btn" style="margin-top:6px;font-size:13px">🎤 Request mic permission</button>
     </div>
     <div class="s-warn" style="margin-top:8px;padding:10px 14px;background:var(--bc-accent);border-radius:var(--r);font-size:12px;color:var(--tc-1)">
-      <strong>Note:</strong> The Even G2 app may not allow phone mic permission. Use G2 mic when running in the app.
+      <strong>Note:</strong> This app uses G2 mic permission from the glasses app.
     </div>
   </div>
 
@@ -784,7 +780,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.7';
+  const APP_VERSION = 'v4.7.1';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1155,7 +1151,7 @@ body {
   // Canvas: 576x288. Header: 40px, body: 248px.
   // Body: borderWidth=0, paddingLength=2 → maximize usable width (no scroll bar, more text per line)
   var G2_HDR_H   = 40;
-  var G2_VER_W   = 55;   // version container width (snug for "v4.7")
+  var G2_VER_W   = 72;   // version container width (snug for "v4.7.1")
   var G2_HDR_W   = 576 - G2_VER_W;  // title takes the rest
   var G2_VER_X   = G2_HDR_W;  // version flush to right edge
   var G2_BODY_Y  = G2_HDR_H;
@@ -2514,11 +2510,9 @@ body {
   };
 
   // ─── Settings UI ──────────────────────────────────────────────────────────
-  window.setMicSource = function (src) {
-    if (_backendStatusInfo.mobileOnlyMode) src = 'phone';
-    var isPhone = src === 'phone';
-    document.getElementById('btnG2Mic').classList.toggle('active', !isPhone);
-    document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
+  window.setMicSource = function () {
+    // Settings keep G2 mic as the only selectable source.
+    S.settings.forcePhoneMic = false;
   };
 
   function updateEndpointLifecycleUI(lifecycle) {
@@ -2535,15 +2529,7 @@ body {
     var wakeRow = document.getElementById('wakeServerRow');
     if (wakeRow) wakeRow.style.display = _backendStatusInfo.endpointOnDemandEnabled ? '' : 'none';
 
-    var g2Btn = document.getElementById('btnG2Mic');
-    var phoneBtn = document.getElementById('btnPhoneMic');
-    if (g2Btn && phoneBtn) {
-      g2Btn.disabled = _backendStatusInfo.mobileOnlyMode;
-      if (_backendStatusInfo.mobileOnlyMode) {
-        S.settings.forcePhoneMic = true;
-        setMicSource('phone');
-      }
-    }
+    S.settings.forcePhoneMic = false;
   }
 
   function wakeServerNow() {
@@ -2584,7 +2570,7 @@ body {
     document.getElementById('settingLang').value = sanitizeTranslationLang(S.settings.lang || '');
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
-    setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
+    setMicSource('g2');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     updateTranslationDesc();
     checkBackend();
@@ -2614,9 +2600,7 @@ body {
     S.settings.lang = sanitizeTranslationLang(document.getElementById('settingLang').value);
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);
-    S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
-      ? true
-      : document.getElementById('btnPhoneMic').classList.contains('active');
+    S.settings.forcePhoneMic = false;
     saveSettings();
     reinitPipeline();
     document.getElementById('settingsView').style.display = 'none';
@@ -2627,11 +2611,17 @@ body {
     var url = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
     var el = document.getElementById('backendStatus');
     fetch(url + '/api/status').then(function (r) { return r.json(); }).then(function (s) {
-      el.textContent = '✓ Service online';
+      el.textContent = '✓ Service online (live)';
       el.style.color = 'var(--tc-green)';
       applyBackendModeSettings(s || {});
       updateEndpointLifecycleUI(s.endpointLifecycle || { component: 'model', status: 'unknown' });
     }).catch(function () {
+      // If realtime socket is already connected, keep status as online despite REST check hiccups.
+      if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+        el.textContent = '✓ Service online (live)';
+        el.style.color = 'var(--tc-green)';
+        return;
+      }
       el.textContent = '✕ Service offline';
       el.style.color = 'var(--tc-red)';
       updateEndpointLifecycleUI({ component: 'model', status: 'error', message: 'Backend not reachable' });
