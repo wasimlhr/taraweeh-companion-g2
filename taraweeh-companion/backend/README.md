@@ -20,6 +20,7 @@ See **[docs/SETUP.md](../docs/SETUP.md)** for full instructions. Quick start:
 | `MOBILE_ONLY_MODE` | No | `true` enforces phone mic in UI and exposes mobile-only status in Settings |
 | `WHISPER_PROBE_ON_INIT` | No | `false` disables automatic endpoint probing on init (manual warmup still works when enabled) |
 | `G2_SPLASH_IMAGE_DATA_URL` | No | Optional `data:image/...;base64,...` startup splash for glasses; auto center-cropped to 180x96 and sent via `updateImageRawData` |
+| `G2_SPLASH_ENABLED` | No | `false` disables splash image path and uses plain text startup containers only (recommended while debugging display issues) |
 | `PORT` | No | Default 3001 |
 
 ```bash
