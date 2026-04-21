@@ -602,7 +602,7 @@ body {
       <span class="s-dot"></span><span class="s-label" id="g2Text">Detecting...</span>
     </div>
     <div class="s-pill" id="sPillWs">
-      <span class="s-dot"></span><span class="s-label">WS</span>
+      <span class="s-dot"></span><span class="s-label">Service</span>
     </div>
     <div class="s-pill" id="sPillModel">
       <span class="s-dot"></span><span class="s-label">Model</span>
@@ -767,23 +767,9 @@ body {
     </div>
   </div>
 
-  <div class="s-section">Speech server</div>
-  <div class="s-card">
-    <div class="s-row">
-      <span class="s-label">Server status</span>
-      <div id="endpointLifecycleBadge" class="s-life asleep">Checking…</div>
-      <span class="s-hint" id="endpointLifecycleHint">Checking server state…</span>
-      <div class="s-actions">
-        <button type="button" class="s-action-btn" id="endpointRefreshBtn">Check status</button>
-        <button type="button" class="s-action-btn" id="endpointWakeBtn" style="display:none">Wake server</button>
-      </div>
-      <span class="s-hint" id="endpointEnvHint" style="margin-top:6px">Wake button is controlled by app host settings.</span>
-    </div>
-    <p class="s-hint" style="margin:0 0 10px 0;font-size:12px;color:var(--tc-2)">This app uses server-side endpoint settings. No token or endpoint setup is required from users.</p>
-    <div class="s-row" id="mobileOnlyHintRow" style="display:none">
-      <span class="s-label">Mobile-only mode</span>
-      <span class="s-hint">Enabled by host env. Phone mic is enforced for this deployment.</span>
-    </div>
+  <div class="s-row" id="mobileOnlyHintRow" style="display:none">
+    <span class="s-label">Mobile-only mode</span>
+    <span class="s-hint">Enabled by host env. Phone mic is enforced for this deployment.</span>
   </div>
 
   <div class="settings-footer">
@@ -1795,14 +1781,14 @@ body {
   function connectWS() {
     _cancelReconnect();
     _closeWsSilently(S.ws);   // close old WS without triggering its onclose
-    setWsPill('warn', 'WS: connecting…');
+    setWsPill('warn', 'Service: connecting…');
 
     S.ws = new WebSocket(getWsUrl());
     S.ws.binaryType = 'arraybuffer';
 
     S.ws.onopen = function () {
-      setWsPill('ok', 'WS: connected');
-      setStatus('Connected \u2014 listening...', 'result');
+      setWsPill('ok', 'Service: online');
+      setStatus('Service online — ready to listen', 'result');
       log('WS connected', 'ok');
       _startWsPing();
       S.ws.send(JSON.stringify({
@@ -1838,7 +1824,7 @@ body {
 
     S.ws.onclose = function () {
       _stopWsPing();
-      setWsPill('err', 'WS: reconnecting…');
+      setWsPill('err', 'Service: reconnecting…');
       setPill('sPillModel', '', 'Model');
       setStatus('Reconnecting...', 'error');
       log('WS closed, retrying in 1s...', 'err');
@@ -1846,7 +1832,7 @@ body {
     };
 
     S.ws.onerror = function () {
-      setWsPill('err', 'WS: error');
+      setWsPill('err', 'Service: offline');
       setStatus('Connection error', 'error');
       log('WS error', 'err');
     };
@@ -2430,60 +2416,11 @@ body {
   function updateEndpointLifecycleUI(lifecycle) {
     if (!lifecycle || lifecycle.component !== 'model') return;
     _backendStatusInfo.endpointLifecycle = lifecycle;
-    var badge = document.getElementById('endpointLifecycleBadge');
-    var hint = document.getElementById('endpointLifecycleHint');
-    if (!badge || !hint) return;
-
-    var status = lifecycle.status || 'unknown';
-    var label = 'Unknown';
-    var cls = 'asleep';
-    var provider = lifecycle.provider ? (' (' + _providerLabel(lifecycle.provider) + ')') : '';
-    var suffix = '';
-
-    if (status === 'probing') {
-      label = 'Checking endpoint';
-      cls = 'warming';
-    } else if (status === 'standby') {
-      label = 'Asleep / standby';
-      cls = 'asleep';
-      if (lifecycle.latencyMs) suffix = ' • ' + lifecycle.latencyMs + 'ms';
-    } else if (status === 'loading') {
-      label = 'Starting up';
-      cls = 'warming';
-      if (lifecycle.retryIn) suffix = ' • retry ~' + lifecycle.retryIn + 's';
-    } else if (status === 'pending') {
-      label = 'Processing request';
-      cls = 'active';
-    } else if (status === 'ready') {
-      label = 'Ready for recitation';
-      cls = 'ready';
-    } else if (status === 'fallback') {
-      label = 'Fallback active';
-      cls = 'active';
-      if (lifecycle.message) suffix = ' • ' + lifecycle.message.slice(0, 60);
-    } else if (status === 'error') {
-      label = 'Unavailable';
-      cls = 'error';
-      if (lifecycle.message) suffix = ' • ' + lifecycle.message.slice(0, 60);
-    }
-
-    badge.className = 's-life ' + cls;
-    badge.textContent = label;
-    hint.textContent = 'Provider: ' + (provider ? provider.slice(2, -1) : 'Unknown') + suffix;
   }
 
   function applyBackendModeSettings(status) {
     _backendStatusInfo.endpointOnDemandEnabled = !!status.endpointOnDemandEnabled;
     _backendStatusInfo.mobileOnlyMode = !!status.mobileOnlyMode;
-
-    var wakeBtn = document.getElementById('endpointWakeBtn');
-    var envHint = document.getElementById('endpointEnvHint');
-    if (wakeBtn) wakeBtn.style.display = _backendStatusInfo.endpointOnDemandEnabled ? '' : 'none';
-    if (envHint) {
-      envHint.textContent = _backendStatusInfo.endpointOnDemandEnabled
-        ? 'You can tap "Wake server" when needed.'
-        : 'Wake is off for this hosted app.';
-    }
 
     var mobileRow = document.getElementById('mobileOnlyHintRow');
     if (mobileRow) mobileRow.style.display = _backendStatusInfo.mobileOnlyMode ? '' : 'none';
@@ -2499,23 +2436,7 @@ body {
     }
   }
 
-  function warmupEndpoint() {
-    var wakeBtn = document.getElementById('endpointWakeBtn');
-    if (wakeBtn) wakeBtn.disabled = true;
-    var base = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
-    fetch(base + '/api/endpoint/warmup')
-      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
-      .then(function (res) {
-        if (!res.ok) throw new Error(res.body.message || 'Warmup failed');
-        updateEndpointLifecycleUI(res.body.lifecycle || res.body.endpointLifecycle);
-      })
-      .catch(function (err) {
-        updateEndpointLifecycleUI({ component: 'model', status: 'error', message: err.message || 'Warmup failed' });
-      })
-      .finally(function () {
-        if (wakeBtn) wakeBtn.disabled = false;
-      });
-  }
+
 
   window.updateTranslationDesc = function () {
     var sel = document.getElementById('settingLang');
@@ -2538,8 +2459,6 @@ body {
     checkBackend();
     updateMicStatus();
     document.getElementById('settingMicTest').onclick = requestMicFromSettings;
-    document.getElementById('endpointRefreshBtn').onclick = checkBackend;
-    document.getElementById('endpointWakeBtn').onclick = warmupEndpoint;
   };
 
   function reinitPipeline() {
@@ -2575,13 +2494,12 @@ body {
     var url = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
     var el = document.getElementById('backendStatus');
     fetch(url + '/api/status').then(function (r) { return r.json(); }).then(function (s) {
-      var used = getWsUrl();
-      el.textContent = '\u2713 Connected \u2014 ' + (s.provider || 'whisper') + (s.endpoint ? ' (' + s.endpoint + ')' : '') + (used ? ' \u2022 ' + used : '');
+      el.textContent = '✓ Service online';
       el.style.color = 'var(--tc-green)';
       applyBackendModeSettings(s || {});
       updateEndpointLifecycleUI(s.endpointLifecycle || { component: 'model', status: 'unknown' });
     }).catch(function () {
-      el.textContent = '\u2715 Not reachable at ' + url;
+      el.textContent = '✕ Service offline';
       el.style.color = 'var(--tc-red)';
       updateEndpointLifecycleUI({ component: 'model', status: 'error', message: 'Backend not reachable' });
     });
