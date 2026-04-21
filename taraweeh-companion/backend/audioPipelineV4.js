@@ -1780,17 +1780,12 @@ export class AudioPipeline {
             lastLockedSurah: resumeSurah, lastLockedAyah: resumeAyah };
           console.log(`[Pipeline] Taraweeh: Fatiha done → pre-display khatam continuation ${resumeSurah}:${resumeAyah}`);
           this._scheduleReadAdvance(Math.max(this.state.confidence, 50));
-        } else if (nextSurahData && prevSurah !== 1) {
-          // Pre-display next surah:1, stay LOCKED, let Whisper correct if wrong
-          this._displaySurah = nextSurah;
-          this._displayAyah  = 1;
-          this._whisperSurah = nextSurah;
-          this._whisperAyah  = 1;
-          this._ayahStartTime = Date.now();
-          this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
-            surah: nextSurah, ayah: 1,
-            lastLockedSurah: prevSurah, lastLockedAyah: prevAyah };
-          console.log(`[Pipeline] End of surah ${prevSurah} → pre-display ${nextSurah}:1`);
+        } else if (false) {  // DISABLED: end-of-surah auto-jump to next surah
+          // Previously pre-displayed the sequentially-next surah:1 after any surah
+          // ended. Taraweeh imams choose their own surah order (not sequential),
+          // so this was wrong in most real cases. Now we fall through to the
+          // SEARCHING branch below — display shows "Listening…" / last verse and
+          // re-locks based on what the reciter actually recites next.
           this._scheduleReadAdvance(Math.max(this.state.confidence, 50));
         } else {
           this._displaySurah = 0;
