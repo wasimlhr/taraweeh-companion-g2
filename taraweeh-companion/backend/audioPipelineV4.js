@@ -339,6 +339,10 @@ export class AudioPipeline {
     this._expectFatiha   = false;    // set after ruku/sajda cycle — next recitation is Fatiha
     this._taraweehPosEnteredAt = 0;  // timestamp when current taraweeh position was entered
 
+    // Auto-next: when true, timer advances display. When false, display ONLY
+    // moves when Groq hears the next ayah — no timer-based progression.
+    this.autoNext = true;
+
     // V4: Word-level tracking fields
     this._currentWordIndex = 0;           // Current word position within ayah (0-indexed)
     this._currentAyahWords = [];          // Word array for current ayah
@@ -389,6 +393,12 @@ export class AudioPipeline {
     console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}`);
     this.onStatus({ type: 'taraweeh_mode', enabled: this.taraweehMode,
       position: this._taraweehPos, rakat: this._rakatCount });
+  }
+
+  setAutoNext(enabled) {
+    this.autoNext = !!enabled;
+    console.log(`[Pipeline] Auto-next ${this.autoNext ? 'ON' : 'OFF'}`);
+    if (!this.autoNext) this._cancelReadAdvance();  // stop any running timer
   }
 
   resetRakat() {
@@ -1687,10 +1697,17 @@ export class AudioPipeline {
   // ── Timer: reading-pace advance (uncapped — Whisper corrects, never blocks) ─
 
   _canDisplayAdvance() {
+    // End-of-surah exception: if we're on the last ayah, let the timer run even
+    // during silence. Firing it is the trigger that resets state to SEARCHING;
+    // blocking it would leave us frozen on the final ayah waiting for words
+    // that'll never come (imam moves to next surah).
+    const onLastAyah = this._displaySurah > 0 && this._displayAyah > 0
+      && !getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
+
     // Groq silence guard: word-level timestamps let us detect when the reciter
     // is paused (emotional, breath, end-of-ayah wait). If the last heard word
     // was >3s ago, don't let the timer fire — reciter hasn't moved.
-    if (this.isGroqMode && this._lastHeardWordMs > 0) {
+    if (this.isGroqMode && this._lastHeardWordMs > 0 && !onLastAyah) {
       const silenceMs = Date.now() - this._lastHeardWordMs;
       if (silenceMs > 3000) {
         if (!this._lastSilenceLogMs || (Date.now() - this._lastSilenceLogMs) > 2000) {
@@ -1706,6 +1723,10 @@ export class AudioPipeline {
 
   _scheduleReadAdvance(confidence, afterPauseMinMs = 0, durationFactor = 1.0, overrideDurationMs = 0) {
     this._cancelReadAdvance();
+    // Auto-next OFF: no timer-based display advance. Groq confirmations will
+    // still move the display via _onWhisperConfirm; only the read-ahead timer is
+    // disabled.
+    if (!this.autoNext) return;
     if (!this._canDisplayAdvance()) return;
 
     let durationMs;

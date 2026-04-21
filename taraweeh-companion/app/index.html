@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.8.4</span>
+      <span class="version" id="versionEl">v4.8.5</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -747,6 +747,7 @@ body {
 
   <div class="btn-group" style="margin-top:8px">
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
+    <button id="autoNextBtn" class="mode-btn active" onclick="toggleAutoNext()" title="Auto-next: when OFF, display only advances when Groq hears the next ayah — no timer">⏭ Auto-next: On</button>
   </div>
 
 </div>
@@ -877,7 +878,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.8.4';
+  const APP_VERSION = 'v4.8.5';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1027,6 +1028,24 @@ body {
     }
     _updateTaraweehOverlay(_taraweehPos, _rakatCount);
   };
+
+  // ── Auto-next toggle ──────────────────────────────────────────────────────
+  // When ON (default): display advances on a timer + Groq corrections.
+  // When OFF: display only moves when Groq actually hears the next ayah —
+  //   timer-based advancement is disabled. Good for slow murattal where the
+  //   timer guesses wrong; trust the ear, not the clock.
+  var _autoNext = true;
+  window.toggleAutoNext = function () {
+    _autoNext = !_autoNext;
+    var btn = document.getElementById('autoNextBtn');
+    btn.textContent = '\u23ED Auto-next: ' + (_autoNext ? 'On' : 'Off');
+    btn.classList.toggle('active', _autoNext);
+    S.settings.autoNext = _autoNext;
+    saveSettings();
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      S.ws.send(JSON.stringify({ type: 'set_auto_next', enabled: _autoNext }));
+    }
+  };
   window.resetRakat = function () {
     _rakatCount = 0; _taraweehPos = 'QIYAM';
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
@@ -1105,6 +1124,7 @@ body {
     groqApiKey: '',  // User's Groq API key (required for default mode)
     transcriptionProvider: 'groq',  // 'groq' (default, user's Groq key) | 'whisper' (gated behind unlock code)
     whisperUnlocked: false,  // gated: user must enter unlock code "letmetry" to reveal Whisper option
+    autoNext: true,  // ON = timer + Groq corrections advance display. OFF = Groq-only (no timer).
     glassesBottom: 'arabic',  // 'arabic' (Mushaf image) | 'transliteration' (Latin text)
   };
 
@@ -2311,6 +2331,7 @@ body {
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
       if (_taraweehMode) S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: true }));
+      S.ws.send(JSON.stringify({ type: 'set_auto_next', enabled: _autoNext }));
       // If recording was already active (reconnect mid-session), re-send start
       if (S.isRecording) {
         S.ws.send(JSON.stringify({ type: 'start' }));
@@ -3399,6 +3420,13 @@ body {
     _slowMode = !!S.settings.slowMode;
     if (_slowMode) _fastMode = false;
     _updatePaceButtons();
+    // Restore auto-next from settings (default true)
+    _autoNext = S.settings.autoNext !== false;
+    var autoNextBtn = document.getElementById('autoNextBtn');
+    if (autoNextBtn) {
+      autoNextBtn.textContent = '\u23ED Auto-next: ' + (_autoNext ? 'On' : 'Off');
+      autoNextBtn.classList.toggle('active', _autoNext);
+    }
     document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v4').toUpperCase();
     // Sync main-view glasses-display pills with saved setting.
     var savedGlasses = S.settings.glassesBottom;
