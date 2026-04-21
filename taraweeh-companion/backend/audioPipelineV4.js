@@ -1320,20 +1320,29 @@ export class AudioPipeline {
     }
 
     // ── Rule 3: Whisper at display position → on track ──
-    // Just log. Don't touch the timer — it's set from learned pace.
-    // Whisper detecting NEXT ayah (Rule 4) drives the advance.
     if (confirmedAyah === this._displayAyah) {
       this._driftMult = 1.0;
       if (realMatch) this._sameAyahStreak++;
       if (this._displayAdvanceTimer && this._timerStartedAt) {
         const elapsed = Date.now() - this._timerStartedAt;
         const remaining = Math.max(0, this._nextAdvanceMs - elapsed);
+        // GROQ RECITER-HOLD: Groq keeps hearing the SAME ayah (streak≥2)
+        // and the timer is about to fire. Reciter is lingering/repeating —
+        // reset the timer so display doesn't race ahead. Groq's 300ms
+        // latency makes this signal reliable; HF's 6s lag makes it risky,
+        // so HF keeps old behaviour (let timer run).
+        if (this.isGroqMode && realMatch && this._sameAyahStreak >= 2 && remaining < 2500) {
+          const holdMs = Math.max(3000, this._measuredMsPerWord > 0 ? this._measuredMsPerWord * 3 : 3000);
+          this._cancelReadAdvance();
+          this._scheduleReadAdvance(score, 0, 1.0, holdMs);
+          console.log(`[Pipeline] Groq hold: reciter lingering on :${confirmedAyah} (streak=${this._sameAyahStreak}) — extended timer to ${holdMs}ms`);
+          this._emitState(text, rms);
+          return;
+        }
         console.log(`[Pipeline] Whisper ${realMatch ? 'confirms' : 'noise→'} :${confirmedAyah} (${Math.round(remaining/1000)}s left, streak=${this._sameAyahStreak})`);
       } else {
         console.log(`[Pipeline] Whisper ${realMatch ? 'confirms' : 'noise→'} :${confirmedAyah} (streak=${this._sameAyahStreak})`);
         if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
-          // No timer running (e.g. after BLOCKED released). Use full timer —
-          // corrected is only for Whisper-driven gap=1 advances.
           this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
         }
       }
