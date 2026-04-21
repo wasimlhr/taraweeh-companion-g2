@@ -2145,6 +2145,10 @@ export class AudioPipeline {
         // V4: Word X/Y so frontend can show progress as soon as LOCKED (e.g. after reconnect)
         totalWords: stateTotalWords,
         wordIndex: stateWordIndex,
+        // Whisper/Groq's latest confirmed position — surfaced so the frontend
+        // can show "Heard" vs "Shown" pills and the user can spot drift live.
+        whisperSurah: this._whisperSurah || undefined,
+        whisperAyah: this._whisperAyah || undefined,
       },
       whisperText: whisperText ?? null,
       rms: rms != null ? +rms.toFixed(4) : null,

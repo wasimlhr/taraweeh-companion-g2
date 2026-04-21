@@ -642,6 +642,12 @@ body {
     <div class="s-pill" id="sPillConf">
       <span class="s-dot"></span><span class="s-label">Match: --</span>
     </div>
+    <div class="s-pill info" id="sPillHeard" style="display:none">
+      <span class="s-dot"></span><span class="s-label" id="heardRef">Heard: --</span>
+    </div>
+    <div class="s-pill" id="sPillShown" style="display:none">
+      <span class="s-dot"></span><span class="s-label" id="shownRef">Shown: --</span>
+    </div>
     <div class="s-pill" id="sPillPace" style="display:none">
       <span class="s-dot"></span><span class="s-label">Pace: --</span>
     </div>
@@ -2429,6 +2435,26 @@ body {
             (msg.state.mode !== 'LOCKED' && (prev.surah !== msg.state.surah || prev.ayah !== msg.state.ayah)))
           S.displayRebuilt = false;
         var gDisplay = buildGlassesText(msg.state);
+        // Live "Heard vs Shown" indicator — shows drift between Whisper/Groq
+        // confirmed position and current display so the user can see when the
+        // pipeline is out of sync.
+        var heardS = msg.state.whisperSurah, heardA = msg.state.whisperAyah;
+        var shownS = msg.state.surah, shownA = msg.state.ayah;
+        var heardPill = document.getElementById('sPillHeard');
+        var shownPill = document.getElementById('sPillShown');
+        if (heardS && heardA) {
+          heardPill.style.display = '';
+          var heardLabel = 'Heard: ' + heardS + ':' + heardA;
+          document.getElementById('heardRef').textContent = heardLabel;
+          var drift = (heardS === shownS) ? (shownA - heardA) : null;
+          heardPill.className = 's-pill ' + (drift === null ? 'warn' :
+            Math.abs(drift) === 0 ? 'ok' : Math.abs(drift) <= 1 ? 'info' : 'err');
+        } else if (heardPill) { heardPill.style.display = 'none'; }
+        if (shownS && shownA && msg.state.mode === 'LOCKED') {
+          shownPill.style.display = '';
+          document.getElementById('shownRef').textContent = 'Shown: ' + shownS + ':' + shownA;
+        } else if (shownPill) { shownPill.style.display = 'none'; }
+
         if (msg.state.mode === 'LOCKED') {
           var ayahChanged = msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
           if (ayahChanged) {
