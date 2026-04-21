@@ -92,7 +92,7 @@ const PAUSE_ANALYSIS_BYTES = Math.floor(BYTES_PER_MS * PAUSE_ANALYSIS_MS);
 const PAUSE_THRESHOLD      = parseFloat(process.env.PAUSE_THRESHOLD   || '0.005');
 const PAUSE_ADVANCE_MS     = parseInt(process.env.PAUSE_ADVANCE_MS    || '2500', 10);
 const PAUSE_COOLDOWN_MS    = parseInt(process.env.PAUSE_COOLDOWN_MS   || '6000', 10);
-const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '2000', 10);
+const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '4000', 10);
 
 const BASE_DISPLAY_LEAD = 2;
 const BLOCKED_FORCE_UNBLOCK_MS = 8000;  // Force-unblock after 8s even without real Whisper match
@@ -613,8 +613,9 @@ export class AudioPipeline {
     this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
       surah: this._displaySurah, ayah: this._displayAyah,
       lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
-    // Reciter is already partway through — use shorter timer for catching up
-    this._scheduleReadAdvance(Math.max(this.state.confidence, 65), 0, 0.3);
+    // Don't auto-schedule a new advance timer after manual_prev — user explicitly
+    // backed up because display moved ahead of reciter. Let the next transcription
+    // confirm the new position before any further auto-advance is considered.
     this._emitState(null, null);
   }
 
@@ -1594,6 +1595,12 @@ export class AudioPipeline {
   // ── Timer: reading-pace advance (uncapped — Whisper corrects, never blocks) ─
 
   _canDisplayAdvance() {
+    // Don't auto-advance during manual cooldown — user explicitly adjusted, let
+    // Whisper/Groq confirmation drive the next move instead of the estimate timer.
+    if (this._lastManualAdjustMs
+        && (Date.now() - this._lastManualAdjustMs) < MANUAL_ADJUST_COOLDOWN_MS) {
+      return false;
+    }
     return this._displaySurah > 0 && this._displayAyah > 0
       && (this.state.mode === 'LOCKED' || this.state.mode === 'RESUMING' || this.state.mode === 'SEARCHING');
   }
