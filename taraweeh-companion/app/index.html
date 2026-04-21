@@ -588,7 +588,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.7.5</span>
+      <span class="version" id="versionEl">v4.7.6</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -785,7 +785,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.7.5';
+  const APP_VERSION = 'v4.7.6';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2549,7 +2549,7 @@ body {
     var mobileRow = document.getElementById('mobileOnlyHintRow');
     if (mobileRow) mobileRow.style.display = _backendStatusInfo.mobileOnlyMode ? '' : 'none';
     var wakeRow = document.getElementById('wakeServerRow');
-    if (wakeRow) wakeRow.style.display = _backendStatusInfo.endpointOnDemandEnabled ? '' : 'none';
+    if (wakeRow) wakeRow.style.display = '';
 
     var g2Btn = document.getElementById('btnG2Mic');
     var phoneBtn = document.getElementById('btnPhoneMic');
@@ -2658,9 +2658,9 @@ body {
         el.style.color = 'var(--tc-green)';
         return;
       }
-      el.textContent = '✕ Service offline';
-      el.style.color = 'var(--tc-red)';
-      updateEndpointLifecycleUI({ component: 'model', status: 'error', message: 'Backend not reachable' });
+      el.textContent = '… Service reconnecting';
+      el.style.color = 'var(--tc-orange)';
+      updateEndpointLifecycleUI({ component: 'model', status: 'loading', message: 'Service reconnecting' });
     });
   }
 
