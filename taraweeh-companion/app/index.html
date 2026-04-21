@@ -526,6 +526,38 @@ body {
 .toggle-btn:not(:last-child) { border-right: 1px solid var(--bc-4); }
 .toggle-btn.active { background: var(--tc-gold); color: #1a1a1a; font-weight: 600; }
 .toggle-btn:hover:not(.active) { background: var(--bc-3); color: var(--tc-1); }
+
+/* Main-view pill buttons — visually obvious they're interactive, in dark & light */
+.mv-toggle-group {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.mv-toggle-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 8px;
+  font-size: 13px;
+  border: 1.5px solid var(--bc-4);
+  border-radius: 10px;
+  background: var(--bc-2);
+  color: var(--tc-1);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.05s;
+  text-align: center;
+  font-weight: 500;
+  user-select: none;
+  -webkit-tap-highlight-color: rgba(245, 158, 11, 0.3);
+}
+.mv-toggle-btn:hover:not(.active) { background: var(--bc-3); border-color: var(--tc-gold); }
+.mv-toggle-btn:active { transform: scale(0.97); }
+.mv-toggle-btn.active {
+  background: var(--tc-gold);
+  color: #1a1a1a;
+  border-color: var(--tc-gold);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+}
 .settings-footer {
   text-align: center;
   color: var(--tc-2);
@@ -700,19 +732,19 @@ body {
 
   <!-- Pace selector (Normal / Fast / Slow) — single pill group -->
   <div style="margin-top:12px">
-    <div class="toggle-group" role="group" style="display:flex;gap:4px">
-      <button type="button" class="toggle-btn active" id="btnPaceNormal" onclick="setPace('normal')" style="flex:1">Normal</button>
-      <button type="button" class="toggle-btn" id="btnPaceFast" onclick="setPace('fast')" style="flex:1">⚡ Fast</button>
-      <button type="button" class="toggle-btn" id="btnPaceSlow" onclick="setPace('slow')" style="flex:1">🐢 Slow</button>
+    <div class="mv-toggle-group" role="group">
+      <button type="button" class="mv-toggle-btn active" id="btnPaceNormal" onclick="setPace('normal')">Normal</button>
+      <button type="button" class="mv-toggle-btn" id="btnPaceFast" onclick="setPace('fast')">⚡ Fast</button>
+      <button type="button" class="mv-toggle-btn" id="btnPaceSlow" onclick="setPace('slow')">🐢 Slow</button>
     </div>
   </div>
 
   <!-- Glasses second-line selector (Arabic / Transliteration / English only) -->
   <div style="margin-top:8px">
-    <div class="toggle-group" role="group" style="display:flex;gap:4px">
-      <button type="button" class="toggle-btn active" id="btnGlassesArabic" onclick="setGlassesBottom('arabic')" style="flex:1">Arabic</button>
-      <button type="button" class="toggle-btn" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')" style="flex:1">Translit</button>
-      <button type="button" class="toggle-btn" id="btnGlassesEnOnly" onclick="setGlassesBottom('translation-only')" style="flex:1">EN only</button>
+    <div class="mv-toggle-group" role="group">
+      <button type="button" class="mv-toggle-btn active" id="btnGlassesArabic" onclick="setGlassesBottom('arabic')">Arabic</button>
+      <button type="button" class="mv-toggle-btn" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
+      <button type="button" class="mv-toggle-btn" id="btnGlassesEnOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
     </div>
   </div>
 
