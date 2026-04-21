@@ -271,7 +271,8 @@ export async function probeWhisperEndpoint(optsOrToken, emit) {
       return;
     }
 
-    emit({ component: 'model', status: 'standby', provider, latencyMs, httpStatus: res.status });
+    const status = res.ok ? 'ready' : 'standby';
+    emit({ component: 'model', status, provider, latencyMs, httpStatus: res.status });
     console.log(`[Whisper] Probe: ${provider} reachable (HTTP ${res.status}, ${latencyMs}ms)`);
   } catch (err) {
     emit({ component: 'model', status: 'error', provider, message: err.message.slice(0, 100) });

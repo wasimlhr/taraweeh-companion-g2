@@ -111,10 +111,20 @@ app.get('/api/endpoint/warmup', async (req, res) => {
 
   try {
     let latest = null;
-    await probeWhisperEndpoint({ ...(buildWhisperOpts() || {}), forceProbe: true }, (s) => {
-      latest = s;
-      updateEndpointLifecycle(s, 'warmup');
-    });
+    const maxAttempts = 6;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      latest = null;
+      await probeWhisperEndpoint({ ...(buildWhisperOpts() || {}), forceProbe: true }, (s) => {
+        latest = s;
+        updateEndpointLifecycle(s, 'warmup');
+      });
+      const status = latest?.status;
+      if (status === 'standby' || status === 'ready') break;
+      if (status === 'error') break;
+      const retryIn = Number(latest?.retryIn || 2);
+      const delayMs = Math.max(1000, Math.min(retryIn * 1000, 8000));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
     res.json({
       ok: true,
       lifecycle: latest || lastEndpointLifecycle,
