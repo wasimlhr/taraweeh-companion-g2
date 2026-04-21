@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.8.3</span>
+      <span class="version" id="versionEl">v4.8.4</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -841,14 +841,13 @@ body {
     <div class="s-row">
       <span class="s-label">Speech recognition</span>
       <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
-        <button type="button" class="toggle-btn active" id="btnProviderWhisper" onclick="setProvider('whisper')">Whisper-Quran (custom)</button>
-        <button type="button" class="toggle-btn" id="btnProviderGroq" onclick="setProvider('groq')">Groq API</button>
+        <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq API</button>
+        <button type="button" class="toggle-btn" id="btnProviderWhisper" onclick="setProvider('whisper')" style="display:none">Whisper-Quran (custom)</button>
       </div>
       <span class="s-hint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">
-        <b>Whisper-Quran:</b> our Quran-finetuned model (~1-2% WER on Arabic recitation). Default, uses hosted endpoint.<br>
-        <b>Groq API:</b> <code>whisper-large-v3-turbo</code> via Groq (~10× faster, free tier ~6k/day, needs your own key).
+        <b>Groq API:</b> <code>whisper-large-v3-turbo</code> (~300ms latency, free tier ~6k/day, needs your own key).
       </span>
-      <div id="groqKeyRow" style="display:none;margin-top:10px">
+      <div id="groqKeyRow" style="margin-top:10px">
         <input id="settingGroqKey" type="password" placeholder="gsk_... (your Groq API key)" autocomplete="off" spellcheck="false" />
         <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
           <button type="button" class="back-btn" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
@@ -858,6 +857,14 @@ body {
           <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a free key →</a>
           Key stays on your phone (localStorage). Sent to server only when you start listening.
         </span>
+      </div>
+      <div id="whisperUnlockRow" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--bc-4)">
+        <span class="s-hint" style="font-size:11px;display:block;margin-bottom:6px;color:var(--tc-3)">Advanced: alternate engine</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <input id="whisperUnlockInput" type="text" placeholder="unlock code" autocomplete="off" spellcheck="false" style="flex:1;min-width:120px" />
+          <button type="button" class="back-btn" onclick="tryUnlockWhisper()" style="font-size:13px">Unlock</button>
+        </div>
+        <span id="whisperUnlockMsg" style="font-size:11px;display:block;margin-top:4px;color:var(--tc-3)"></span>
       </div>
     </div>
   </div>
@@ -870,7 +877,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.8.3';
+  const APP_VERSION = 'v4.8.4';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1095,8 +1102,9 @@ body {
     forcePhoneMic: false,
     fastMode: true,
     slowMode: false,
-    groqApiKey: '',  // User's optional Groq API key — if set, overrides host HF endpoint for this session
-    transcriptionProvider: 'whisper',  // 'whisper' (host Whisper-Quran) | 'groq' (user's Groq key)
+    groqApiKey: '',  // User's Groq API key (required for default mode)
+    transcriptionProvider: 'groq',  // 'groq' (default, user's Groq key) | 'whisper' (gated behind unlock code)
+    whisperUnlocked: false,  // gated: user must enter unlock code "letmetry" to reveal Whisper option
     glassesBottom: 'arabic',  // 'arabic' (Mushaf image) | 'transliteration' (Latin text)
   };
 
@@ -2283,12 +2291,14 @@ body {
 
     S.ws.onopen = function () {
       setWsPill('ok', 'Service: online');
-      // Don't claim "ready to listen" until the transcription server is actually ready.
-      // Real status comes from the sys_status 'model' component callback.
-      setStatus('Connecting to transcription server\u2026', 'result');
+      var useGroq = S.settings.transcriptionProvider === 'groq';
+      // Groq is BYOK and warms instantly — skip the "connecting…" message, server
+      // will emit ready immediately after init. Whisper cold-start needs the wait text.
+      if (!useGroq) {
+        setStatus('Connecting to transcription server\u2026', 'result');
+      }
       log('WS connected', 'ok');
       _startWsPing();
-      var useGroq = S.settings.transcriptionProvider === 'groq';
       S.ws.send(JSON.stringify({
         type: 'init',
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
@@ -2741,6 +2751,7 @@ body {
   var _lastScrollTime = 0;
   var _scrollBurstCount = 0;    // absorb burst-queued events
   var _scrollBurstTimer = null;
+  var _lastDoubleTapTime = 0;   // debounce double-tap (G2 sometimes fires twice)
   function onG2Event(event) {
     if (event.audioEvent && event.audioEvent.audioPcm) {
       sendPcm(event.audioEvent.audioPcm);
@@ -2779,6 +2790,11 @@ body {
 
     // DOUBLE TAP → next page on multi-page ayahs, or pause/resume on last/single page
     if (t === 3) {
+      // Debounce: G2 bridge can fire the same double-tap twice in quick
+      // succession, producing a stop→start flash. Swallow repeats within 700ms.
+      var nowDt = Date.now();
+      if (nowDt - (_lastDoubleTapTime || 0) < 700) return;
+      _lastDoubleTapTime = nowDt;
       if (_pageDisplay && _pageDisplay.pages && _pageDisplay.pages.length > 1 && _pageIdx < _pageDisplay.pages.length - 1) {
         // Multi-page ayah, not on last page — advance to next page
         _pageIdx++;
@@ -2844,6 +2860,13 @@ body {
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {
+    // Block start in Groq mode if no API key — prompt user to enter one.
+    if (S.settings.transcriptionProvider === 'groq' && !(S.settings.groqApiKey || '').trim()) {
+      setStatus('Groq API key required — opening settings', 'warn');
+      if (typeof log === 'function') log('No Groq key set — open Settings and enter one', 'warn');
+      setTimeout(function () { try { showSettings(); } catch (_) {} }, 400);
+      return;
+    }
     S.isRecording = true;
     S.displayRebuilt = false;
     S.pcmAccum = [];
@@ -3078,7 +3101,9 @@ body {
   };
 
   window.setProvider = function (p) {
-    p = (p === 'groq') ? 'groq' : 'whisper';
+    // Whisper is gated — force back to Groq if user tries it without unlock
+    if (p === 'whisper' && !S.settings.whisperUnlocked) p = 'groq';
+    p = (p === 'whisper') ? 'whisper' : 'groq';
     S.settings.transcriptionProvider = p;
     var whisperBtn = document.getElementById('btnProviderWhisper');
     var groqBtn = document.getElementById('btnProviderGroq');
@@ -3086,6 +3111,24 @@ body {
     if (groqBtn) groqBtn.classList.toggle('active', p === 'groq');
     var keyRow = document.getElementById('groqKeyRow');
     if (keyRow) keyRow.style.display = (p === 'groq') ? '' : 'none';
+  };
+
+  window.tryUnlockWhisper = function () {
+    var input = document.getElementById('whisperUnlockInput');
+    var msg = document.getElementById('whisperUnlockMsg');
+    var code = (input.value || '').trim().toLowerCase();
+    if (code === 'letmetry') {
+      S.settings.whisperUnlocked = true;
+      saveSettings();
+      var wbtn = document.getElementById('btnProviderWhisper');
+      if (wbtn) wbtn.style.display = '';
+      msg.textContent = 'Unlocked — Whisper-Quran now available.';
+      msg.style.color = 'var(--tc-green)';
+      input.value = '';
+    } else {
+      msg.textContent = 'Invalid code.';
+      msg.style.color = 'var(--tc-red)';
+    }
   };
 
   window.setGlassesBottom = function (mode) {
@@ -3207,6 +3250,11 @@ body {
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
+    // Show Whisper button only if previously unlocked via code
+    var wbtn = document.getElementById('btnProviderWhisper');
+    if (wbtn) wbtn.style.display = S.settings.whisperUnlocked ? '' : 'none';
+    var unlockRow = document.getElementById('whisperUnlockRow');
+    if (unlockRow) unlockRow.style.display = S.settings.whisperUnlocked ? 'none' : '';
     setProvider(S.settings.transcriptionProvider === 'groq' ? 'groq' : 'whisper');
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'transliteration' ? 'transliteration' : 'arabic');
