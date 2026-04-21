@@ -1278,17 +1278,17 @@ body {
       { containerID: 1, containerName: 'hdr',
         xPosition: 0, yPosition: 0, width: G2_HDR_W, height: G2_HDR_H,
         isEventCapture: 0,
-        borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+        borderWidth: 1, borderColor: 5, borderRadius: 0, paddingLength: 2,
         content: appTitleHdr() },
       { containerID: 2, containerName: 'ver',
         xPosition: G2_VER_X, yPosition: 0, width: G2_VER_W, height: G2_HDR_H,
         isEventCapture: 0,
-        borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+        borderWidth: 1, borderColor: 5, borderRadius: 0, paddingLength: 2,
         content: appVersionHdr() },
       { containerID: 3, containerName: 'body',
         xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
         isEventCapture: 1,
-        borderWidth: 0, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+        borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: 2,
         content: 'Ready. Recite any verse to begin.' },
     ];
   }
@@ -1343,6 +1343,22 @@ body {
     });
   }
 
+  // Some SDK/firmware combos can reject startup container creation intermittently.
+  // If that happens, force a plain text rebuild so the glasses never stay blank.
+  function recoverStartupIfBlank() {
+    if (!S.bridge || S.startupPageCreated) return;
+    queueBridgeCall('recover-startup-rebuild', function () {
+      return S.bridge.rebuildPageContainer({
+        containerTotalNum: 3,
+        textObject: _startupTextContainers(),
+      }).then(function () {
+        S.startupPageCreated = true;
+        S.displayRebuilt = true;
+        log('G2: startup recovery rebuild applied', 'ok');
+      });
+    });
+  }
+
   // glassesUpdate receives { hdr, body } object from buildGlassesText
   // Full rebuild on first use or ayah change; textContainerUpgrade for countdown (lightweight).
   // Full rebuild every 500ms overwhelmed BLE — display lagged. Use upgrade for countdown ticks.
@@ -1359,17 +1375,17 @@ body {
             { containerID: 1, containerName: 'hdr',
               xPosition: 0, yPosition: 0, width: G2_HDR_W, height: G2_HDR_H,
               isEventCapture: 0,
-              borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+              borderWidth: 1, borderColor: 5, borderRadius: 0, paddingLength: 2,
               content: hdrContent },
             { containerID: 2, containerName: 'ver',
               xPosition: G2_VER_X, yPosition: 0, width: G2_VER_W, height: G2_HDR_H,
               isEventCapture: 0,
-              borderWidth: 1, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+              borderWidth: 1, borderColor: 5, borderRadius: 0, paddingLength: 2,
               content: appVersionHdr() },
             { containerID: 3, containerName: 'body',
               xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
               isEventCapture: 1,
-              borderWidth: 0, borderColor: 5, borderRdaius: 0, paddingLength: 2,
+              borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: 2,
               content: bodyContent },
           ],
         }).then(function () {
@@ -2437,7 +2453,7 @@ body {
     log('Loading SDK from CDN...');
 
     try {
-      var sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@latest/dist/index.js');
+      var sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.10/dist/index.js');
       S.bridge = await new Promise(function (resolve, reject) {
         var t = setTimeout(function () { reject(new Error('timeout 2s')); }, 2000);
         sdk.waitForEvenAppBridge().then(function (b) { clearTimeout(t); resolve(b); }, reject);
@@ -2473,6 +2489,9 @@ body {
 
       // Show startup screen on glasses
       glassesStartup();
+      // Safety-net: if startup container call is rejected, force text rebuild shortly after.
+      setTimeout(recoverStartupIfBlank, 700);
+      setTimeout(recoverStartupIfBlank, 1200);
     } else {
       log('No G2 — browser mic mode');
       setPill('sPillG2', '', 'PC mic');
