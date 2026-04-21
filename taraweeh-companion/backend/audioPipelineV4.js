@@ -74,7 +74,7 @@ const READ_ADVANCE_CONFIDENCE  = parseInt(process.env.READ_ADVANCE_CONFIDENCE   
 const READ_WORDS_PER_SEC       = parseFloat(process.env.READ_WORDS_PER_SEC       || '1.15');
 const READ_ADVANCE_MIN_MS      = parseInt(process.env.READ_ADVANCE_MIN_MS        || '4000',  10);
 // No hard cap — transliteration + pace mode determine duration. 90s safety only for bugs.
-const READ_ADVANCE_MAX_MS      = parseInt(process.env.READ_ADVANCE_MAX_MS        || '55000', 10);
+const READ_ADVANCE_MAX_MS      = parseInt(process.env.READ_ADVANCE_MAX_MS        || '30000', 10);
 const READ_ADVANCE_CONFIRM_BUMP_MS = parseInt(process.env.READ_ADVANCE_CONFIRM_BUMP_MS || '2500', 10);
 const SMOOTH_ADVANCE_STEP_MS   = parseInt(process.env.SMOOTH_ADVANCE_STEP_MS     || '1200',  10);
 // By first lock we've matched 3–6s of audio — reciter is near end of ayah; advance quickly
@@ -1682,7 +1682,17 @@ export class AudioPipeline {
     const shortAyahFloor = wordCount <= 4 ? 1500 : 2500;
     const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : (this.fastMode ? Math.min(shortAyahFloor, 2000) : shortAyahFloor));
     const baseDurationMs = Math.max(rawMs, floorMs);
-    durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
+    // Per-word-count ceilings prevent short ayahs getting taraweeh-absurd timers
+    // even when learned pace drifts slow. Taraweeh imams typically take:
+    //   3-5 words: ~2-4s      → cap 5s
+    //   6-10 words: ~3-6s     → cap 8s
+    //   11-20 words: ~7-12s   → cap 16s
+    //   21+ words: ~15-22s    → cap 25s
+    const perCountCap = wordCount <= 5 ? 5000
+      : wordCount <= 10 ? 8000
+      : wordCount <= 20 ? 16000
+      : 25000;
+    durationMs = Math.min(Math.round(baseDurationMs), perCountCap, READ_ADVANCE_MAX_MS);
     if (durationFactor < 1.0) {
       // Whisper data is ~6s old. Subtract pipeline lag — but never more than half
       // the timer. Short ayahs (3-6 words) shouldn't get crushed to 1s.
