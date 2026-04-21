@@ -596,23 +596,6 @@ body {
 
   <div id="status">Initializing...</div>
 
-  <!-- Quick translation picker on main view -->
-  <div style="display:flex;align-items:center;gap:8px;margin:6px 0 10px">
-    <span style="font-size:12px;color:var(--tc-2)">Translation:</span>
-    <select id="mainLangPicker" onchange="setMainLang(this.value)" style="flex:1;padding:6px 8px;font-size:13px;border:1px solid var(--bc-4);border-radius:6px;background:var(--bc-1);color:var(--tc-1)">
-      <option value="">English</option>
-      <option value="ur">Urdu</option>
-      <option value="fr">French</option>
-      <option value="es">Spanish</option>
-      <option value="id">Indonesian</option>
-      <option value="tr">Turkish</option>
-      <option value="bn">Bengali</option>
-      <option value="zh">Chinese</option>
-      <option value="ru">Russian</option>
-      <option value="sv">Swedish</option>
-    </select>
-  </div>
-
   <!-- System status bar -->
   <div id="statusBar">
     <div class="s-pill" id="sPillG2">
@@ -715,9 +698,25 @@ body {
   <button id="recordBtn" disabled>Detecting glasses...</button>
   <button id="wakeServerMainBtn" class="back-btn" style="display:none;margin-top:8px;font-size:13px">☁ Wake server</button>
 
-  <div class="btn-group">
-    <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Faster display for quick reciters">⚡ Fast</button>
-    <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Slower display for measured reciters">🐢 Slow</button>
+  <!-- Pace selector (Normal / Fast / Slow) — single pill group -->
+  <div style="margin-top:12px">
+    <div class="toggle-group" role="group" style="display:flex;gap:4px">
+      <button type="button" class="toggle-btn active" id="btnPaceNormal" onclick="setPace('normal')" style="flex:1">Normal</button>
+      <button type="button" class="toggle-btn" id="btnPaceFast" onclick="setPace('fast')" style="flex:1">⚡ Fast</button>
+      <button type="button" class="toggle-btn" id="btnPaceSlow" onclick="setPace('slow')" style="flex:1">🐢 Slow</button>
+    </div>
+  </div>
+
+  <!-- Glasses second-line selector (Arabic / Transliteration / English only) -->
+  <div style="margin-top:8px">
+    <div class="toggle-group" role="group" style="display:flex;gap:4px">
+      <button type="button" class="toggle-btn active" id="btnGlassesArabic" onclick="setGlassesBottom('arabic')" style="flex:1">Arabic</button>
+      <button type="button" class="toggle-btn" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')" style="flex:1">Translit</button>
+      <button type="button" class="toggle-btn" id="btnGlassesEnOnly" onclick="setGlassesBottom('translation-only')" style="flex:1">EN only</button>
+    </div>
+  </div>
+
+  <div class="btn-group" style="margin-top:8px">
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
   </div>
 
@@ -940,12 +939,14 @@ body {
     }
   });
 
-  // ── Pace Mode (Fast / Slow) ────────────────────────────────────────────────
+  // ── Pace Mode (Normal / Fast / Slow pill) ─────────────────────────────────
   var _fastMode = false;
   var _slowMode = false;
-  window.toggleFastMode = function () {
-    _fastMode = !_fastMode;
-    if (_fastMode) _slowMode = false;
+
+  window.setPace = function (mode) {
+    if (mode === 'fast') { _fastMode = true;  _slowMode = false; }
+    else if (mode === 'slow') { _fastMode = false; _slowMode = true; }
+    else { _fastMode = false; _slowMode = false; mode = 'normal'; }
     _updatePaceButtons();
     S.settings.fastMode = _fastMode;
     S.settings.slowMode = _slowMode;
@@ -954,26 +955,18 @@ body {
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
     }
-    log('Pace: ' + (_fastMode ? 'Fast' : _slowMode ? 'Slow' : 'Normal'), _fastMode || _slowMode ? 'ok' : 'info');
+    log('Pace: ' + (mode === 'fast' ? 'Fast' : mode === 'slow' ? 'Slow' : 'Normal'), 'ok');
   };
-  window.toggleSlowMode = function () {
-    _slowMode = !_slowMode;
-    if (_slowMode) _fastMode = false;
-    _updatePaceButtons();
-    S.settings.fastMode = _fastMode;
-    S.settings.slowMode = _slowMode;
-    saveSettings();
-    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
-      S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
-    }
-    log('Pace: ' + (_slowMode ? 'Slow' : _fastMode ? 'Fast' : 'Normal'), _fastMode || _slowMode ? 'ok' : 'info');
-  };
+  // Backwards compatibility (called from SDK status updates)
+  window.toggleFastMode = function () { setPace(_fastMode ? 'normal' : 'fast'); };
+  window.toggleSlowMode = function () { setPace(_slowMode ? 'normal' : 'slow'); };
+
   function _updatePaceButtons() {
-    var fb = document.getElementById('fastModeBtn');
-    var sb = document.getElementById('slowModeBtn');
-    if (fb) { fb.classList.toggle('active', _fastMode); }
-    if (sb) { sb.classList.toggle('active', _slowMode); }
+    var activePace = _fastMode ? 'fast' : _slowMode ? 'slow' : 'normal';
+    ['Normal', 'Fast', 'Slow'].forEach(function (name) {
+      var btn = document.getElementById('btnPace' + name);
+      if (btn) btn.classList.toggle('active', activePace === name.toLowerCase());
+    });
   }
   _updatePaceButtons();
 
@@ -1823,7 +1816,9 @@ body {
     var maxLines = G2_BODY_LINES - (reserveLines || 0);
     var transLines = wrapText(translation || '', G2_CHARS);
     var bottomMode = (S.settings && S.settings.glassesBottom) || 'arabic';
-    var effectiveTransliteration = (bottomMode === 'arabic') ? '' : transliteration;
+    // Only the 'transliteration' mode shows Latin text. 'arabic' mode puts Arabic
+    // in the image below; 'translation-only' shows English translation alone.
+    var effectiveTransliteration = (bottomMode === 'transliteration') ? transliteration : '';
     var tlitLines  = effectiveTransliteration ? wrapText(effectiveTransliteration, G2_CHARS) : [];
     var tlitBlock  = tlitLines.length > 0 ? [G2_DIV].concat(tlitLines) : [];
     var tlitCost   = tlitBlock.length;
@@ -3029,23 +3024,39 @@ body {
   };
 
   window.setGlassesBottom = function (mode) {
-    mode = (mode === 'transliteration') ? 'transliteration' : 'arabic';
+    var valid = { arabic: 1, transliteration: 1, 'translation-only': 1 };
+    if (!valid[mode]) mode = 'arabic';
     S.settings.glassesBottom = mode;
-    var arabicBtn  = document.getElementById('btnBottomArabic');
-    var translitBtn = document.getElementById('btnBottomTranslit');
-    if (arabicBtn)  arabicBtn.classList.toggle('active', mode === 'arabic');
-    if (translitBtn) translitBtn.classList.toggle('active', mode === 'transliteration');
-    // If switching away from arabic, blank the Mushaf image so old verse doesn't stick.
-    if (mode === 'transliteration' && S.isG2 && S.startupPageCreated && S.bridge) {
+    saveSettings();
+    // Main-view pills
+    var mainBtns = {
+      arabic: 'btnGlassesArabic',
+      transliteration: 'btnGlassesTranslit',
+      'translation-only': 'btnGlassesEnOnly',
+    };
+    Object.keys(mainBtns).forEach(function (k) {
+      var btn = document.getElementById(mainBtns[k]);
+      if (btn) btn.classList.toggle('active', mode === k);
+    });
+    // Settings-view pills (kept for parity)
+    var settingsBtns = { arabic: 'btnBottomArabic', transliteration: 'btnBottomTranslit' };
+    Object.keys(settingsBtns).forEach(function (k) {
+      var btn = document.getElementById(settingsBtns[k]);
+      if (btn) btn.classList.toggle('active', mode === k);
+    });
+
+    // When NOT in arabic mode, blank the Mushaf image so old verse doesn't persist.
+    if (mode !== 'arabic' && S.isG2 && S.startupPageCreated && S.bridge) {
       _lastRenderedAyah = '';
       try { _mushafClearImage(); } catch (_) {}
     }
     // If switching to arabic mid-session, re-render current ayah.
     if (mode === 'arabic' && S.mode === 'LOCKED' && S.isG2) {
-      // trigger a render via last known state — cheap; guarded by dedupe inside.
       var lastState = _lastStateForMushaf || {};
       if (lastState.surah && lastState.ayah) renderMushafAyah(lastState.surah, lastState.ayah);
     }
+    // Force glasses text to rebuild so transliteration visibility changes take effect.
+    S.displayRebuilt = false;
   };
 
   // Remember last LOCKED state for toggling bottom-line mode mid-session
@@ -3276,9 +3287,10 @@ body {
     if (_slowMode) _fastMode = false;
     _updatePaceButtons();
     document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v4').toUpperCase();
-    // Sync the main-screen translation picker with saved settings
-    var mlp = document.getElementById('mainLangPicker');
-    if (mlp) mlp.value = sanitizeTranslationLang(S.settings.lang || '');
+    // Sync main-view glasses-display pills with saved setting.
+    var savedGlasses = S.settings.glassesBottom;
+    if (savedGlasses !== 'transliteration' && savedGlasses !== 'translation-only') savedGlasses = 'arabic';
+    setGlassesBottom(savedGlasses);
     populateSurahs();
     initWave();
 
