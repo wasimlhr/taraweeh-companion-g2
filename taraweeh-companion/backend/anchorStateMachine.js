@@ -553,8 +553,12 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
       const isForward = wideCheck.ayah > state.ayah;
       if (isForward) {
         const fwdDist = wideCheck.ayah - state.ayah;
-        // 1 ayah: 0.40, 2: 0.55, 3+: 0.65
-        const fwdMinScore = fwdDist <= 1 ? 0.40 : fwdDist <= 2 ? 0.55 : 0.65;
+        // HF: 1 ayah=0.40, 2=0.55, 3+=0.65.
+        // Groq: lower thresholds — per-chunk scores rarely exceed 0.50, and
+        // short frequent chunks make forward-hints as trustworthy as back-hints.
+        const fwdMinScore = isGroqMode
+          ? (fwdDist <= 1 ? 0.25 : fwdDist <= 2 ? 0.40 : 0.55)
+          : (fwdDist <= 1 ? 0.40 : fwdDist <= 2 ? 0.55 : 0.65);
         if (wideCheck.score < fwdMinScore) {
           console.log(`[Anchor] Forward jump ignored: :${state.ayah}→:${wideCheck.ayah} (dist=${fwdDist}, score=${wideCheck.score.toFixed(2)} < ${fwdMinScore})`);
           return {
