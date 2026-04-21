@@ -26,7 +26,9 @@ export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null) {
   form.append('file', blob, 'audio.wav');
   form.append('model', GROQ_MODEL);
   form.append('language', 'ar');
-  form.append('response_format', 'verbose_json');  // verbose gives segments with timestamps
+  form.append('response_format', 'verbose_json');
+  form.append('timestamp_granularities[]', 'word');   // word-level timestamps for silence / repeat detection
+  form.append('timestamp_granularities[]', 'segment');
   form.append('temperature', '0');
 
   emit?.({ component: 'model', status: 'pending', provider: 'groq' });
@@ -49,9 +51,25 @@ export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null) {
   const latencyMs = Date.now() - t0;
   emit?.({ component: 'model', status: 'ready', provider: 'groq', latencyMs });
   const text = (data.text || '').trim();
-  console.log(`[Groq] ${latencyMs}ms  wav=${wav.length}B  text="${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
-  // Groq's verbose_json doesn't give word-level timestamps like HF whisper does.
-  // Segments-level is available as data.segments but pipeline's word tracking would need adaptation.
-  // For now return empty words array; lock-quality matching still works on text alone.
-  return { text, words: [], provider: 'groq' };
+
+  // Pull word-level timestamps for pipeline silence / repeat detection.
+  // Groq verbose_json returns either top-level data.words or per-segment words.
+  const words = [];
+  if (Array.isArray(data.words)) {
+    for (const w of data.words) {
+      if (w && w.word) words.push({ word: String(w.word).trim(), start: +w.start, end: +w.end });
+    }
+  } else if (Array.isArray(data.segments)) {
+    for (const seg of data.segments) {
+      if (Array.isArray(seg.words)) {
+        for (const w of seg.words) {
+          if (w && w.word) words.push({ word: String(w.word).trim(), start: +w.start, end: +w.end });
+        }
+      }
+    }
+  }
+
+  console.log(`[Groq] ${latencyMs}ms  wav=${wav.length}B  words=${words.length}  text="${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
+  return { text, words, provider: 'groq' };
 }
+

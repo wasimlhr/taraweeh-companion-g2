@@ -303,6 +303,11 @@ export class AudioPipeline {
     this._lastManualAdjustMs = 0;
     this._lastBackCorrectMs = 0;  // cooldown after back-correction to prevent ping-pong
 
+    // Groq word-level tracking: absolute ms of last heard word's end time.
+    // Used by _canDisplayAdvance() to block timer during silences/pauses.
+    this._lastHeardWordMs    = 0;
+    this._lastHeardWordCount = 0;
+
     this.fastMode = false;
     this.slowMode = false;  // paceMode: normal | fast | slow (fast and slow mutually exclusive)
 
@@ -1115,6 +1120,18 @@ export class AudioPipeline {
         return;
       }
 
+      // Word-level activity tracking (Groq returns word timestamps):
+      // Record the wall-clock time of the last spoken word in this chunk.
+      // If > 3s elapsed since then, reciter is in a pause — don't auto-advance.
+      if (this.isGroqMode && words.length > 0) {
+        const lastWord = words[words.length - 1];
+        if (lastWord && typeof lastWord.end === 'number') {
+          // lastWord.end is seconds relative to chunk start; startedAt is chunk-start wall-clock.
+          this._lastHeardWordMs = startedAt + Math.round(lastWord.end * 1000);
+          this._lastHeardWordCount = words.length;
+        }
+      }
+
       const cleaned = stripBismillahPrefix(cleanWhisperText(text.trim()));
 
       if (this.taraweehMode) {
@@ -1661,6 +1678,19 @@ export class AudioPipeline {
   // ── Timer: reading-pace advance (uncapped — Whisper corrects, never blocks) ─
 
   _canDisplayAdvance() {
+    // Groq silence guard: word-level timestamps let us detect when the reciter
+    // is paused (emotional, breath, end-of-ayah wait). If the last heard word
+    // was >3s ago, don't let the timer fire — reciter hasn't moved.
+    if (this.isGroqMode && this._lastHeardWordMs > 0) {
+      const silenceMs = Date.now() - this._lastHeardWordMs;
+      if (silenceMs > 3000) {
+        if (!this._lastSilenceLogMs || (Date.now() - this._lastSilenceLogMs) > 2000) {
+          console.log(`[Groq silence hold] ${silenceMs}ms since last word — blocking auto-advance`);
+          this._lastSilenceLogMs = Date.now();
+        }
+        return false;
+      }
+    }
     return this._displaySurah > 0 && this._displayAyah > 0
       && (this.state.mode === 'LOCKED' || this.state.mode === 'RESUMING' || this.state.mode === 'SEARCHING');
   }
