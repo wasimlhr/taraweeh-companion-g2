@@ -1250,6 +1250,28 @@ export class AudioPipeline {
       }
       const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
       const lag = this._displayAyah - confirmedAyah;
+      // GROQ SNAP-BACK: when display is 2+ ayahs ahead of what Groq is hearing,
+      // snap back immediately. Groq's 300ms latency means a confirmed lag of 2+
+      // is a real race-ahead, not stale audio. Lag=1 still waits for the
+      // existing repeat-count path (avoids bouncing on single-confirm mishears
+      // between adjacent short ayahs).
+      if (this.isGroqMode && !refrainVerse && lag >= 2 && score >= 50) {
+        console.log(`[Pipeline] Groq snap-back: display :${this._displayAyah} → :${confirmedAyah} (lag=${lag}, conf=${score}%)`);
+        this._sameAyahStreak = 0;
+        this._bumpCountForAyah = 0;
+        this._cancelReadAdvance();
+        this._displayAyah  = confirmedAyah;
+        this._driftMult    = 1.0;
+        this._ayahStartTime = Date.now();
+        this._lastBackCorrectMs = Date.now();
+        this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
+          lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
+        this._behindRepeatCount = 0;
+        this._behindRepeatAyah  = 0;
+        this._emitState(text, rms);
+        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
+        return;
+      }
       // High confidence (≥80%) = immediate back-correct (1 confirm)
       // Medium confidence: lag=1 needs 2, lag≥2 needs 3
       const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1 : (lag === 1 ? 2 : 3);
