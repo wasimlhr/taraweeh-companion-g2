@@ -588,7 +588,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.7.1</span>
+      <span class="version" id="versionEl">v4.7.3</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -718,12 +718,16 @@ body {
     <div class="s-status" id="backendStatus">Checking...</div>
     <div class="s-row" style="margin-top:12px">
       <span class="s-label">Microphone</span>
-      <span class="s-hint" style="margin-top:4px;display:block">G2 mic only.</span>
+      <div class="toggle-group" role="group">
+        <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">G2 mic</button>
+        <button type="button" class="toggle-btn" id="btnPhoneMic" onclick="setMicSource('phone')">Phone mic</button>
+      </div>
+      <span class="s-hint" style="margin-top:4px;display:block">Use G2 mic by default, or Phone mic after permission prompt.</span>
       <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">—</span>
       <button type="button" id="settingMicTest" class="back-btn" style="margin-top:6px;font-size:13px">🎤 Request mic permission</button>
     </div>
     <div class="s-warn" style="margin-top:8px;padding:10px 14px;background:var(--bc-accent);border-radius:var(--r);font-size:12px;color:var(--tc-1)">
-      <strong>Note:</strong> This app uses G2 mic permission from the glasses app.
+      <strong>Note:</strong> G2 and Phone mic both work when permission is granted.
     </div>
   </div>
 
@@ -780,7 +784,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.7.2';
+  const APP_VERSION = 'v4.7.3';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2510,9 +2514,11 @@ body {
   };
 
   // ─── Settings UI ──────────────────────────────────────────────────────────
-  window.setMicSource = function () {
-    // Settings keep G2 mic as the only selectable source.
-    S.settings.forcePhoneMic = false;
+  window.setMicSource = function (src) {
+    if (_backendStatusInfo.mobileOnlyMode) src = 'phone';
+    var isPhone = src === 'phone';
+    document.getElementById('btnG2Mic').classList.toggle('active', !isPhone);
+    document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
   };
 
   function updateEndpointLifecycleUI(lifecycle) {
@@ -2529,7 +2535,15 @@ body {
     var wakeRow = document.getElementById('wakeServerRow');
     if (wakeRow) wakeRow.style.display = _backendStatusInfo.endpointOnDemandEnabled ? '' : 'none';
 
-    S.settings.forcePhoneMic = false;
+    var g2Btn = document.getElementById('btnG2Mic');
+    var phoneBtn = document.getElementById('btnPhoneMic');
+    if (g2Btn && phoneBtn) {
+      g2Btn.disabled = _backendStatusInfo.mobileOnlyMode;
+      if (_backendStatusInfo.mobileOnlyMode) {
+        S.settings.forcePhoneMic = true;
+        setMicSource('phone');
+      }
+    }
   }
 
   function wakeServerNow() {
@@ -2570,7 +2584,7 @@ body {
     document.getElementById('settingLang').value = sanitizeTranslationLang(S.settings.lang || '');
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
-    setMicSource('g2');
+    setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     updateTranslationDesc();
     checkBackend();
@@ -2600,7 +2614,9 @@ body {
     S.settings.lang = sanitizeTranslationLang(document.getElementById('settingLang').value);
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);
-    S.settings.forcePhoneMic = false;
+    S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
+      ? true
+      : document.getElementById('btnPhoneMic').classList.contains('active');
     saveSettings();
     reinitPipeline();
     document.getElementById('settingsView').style.display = 'none';
