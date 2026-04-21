@@ -1453,13 +1453,25 @@ body {
     return [quad(0, 0), quad(MUSHAF_QUAD_W, 0), quad(0, MUSHAF_QUAD_H), quad(MUSHAF_QUAD_W, MUSHAF_QUAD_H)];
   }
 
+  function _mushafMakeImageUpdate(id, name, bytes) {
+    // Wrap in the SDK's typed class if available — the class runs normalizeImageData
+    // to serialise Uint8Array → List<int> correctly for the G2 bridge. Raw objects
+    // may skip that normalisation and end up sending a JSON-serialised Uint8Array
+    // that the glasses firmware can't decode.
+    var payload = { containerID: id, containerName: name, imageData: bytes };
+    if (S.sdk && S.sdk.ImageRawDataUpdate) {
+      try { return new S.sdk.ImageRawDataUpdate(payload); } catch (_) {}
+    }
+    return payload;
+  }
+
   function _mushafPushQuads(quads) {
     if (!S.bridge) return Promise.resolve();
     return Promise.all([
-      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS.tl, containerName: 'q_tl', imageData: quads[0] }),
-      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS.tr, containerName: 'q_tr', imageData: quads[1] }),
-      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS.bl, containerName: 'q_bl', imageData: quads[2] }),
-      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS.br, containerName: 'q_br', imageData: quads[3] }),
+      S.bridge.updateImageRawData(_mushafMakeImageUpdate(MUSHAF_Q_IDS.tl, 'q_tl', quads[0])),
+      S.bridge.updateImageRawData(_mushafMakeImageUpdate(MUSHAF_Q_IDS.tr, 'q_tr', quads[1])),
+      S.bridge.updateImageRawData(_mushafMakeImageUpdate(MUSHAF_Q_IDS.bl, 'q_bl', quads[2])),
+      S.bridge.updateImageRawData(_mushafMakeImageUpdate(MUSHAF_Q_IDS.br, 'q_br', quads[3])),
     ]);
   }
 
@@ -1636,7 +1648,9 @@ body {
 
   function _mushafImageContainers() {
     // 4 image containers forming a 2x2 grid of 200x100 quadrants, placed below the header.
-    return [
+    // Use the SDK's typed ImageContainerProperty class when available for correct
+    // protobuf serialisation (matches noor-recite's working pattern).
+    var raw = [
       { containerID: MUSHAF_Q_IDS.tl, containerName: 'q_tl',
         xPosition: MUSHAF_OFFSET_X,                   yPosition: MUSHAF_OFFSET_Y,
         width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
@@ -1650,6 +1664,10 @@ body {
         xPosition: MUSHAF_OFFSET_X + MUSHAF_QUAD_W,    yPosition: MUSHAF_OFFSET_Y + MUSHAF_QUAD_H,
         width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
     ];
+    if (S.sdk && S.sdk.ImageContainerProperty) {
+      return raw.map(function (r) { return new S.sdk.ImageContainerProperty(r); });
+    }
+    return raw;
   }
 
   function _createStartupContainerWithFallback() {
@@ -2889,6 +2907,7 @@ body {
 
     try {
       var sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.10/dist/index.js');
+      S.sdk = sdk;  // keep typed constructors (ImageRawDataUpdate, ImageContainerProperty, ...)
       S.bridge = await new Promise(function (resolve, reject) {
         var t = setTimeout(function () { reject(new Error('timeout 2s')); }, 2000);
         sdk.waitForEvenAppBridge().then(function (b) { clearTimeout(t); resolve(b); }, reject);
