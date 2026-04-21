@@ -588,7 +588,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.7.7</span>
+      <span class="version" id="versionEl">v4.7.8</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -785,7 +785,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.7.7';
+  const APP_VERSION = 'v4.7.8';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -810,6 +810,7 @@ body {
     startupPageCreated: false,
     bridgeCallQueue: Promise.resolve(),
     isShuttingDown: false,
+    pausedByBackground: false,
     g2MicPermissionState: 'unknown',
     unsubs: {
       evenHubEvent: null,
@@ -2171,6 +2172,45 @@ body {
     });
   }
 
+  function handleForegroundExit() {
+    if (!S.isRecording) return;
+    S.pausedByBackground = true;
+    stopSearchingDots();
+    stopLockingDots();
+    stopPageFlip();
+    stopCountdown();
+    try { stopG2Mic(); } catch (_) {}
+    try { stopBrowserMic(); } catch (_) {}
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      try { S.ws.send(JSON.stringify({ type: 'stop' })); } catch (_) {}
+    }
+    setStatus('Paused in background', 'error');
+    log('Paused capture while app is backgrounded', 'w');
+  }
+
+  function handleForegroundEnter() {
+    if (!S.pausedByBackground) return;
+    S.pausedByBackground = false;
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      try {
+        S.ws.send(JSON.stringify({
+          type: 'init',
+          preferredSurah: parseInt(S.settings.defaultSurah || '0'),
+          lang: (S.settings.lang || '').trim() || null,
+          pipelineVersion: S.settings.pipelineVersion || 'v4',
+          fastMode: _fastMode,
+          slowMode: _slowMode,
+        }));
+        S.ws.send(JSON.stringify({ type: 'start' }));
+      } catch (_) {}
+    }
+    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+    if (useBrowserMic) startBrowserMic();
+    else startG2Mic();
+    setStatus('Resumed in foreground', 'result');
+    log('Resumed capture after foreground enter', 'ok');
+  }
+
   function requestG2MicPermission() {
     if (!S.bridge || !S.isG2 || !S.startupPageCreated) {
       return Promise.reject(new Error('G2 bridge not ready'));
@@ -2268,8 +2308,10 @@ body {
         if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN) {
           S.ws.send(JSON.stringify({ type: 'start' }));
         }
+        handleForegroundEnter();
       } else if (st === 5) {
         log('G2 foreground exit', 'w');
+        handleForegroundExit();
       } else if (st === 6 || st === 7) {
         log('G2 exit event ' + st + ' — cleaning up', 'w');
         _cleanupBridgeResources();
