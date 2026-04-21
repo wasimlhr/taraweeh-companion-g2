@@ -588,7 +588,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.7.3</span>
+      <span class="version" id="versionEl">v4.7.4</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -696,6 +696,7 @@ body {
   <div id="waveRow"></div>
 
   <button id="recordBtn" disabled>Detecting glasses...</button>
+  <button id="wakeServerMainBtn" class="back-btn" style="display:none;margin-top:8px;font-size:13px">☁ Wake server</button>
 
   <div class="btn-group">
     <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Faster display for quick reciters">⚡ Fast</button>
@@ -784,7 +785,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.7.3';
+  const APP_VERSION = 'v4.7.4';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -987,6 +988,20 @@ body {
     mobileOnlyMode: false,
     endpointLifecycle: null,
   };
+
+  function shouldShowMainWakeButton() {
+    if (!_backendStatusInfo.endpointOnDemandEnabled) return false;
+    var l = _backendStatusInfo.endpointLifecycle || {};
+    var st = l.status || '';
+    // Show wake button when endpoint is likely scaled to zero or unavailable.
+    return st === 'standby' || st === 'error' || st === 'fallback' || st === 'unknown';
+  }
+
+  function refreshMainWakeButton() {
+    var btn = document.getElementById('wakeServerMainBtn');
+    if (!btn) return;
+    btn.style.display = shouldShowMainWakeButton() ? '' : 'none';
+  }
 
   // ─── Settings ─────────────────────────────────────────────────────────────
   function defaultWsUrl() {
@@ -2524,6 +2539,7 @@ body {
   function updateEndpointLifecycleUI(lifecycle) {
     if (!lifecycle || lifecycle.component !== 'model') return;
     _backendStatusInfo.endpointLifecycle = lifecycle;
+    refreshMainWakeButton();
   }
 
   function applyBackendModeSettings(status) {
@@ -2544,13 +2560,16 @@ body {
         setMicSource('phone');
       }
     }
+    refreshMainWakeButton();
   }
 
   function wakeServerNow() {
     var btn = document.getElementById('wakeServerBtn');
+    var mainBtn = document.getElementById('wakeServerMainBtn');
     var hint = document.getElementById('wakeServerHint');
     var base = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
     if (btn) btn.disabled = true;
+    if (mainBtn) mainBtn.disabled = true;
     if (hint) hint.textContent = 'Starting service...';
     fetch(base + '/api/endpoint/warmup')
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
@@ -2564,6 +2583,7 @@ body {
       })
       .finally(function () {
         if (btn) btn.disabled = false;
+        if (mainBtn) mainBtn.disabled = false;
       });
   }
 
@@ -2727,6 +2747,8 @@ body {
       if (S.isRecording) stopListening();
       else startListening();
     });
+    var wakeMainBtn = document.getElementById('wakeServerMainBtn');
+    if (wakeMainBtn) wakeMainBtn.addEventListener('click', wakeServerNow);
 
     // Connect WS eagerly on load so it's ready when user presses Start
     connectWS();
