@@ -208,6 +208,10 @@ wss.on('connection', (ws, req) => {
     if (opts && typeof opts === 'object' && opts.groqApiKey && typeof opts.groqApiKey === 'string') {
       whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: opts.groqApiKey.trim() };
       console.log('[Init] Client provided Groq API key — using Groq provider for this session');
+      // Groq is BYOK with no warmup probe; signal ready immediately so the UI
+      // stops lingering on "Connecting to transcription server…". Real status
+      // updates arrive after the first chunk is transcribed.
+      send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'groq' });
     }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
     const translationLang = sanitizeTranslationLang(requestedTranslation);
