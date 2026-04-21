@@ -245,6 +245,9 @@ export class AudioPipeline {
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
+    // Groq mode flag — used ONLY for anchor cross-surah detection aggressiveness
+    // (faster break-lock when user jumped surahs). No timer-path changes.
+    this.isGroqMode      = this.whisperOpts?.provider === 'groq';
 
     this.state     = createState();
     this.active    = false;
@@ -1155,6 +1158,7 @@ export class AudioPipeline {
         fastMode: this.fastMode,
         missBeforeResuming: MISSED_BEFORE_RESUMING_V3,
         missBeforeLost: MISSED_BEFORE_LOST_V3,
+        isGroqMode: this.isGroqMode,
       });
       const dropDecision = this._shouldDropLockedResult(anchorResult, resultAgeMs, seq);
       if (dropDecision.drop) {
@@ -1446,14 +1450,22 @@ export class AudioPipeline {
         const clampedWps = Math.max(0.5, Math.min(5.0, rawWps));
         // Conservative blend: 0.7 old + 0.3 new — prevents one noisy sample from racing the timer
         this._measuredWps = this._measuredWps * 0.7 + clampedWps * 0.3;
-        // Only sync _measuredMsPerWord from Whisper clock when NO manual samples exist.
-        // Manual advances are direct user feedback — higher trust than Whisper clock.
+        // Sync _measuredMsPerWord from Whisper clock.
+        //  - No manual samples: always sync.
+        //  - Manual samples exist + Groq mode: still sync, Groq is accurate enough
+        //    to override stale manual pace from earlier in the session.
+        //  - Manual samples exist + HF mode: keep manual (historical behaviour —
+        //    HF clock is noisier and user's manual taps are more trustworthy).
         const whisperMsPerWord = Math.round(1000 / this._measuredWps);
-        if (this._msPerWordSamples.length === 0) {
+        const shouldSync = this._msPerWordSamples.length === 0 || this.isGroqMode;
+        if (shouldSync) {
           this._measuredMsPerWord = whisperMsPerWord;
           this._whisperClockSamples++;
         }
-        console.log(`[Pipeline] Whisper clock: ${totalWords}w in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps (${whisperMsPerWord}ms/w)${this._msPerWordSamples.length > 0 ? ' [manual pace kept: ' + this._measuredMsPerWord + 'ms/w]' : ''}`);
+        const syncTag = shouldSync
+          ? (this._msPerWordSamples.length > 0 ? ' [Groq override: synced]' : '')
+          : ` [manual pace kept: ${this._measuredMsPerWord}ms/w]`;
+        console.log(`[Pipeline] Whisper clock: ${totalWords}w in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps (${whisperMsPerWord}ms/w)${syncTag}`);
 
         this._updatePace(clampedWps, now);
       }
