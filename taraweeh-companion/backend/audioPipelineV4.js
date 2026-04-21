@@ -1494,8 +1494,12 @@ export class AudioPipeline {
         if (totalWords === 0) totalWords = 4; // safety fallback for single-ayah jump
         const rawWps = totalWords / (elapsedMs / 1000);
         const clampedWps = Math.max(0.5, Math.min(5.0, rawWps));
-        // Conservative blend: 0.7 old + 0.3 new — prevents one noisy sample from racing the timer
-        this._measuredWps = this._measuredWps * 0.7 + clampedWps * 0.3;
+        // Blend: HF uses 0.7 old / 0.3 new (conservative — HF clock is noisy).
+        // Groq uses 0.4 old / 0.6 new — Groq confirms are accurate, so the pacer
+        // should follow reciter speed changes quickly (taraweeh tempo shifts).
+        const oldWeight = this.isGroqMode ? 0.4 : 0.7;
+        const newWeight = 1 - oldWeight;
+        this._measuredWps = this._measuredWps * oldWeight + clampedWps * newWeight;
         // Sync _measuredMsPerWord from Whisper clock.
         //  - No manual samples: always sync.
         //  - Manual samples exist + Groq mode: still sync, Groq is accurate enough
