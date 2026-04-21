@@ -648,11 +648,9 @@ body {
     <div class="s-pill" id="sPillShown" style="display:none">
       <span class="s-dot"></span><span class="s-label" id="shownRef">Shown: --</span>
     </div>
-    <div class="s-pill" id="sPillPace" style="display:none;cursor:pointer;user-select:none" title="Tap to adjust: single = slower, double = faster">
+    <div class="s-pill" id="sPillPace" style="display:none">
       <span class="s-dot"></span><span class="s-label">Pace: --</span>
     </div>
-    <button type="button" id="btnPaceSlower" onclick="nudgePace(1.2)" style="display:none;padding:3px 8px;margin:2px;font-size:11px;border:1px solid var(--bc-4);background:var(--bc-2);color:var(--tc-1);border-radius:6px;cursor:pointer" title="Reciter slowed down — slow the tracker">🐢 Slower</button>
-    <button type="button" id="btnPaceFaster" onclick="nudgePace(0.8)" style="display:none;padding:3px 8px;margin:2px;font-size:11px;border:1px solid var(--bc-4);background:var(--bc-2);color:var(--tc-1);border-radius:6px;cursor:pointer" title="Reciter sped up — speed up the tracker">⚡ Faster</button>
     <div class="s-pill info" id="sPillTimer" style="display:none">
       <span class="s-dot"></span><span class="s-label">Next: --</span>
     </div>
@@ -1145,8 +1143,6 @@ body {
     var el = document.getElementById('sPillPace');
     if (!el) return;
     el.style.display = '';
-    document.getElementById('btnPaceSlower').style.display = '';
-    document.getElementById('btnPaceFaster').style.display = '';
     var wps = pace.wps || 0;
     var cat = pace.category || '';
     var trend = pace.trend || 'steady';
