@@ -1380,6 +1380,22 @@ export class AudioPipeline {
         this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
         return;
       }
+      // GROQ: snap immediately for any gap ≥ 2. Groq is authoritative and the
+      // smooth-step delay (2s per ayah) was letting display lag 4-8s behind on
+      // gap=4 cases. HF keeps smooth catch-up because its mishears need the
+      // buffer to avoid wild jumps.
+      if (this.isGroqMode && score >= 50) {
+        this._cancelReadAdvance();
+        console.log(`[Pipeline] Groq catch-up snap: :${this._displayAyah} → :${confirmedAyah} (gap=${gap}, conf=${score}%)`);
+        this._displaySurah = confirmedSurah;
+        this._displayAyah  = confirmedAyah;
+        this._ayahStartTime = Date.now();
+        this.state = { ...this.state, surah: confirmedSurah, ayah: confirmedAyah,
+          lastLockedSurah: confirmedSurah, lastLockedAyah: confirmedAyah };
+        this._emitState(text, rms);
+        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
+        return;
+      }
       // Already in smooth catch-up — don't restart; rapid Whisper results would
       // otherwise cancel the timer and advance immediately, causing a 3-ayah jump.
       if (this._smoothAdvanceTimer) {
@@ -1387,7 +1403,6 @@ export class AudioPipeline {
         return;
       }
       this._cancelReadAdvance();
-      // Larger gaps: slower step to avoid "skipping" through ayahs (e.g. 105+ in long surahs)
       const stepMs = gap >= 4 ? 2000 : gap >= 3 ? 1600 : SMOOTH_ADVANCE_STEP_MS;
       console.log(`[Pipeline] Whisper :${confirmedAyah} ahead of display :${this._displayAyah} — catch-up (${gap} steps, ${stepMs}ms/step)`);
       this._smoothAdvanceTo(confirmedSurah, confirmedAyah, stepMs);
