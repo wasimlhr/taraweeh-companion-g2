@@ -771,6 +771,10 @@ body {
     <span class="s-label">Mobile-only mode</span>
     <span class="s-hint">Enabled by host env. Phone mic is enforced for this deployment.</span>
   </div>
+  <div class="s-row" id="wakeServerRow" style="display:none;margin-top:8px">
+    <button type="button" id="wakeServerBtn" class="back-btn" style="font-size:13px">Start service now</button>
+    <span class="s-hint" id="wakeServerHint" style="margin-top:6px;display:block">Use this if service is sleeping.</span>
+  </div>
 
   <div class="settings-footer">
     <div id="settingsVersion"></div>
@@ -2528,6 +2532,8 @@ body {
 
     var mobileRow = document.getElementById('mobileOnlyHintRow');
     if (mobileRow) mobileRow.style.display = _backendStatusInfo.mobileOnlyMode ? '' : 'none';
+    var wakeRow = document.getElementById('wakeServerRow');
+    if (wakeRow) wakeRow.style.display = _backendStatusInfo.endpointOnDemandEnabled ? '' : 'none';
 
     var g2Btn = document.getElementById('btnG2Mic');
     var phoneBtn = document.getElementById('btnPhoneMic');
@@ -2538,6 +2544,27 @@ body {
         setMicSource('phone');
       }
     }
+  }
+
+  function wakeServerNow() {
+    var btn = document.getElementById('wakeServerBtn');
+    var hint = document.getElementById('wakeServerHint');
+    var base = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
+    if (btn) btn.disabled = true;
+    if (hint) hint.textContent = 'Starting service...';
+    fetch(base + '/api/endpoint/warmup')
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.body.message || 'Start failed');
+        if (hint) hint.textContent = 'Service start request sent.';
+        checkBackend();
+      })
+      .catch(function (err) {
+        if (hint) hint.textContent = (err && err.message) ? err.message : 'Unable to start service';
+      })
+      .finally(function () {
+        if (btn) btn.disabled = false;
+      });
   }
 
 
@@ -2563,6 +2590,8 @@ body {
     checkBackend();
     updateMicStatus();
     document.getElementById('settingMicTest').onclick = requestMicFromSettings;
+    var wakeBtn = document.getElementById('wakeServerBtn');
+    if (wakeBtn) wakeBtn.onclick = wakeServerNow;
   };
 
   function reinitPipeline() {
