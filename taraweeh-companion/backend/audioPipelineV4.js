@@ -148,13 +148,9 @@ const CLIP_THRESHOLD = parseFloat(process.env.CLIP_THRESHOLD || '0.10');
 const CLIP_TARGET    = parseFloat(process.env.CLIP_TARGET    || '0.04');
 const QUIET_BOOST_THRESHOLD = 0.015;  // G2 mic often 0.001–0.009 — boost to proper speech level
 const QUIET_BOOST_TARGET   = 0.08;   // target normal speech RMS for better Whisper accuracy
-function applyClipGuard(pcm, rms, skipQuietBoost = false) {
+function applyClipGuard(pcm, rms) {
   let gain = 1;
-  if (!skipQuietBoost && rms > 0 && rms < QUIET_BOOST_THRESHOLD) {
-    // Quiet boost is a Whisper-specific trick — amplifying weak audio helps
-    // whisper-large-v3 pull signal out. Groq's turbo model handles quiet audio
-    // natively and the amplification turns silence/noise into "music"/"translation"
-    // hallucinations instead. Skip for Groq (caller passes skipQuietBoost=true).
+  if (rms > 0 && rms < QUIET_BOOST_THRESHOLD) {
     gain = QUIET_BOOST_TARGET / rms;
     console.log(`[Pipeline] G2 quiet boost: rms=${rms.toFixed(4)} → ${QUIET_BOOST_TARGET} (gain=${gain.toFixed(0)})`);
   } else if (rms > CLIP_THRESHOLD) {
@@ -249,10 +245,6 @@ export class AudioPipeline {
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
-    // Groq returns in ~300ms vs HF ~1500ms — shorter timers and less lag comp
-    // needed. Gated ONLY on timer floors so HF behaviour is 100% unchanged.
-    this.isGroqMode      = this.whisperOpts?.provider === 'groq';
-    if (this.isGroqMode) console.log('[Pipeline] Groq mode: shorter timers for faster reciter tracking');
 
     this.state     = createState();
     this.active    = false;
@@ -835,7 +827,7 @@ export class AudioPipeline {
       let text = '';
       let words = [];  // V4: Word timestamps from Whisper
       try {
-        const audioToSend = applyClipGuard(this._searchBuf, rms, this.isGroqMode);
+        const audioToSend = applyClipGuard(this._searchBuf, rms);
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
@@ -1100,7 +1092,7 @@ export class AudioPipeline {
       let words = [];  // V4: Word timestamps from Whisper
       let resultAgeMs = 0;
       try {
-        const audioToSend = applyClipGuard(chunk, rms, this.isGroqMode);
+        const audioToSend = applyClipGuard(chunk, rms);
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
@@ -1375,21 +1367,6 @@ export class AudioPipeline {
         this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
         return;
       }
-      // Groq mode: snap forward immediately for any confirmed gap — the 300ms
-      // transcribe latency makes Groq's position authoritative. Smooth catch-up
-      // was added to protect against HF mishears; Groq doesn't need that safety.
-      if (this.isGroqMode && score >= 55) {
-        this._cancelReadAdvance();
-        console.log(`[Pipeline] Groq catch-up: snap ${this._displayAyah} → :${confirmedAyah} (gap=${gap}, conf=${score}%)`);
-        this._displaySurah = confirmedSurah;
-        this._displayAyah  = confirmedAyah;
-        this._ayahStartTime = Date.now();
-        this.state = { ...this.state, surah: confirmedSurah, ayah: confirmedAyah,
-          lastLockedSurah: confirmedSurah, lastLockedAyah: confirmedAyah };
-        this._emitState(text, rms);
-        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
-        return;
-      }
       // Already in smooth catch-up — don't restart; rapid Whisper results would
       // otherwise cancel the timer and advance immediately, causing a 3-ayah jump.
       if (this._smoothAdvanceTimer) {
@@ -1624,39 +1601,6 @@ export class AudioPipeline {
   _scheduleReadAdvance(confidence, afterPauseMinMs = 0, durationFactor = 1.0, overrideDurationMs = 0) {
     this._cancelReadAdvance();
     if (!this._canDisplayAdvance()) return;
-    // Groq mode: use a long safety timer (12s) instead of the word-weight
-    // estimate. Groq confirms reciter position every ~500ms and will preempt
-    // this timer via the normal gap≥1 snap path. The safety exists only to
-    // prevent lockup if Groq misses several chunks (e.g. silence, music
-    // hallucination). Display advance on fire is cheap — Groq will snap
-    // back if it was wrong to advance.
-    if (this.isGroqMode && !overrideDurationMs) {
-      const safetyMs = 12000;
-      this._nextAdvanceMs = safetyMs;
-      this._timerStartedAt = Date.now();
-      console.log(`[Pipeline] Groq safety timer: ${safetyMs}ms (will be preempted by Groq confirmation)`);
-      this._displayAdvanceTimer = setTimeout(() => {
-        this._displayAdvanceTimer = null;
-        this._nextAdvanceMs = 0;
-        this._timerStartedAt = 0;
-        if (!this._canDisplayAdvance()) return;
-        const nextData = getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
-        if (!nextData) {
-          this._scheduleReadAdvance(this.state.confidence);
-          return;
-        }
-        this._sameAyahStreak = 0;
-        this._bumpCountForAyah = 0;
-        this._displayAyah++;
-        this._ayahStartTime = Date.now();
-        this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
-          lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
-        console.log(`[Pipeline] Groq safety-advance → ${this._displaySurah}:${this._displayAyah}`);
-        this._emitState(null, null);
-        this._scheduleReadAdvance(this.state.confidence);
-      }, safetyMs);
-      return;
-    }
 
     let durationMs;
     if (overrideDurationMs > 0) {
@@ -1725,32 +1669,26 @@ export class AudioPipeline {
     // Live data shows ~1.9s/word for slow reciters, ~0.9s for normal, ~0.5s for fast.
     // Whisper confirms hold/extend if reciter is still on the ayah.
     // Use learned pace if available, otherwise fallback defaults
-    // HF: 1400ms/w baseline. Groq: 800ms/w — its 300ms transcribe latency means
-    // confirmations drive advancement before the timer would have expired, so
-    // shorter timers don't over-advance blindly.
-    const defaultMsPerWord = this.isGroqMode
-      ? (this.fastMode ? 600 : this.slowMode ? 1100 : 800)
-      : (this.fastMode ? 1000 : this.slowMode ? 1800 : 1400);
+    // Base default 1400ms/w. Fast/slow nudge it ±30%. Learned pace overrides.
+    const defaultMsPerWord = this.fastMode ? 1000 : this.slowMode ? 1800 : 1400;
     // Trust manual pace after 1 sample (direct user feedback), Whisper-only after 3 confirmations
     const msPerWord = (this._measuredMsPerWord > 0 && (this._msPerWordSamples.length >= 1 || this._whisperClockSamples >= 3))
       ? this._measuredMsPerWord : defaultMsPerWord;
+    // Use totalWeight (corpus-based) instead of plain wordCount for proportional timing
     const rawMs = Math.round(totalWeight * msPerWord) + elongBonusMs;
-    // Short-ayah floor (juz 30 etc). Groq mode goes much lower because Groq
-    // will confirm the reciter has moved on within ~500ms of them finishing —
-    // we don't need a big safety buffer.
-    const shortAyahFloor = this.isGroqMode
-      ? (wordCount <= 4 ? 700 : 1500)
-      : (wordCount <= 4 ? 1500 : 2500);
-    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? (this.isGroqMode ? 4500 : 6000) : (this.fastMode ? Math.min(shortAyahFloor, 1500) : shortAyahFloor));
+    // Short ayahs (≤4 words, common in juz 30 khatam) get a lower floor — 1.5s instead
+    // of 2.5s. On khatam nights the imam races through these; 2.5s floor causes the
+    // display to lag behind by 2-3 ayahs, making tracking useless.
+    const shortAyahFloor = wordCount <= 4 ? 1500 : 2500;
+    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : (this.fastMode ? Math.min(shortAyahFloor, 2000) : shortAyahFloor));
     const baseDurationMs = Math.max(rawMs, floorMs);
     durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
     if (durationFactor < 1.0) {
-      // HF: 6s pipeline lag (4s capture + 2s RTT). Groq: 4.4s (4s capture + ~400ms RTT).
-      const PIPELINE_LAG_MS = this.isGroqMode ? 1500 : 6000;
+      // Whisper data is ~6s old. Subtract pipeline lag — but never more than half
+      // the timer. Short ayahs (3-6 words) shouldn't get crushed to 1s.
+      const PIPELINE_LAG_MS = 6000;
       const maxSubtract = Math.floor(durationMs * 0.5);
-      const minAfterLag = this.isGroqMode
-        ? (wordCount <= 4 ? 700 : 1500)
-        : (wordCount <= 4 ? 1500 : 3000);
+      const minAfterLag = wordCount <= 4 ? 1500 : 3000;
       durationMs = Math.max(minAfterLag, durationMs - Math.min(PIPELINE_LAG_MS, maxSubtract));
     }
 
@@ -2179,7 +2117,6 @@ export class AudioPipeline {
         // V4: Word X/Y so frontend can show progress as soon as LOCKED (e.g. after reconnect)
         totalWords: stateTotalWords,
         wordIndex: stateWordIndex,
-        // Live-tracking pills on frontend show Whisper's confirmed position vs display
         whisperSurah: this._whisperSurah || undefined,
         whisperAyah: this._whisperAyah || undefined,
       },

@@ -525,13 +525,10 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
             _locked: true,
           };
         }
-        // Back-match thresholds lowered — Groq returns ~400ms latency (not 6s
-        // like HF) so "back by 1" is usually a real reciter repeat, not buffer
-        // lag. Small typos in Groq output (e.g. موازيره vs موازينه) mean scores
-        // can be moderate even on legit matches. Pipeline-level repeat-count
-        // guard still protects HF from ping-pong.
+        // Back by 1 ayah is almost always audio buffer lag — always ignore.
+        // Back by 2+ needs strong score, scaled by distance.
         const backDist = state.ayah - wideCheck.ayah;
-        const backMinScore = backDist <= 1 ? 0.50 : backDist <= 2 ? 0.35 : 0.55;
+        const backMinScore = backDist <= 1 ? 999 : backDist <= 2 ? 0.70 : 0.80;
         if (wideCheck.score < backMinScore) {
           console.log(`[Anchor] Back-match ignored: :${wideCheck.ayah} (dist=${backDist}, score=${wideCheck.score.toFixed(2)} < ${backMinScore}) — holding :${state.ayah}`);
           return {
