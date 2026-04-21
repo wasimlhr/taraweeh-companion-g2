@@ -2449,9 +2449,14 @@ body {
             try { renderMushafAyah(msg.state.surah, msg.state.ayah); } catch (_) {}
             var wc = (msg.state.arabic || '').split(/\s+/).length || 4;
             var rawMs = msg.state.timerMs || Math.max(3000, wc * 700);
-            // Shave 500ms so the visual countdown finishes just before the next
-            // ayah arrives, eliminating the "dead" gap between timer=0 and new text.
-            var estMs = Math.max(1500, rawMs - 500);
+            // With Groq (fast transcription), the next ayah lock arrives sooner than
+            // the display timer would expire — shave more aggressively so the visual
+            // countdown doesn't lag behind real events. The next state update will
+            // still preempt the timer immediately when an ayah change arrives.
+            var usingGroq = S.settings && S.settings.transcriptionProvider === 'groq';
+            var shave = usingGroq ? 1200 : 500;
+            var floor = usingGroq ? 900 : 1500;
+            var estMs = Math.max(floor, rawMs - shave);
             startPageFlip(gDisplay, estMs);
           } else if (msg.state.timerMs && !_pageTimer) {
             // Refresh countdown when we have timerMs — backend sends every 1s so

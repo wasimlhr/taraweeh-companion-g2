@@ -48,8 +48,8 @@ export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null) {
   const data = await res.json();
   const latencyMs = Date.now() - t0;
   emit?.({ component: 'model', status: 'ready', provider: 'groq', latencyMs });
-
   const text = (data.text || '').trim();
+  console.log(`[Groq] ${latencyMs}ms  wav=${wav.length}B  text="${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
   // Groq's verbose_json doesn't give word-level timestamps like HF whisper does.
   // Segments-level is available as data.segments but pipeline's word tracking would need adaptation.
   // For now return empty words array; lock-quality matching still works on text alone.
