@@ -588,7 +588,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.7</span>
+      <span class="version" id="versionEl">v4.7.8</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -696,6 +696,7 @@ body {
   <div id="waveRow"></div>
 
   <button id="recordBtn" disabled>Detecting glasses...</button>
+  <button id="wakeServerMainBtn" class="back-btn" style="display:none;margin-top:8px;font-size:13px">☁ Wake server</button>
 
   <div class="btn-group">
     <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Faster display for quick reciters">⚡ Fast</button>
@@ -722,12 +723,12 @@ body {
         <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">G2 mic</button>
         <button type="button" class="toggle-btn" id="btnPhoneMic" onclick="setMicSource('phone')">Phone mic</button>
       </div>
-      <span class="s-hint" style="margin-top:4px;display:block">G2 = glasses mic. Phone = force browser mic if no prompt.</span>
+      <span class="s-hint" style="margin-top:4px;display:block">Use G2 mic by default, or Phone mic after permission prompt.</span>
       <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">—</span>
       <button type="button" id="settingMicTest" class="back-btn" style="margin-top:6px;font-size:13px">🎤 Request mic permission</button>
     </div>
     <div class="s-warn" style="margin-top:8px;padding:10px 14px;background:var(--bc-accent);border-radius:var(--r);font-size:12px;color:var(--tc-1)">
-      <strong>Note:</strong> The Even G2 app may not allow phone mic permission. Use G2 mic when running in the app.
+      <strong>Note:</strong> G2 and Phone mic both work when permission is granted.
     </div>
   </div>
 
@@ -736,8 +737,8 @@ body {
     <div class="s-row">
       <span class="s-label">Tracking style</span>
       <select id="settingPipeline">
-        <option value="v4">Recommended (smoother tracking)</option>
-        <option value="v3">Compatibility mode</option>
+        <option value="v4">V4 (Recommended)</option>
+        <option value="v3">V3 (Compatibility)</option>
       </select>
       <span class="s-hint">Only V3 and V4 are supported.</span>
     </div>
@@ -771,6 +772,10 @@ body {
     <span class="s-label">Mobile-only mode</span>
     <span class="s-hint">Enabled by host env. Phone mic is enforced for this deployment.</span>
   </div>
+  <div class="s-row" id="wakeServerRow" style="display:none;margin-top:8px">
+    <button type="button" id="wakeServerBtn" class="back-btn" style="font-size:13px">Start service now</button>
+    <span class="s-hint" id="wakeServerHint" style="margin-top:6px;display:block">Use this if service is sleeping.</span>
+  </div>
 
   <div class="s-section">Transcription (advanced)</div>
   <div class="s-card">
@@ -795,7 +800,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.7';
+  const APP_VERSION = 'v4.7.8';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -820,6 +825,7 @@ body {
     startupPageCreated: false,
     bridgeCallQueue: Promise.resolve(),
     isShuttingDown: false,
+    pausedByBackground: false,
     g2MicPermissionState: 'unknown',
     unsubs: {
       evenHubEvent: null,
@@ -999,9 +1005,23 @@ body {
     endpointLifecycle: null,
   };
 
+  function shouldShowMainWakeButton() {
+    if (!_backendStatusInfo.endpointOnDemandEnabled) return false;
+    var l = _backendStatusInfo.endpointLifecycle || {};
+    var st = l.status || '';
+    // Show wake button when endpoint is likely scaled to zero or unavailable.
+    return st === 'standby' || st === 'error' || st === 'fallback' || st === 'unknown';
+  }
+
+  function refreshMainWakeButton() {
+    var btn = document.getElementById('wakeServerMainBtn');
+    if (!btn) return;
+    btn.style.display = shouldShowMainWakeButton() ? '' : 'none';
+  }
+
   // ─── Settings ─────────────────────────────────────────────────────────────
   function defaultWsUrl() {
-    return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
+    return 'wss://taraweeh.up.railway.app/ws';
   }
 
   var DEFAULT_SETTINGS = {
@@ -1099,7 +1119,7 @@ body {
           fe.querySelector('.s-label').textContent = 'whisper-v3';
           break;
         case 'error':
-          setPill('sPillModel', 'err', 'Server down \u2014 tap settings');
+          setPill('sPillModel', 'warn', 'Server warming up…');
           break;
       }
     } else if (s.type === 'fast_mode') {
@@ -1167,7 +1187,7 @@ body {
   // Canvas: 576x288. Header: 40px, body: 248px.
   // Body: borderWidth=0, paddingLength=2 → maximize usable width (no scroll bar, more text per line)
   var G2_HDR_H   = 40;
-  var G2_VER_W   = 55;   // version container width (snug for "v4.7")
+  var G2_VER_W   = 72;   // version container width (snug for "v4.7.1")
   var G2_HDR_W   = 576 - G2_VER_W;  // title takes the rest
   var G2_VER_X   = G2_HDR_W;  // version flush to right edge
   var G2_BODY_Y  = G2_HDR_H;
@@ -1595,6 +1615,16 @@ body {
     var hdr = _hdrWithPage(display.hdr, idx, total);
     glassesUpdate({ hdr: hdr, body: display.pages[idx] });
     return hdr;
+  }
+
+  function mirrorManualNavOnGlasses() {
+    if (!S.isG2) return;
+    var st = S._lastGlassesState || { mode: 'SEARCHING' };
+    var d = buildGlassesText(st);
+    stopPageFlip();
+    stopCountdown();
+    S.displayRebuilt = false;
+    showGlassesPage(d, 0);
   }
 
   // ─── Auto page-flip timer ─────────────────────────────────────────────────
@@ -2159,6 +2189,45 @@ body {
     });
   }
 
+  function handleForegroundExit() {
+    if (!S.isRecording) return;
+    S.pausedByBackground = true;
+    stopSearchingDots();
+    stopLockingDots();
+    stopPageFlip();
+    stopCountdown();
+    try { stopG2Mic(); } catch (_) {}
+    try { stopBrowserMic(); } catch (_) {}
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      try { S.ws.send(JSON.stringify({ type: 'stop' })); } catch (_) {}
+    }
+    setStatus('Paused in background', 'error');
+    log('Paused capture while app is backgrounded', 'w');
+  }
+
+  function handleForegroundEnter() {
+    if (!S.pausedByBackground) return;
+    S.pausedByBackground = false;
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      try {
+        S.ws.send(JSON.stringify({
+          type: 'init',
+          preferredSurah: parseInt(S.settings.defaultSurah || '0'),
+          lang: (S.settings.lang || '').trim() || null,
+          pipelineVersion: S.settings.pipelineVersion || 'v4',
+          fastMode: _fastMode,
+          slowMode: _slowMode,
+        }));
+        S.ws.send(JSON.stringify({ type: 'start' }));
+      } catch (_) {}
+    }
+    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+    if (useBrowserMic) startBrowserMic();
+    else startG2Mic();
+    setStatus('Resumed in foreground', 'result');
+    log('Resumed capture after foreground enter', 'ok');
+  }
+
   function requestG2MicPermission() {
     if (!S.bridge || !S.isG2 || !S.startupPageCreated) {
       return Promise.reject(new Error('G2 bridge not ready'));
@@ -2256,8 +2325,10 @@ body {
         if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN) {
           S.ws.send(JSON.stringify({ type: 'start' }));
         }
+        handleForegroundEnter();
       } else if (st === 5) {
         log('G2 foreground exit', 'w');
+        handleForegroundExit();
       } else if (st === 6 || st === 7) {
         log('G2 exit event ' + st + ' — cleaning up', 'w');
         _cleanupBridgeResources();
@@ -2332,6 +2403,7 @@ body {
       if (S.ws && S.ws.readyState === WebSocket.OPEN) {
         S.ws.send(JSON.stringify({ type: t === 1 ? 'manual_prev' : 'manual_advance' }));
       }
+      mirrorManualNavOnGlasses();
     }
   }
 
@@ -2339,11 +2411,13 @@ body {
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'manual_prev' }));
     }
+    mirrorManualNavOnGlasses();
   };
   window.manualNextAyah = function () {
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'manual_advance' }));
     }
+    mirrorManualNavOnGlasses();
   };
 
   // ─── Record button ────────────────────────────────────────────────────────
@@ -2537,6 +2611,7 @@ body {
   function updateEndpointLifecycleUI(lifecycle) {
     if (!lifecycle || lifecycle.component !== 'model') return;
     _backendStatusInfo.endpointLifecycle = lifecycle;
+    refreshMainWakeButton();
   }
 
   function applyBackendModeSettings(status) {
@@ -2545,6 +2620,8 @@ body {
 
     var mobileRow = document.getElementById('mobileOnlyHintRow');
     if (mobileRow) mobileRow.style.display = _backendStatusInfo.mobileOnlyMode ? '' : 'none';
+    var wakeRow = document.getElementById('wakeServerRow');
+    if (wakeRow) wakeRow.style.display = '';
 
     var g2Btn = document.getElementById('btnG2Mic');
     var phoneBtn = document.getElementById('btnPhoneMic');
@@ -2555,6 +2632,31 @@ body {
         setMicSource('phone');
       }
     }
+    refreshMainWakeButton();
+  }
+
+  function wakeServerNow() {
+    var btn = document.getElementById('wakeServerBtn');
+    var mainBtn = document.getElementById('wakeServerMainBtn');
+    var hint = document.getElementById('wakeServerHint');
+    var base = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
+    if (btn) btn.disabled = true;
+    if (mainBtn) mainBtn.disabled = true;
+    if (hint) hint.textContent = 'Starting service...';
+    fetch(base + '/api/endpoint/warmup')
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.body.message || 'Start failed');
+        if (hint) hint.textContent = 'Service start request sent.';
+        checkBackend();
+      })
+      .catch(function () {
+        if (hint) hint.textContent = 'Warming up server… please wait';
+      })
+      .finally(function () {
+        if (btn) btn.disabled = false;
+        if (mainBtn) mainBtn.disabled = false;
+      });
   }
 
 
@@ -2581,6 +2683,8 @@ body {
     checkBackend();
     updateMicStatus();
     document.getElementById('settingMicTest').onclick = requestMicFromSettings;
+    var wakeBtn = document.getElementById('wakeServerBtn');
+    if (wakeBtn) wakeBtn.onclick = wakeServerNow;
   };
 
   function reinitPipeline() {
@@ -2618,14 +2722,20 @@ body {
     var url = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
     var el = document.getElementById('backendStatus');
     fetch(url + '/api/status').then(function (r) { return r.json(); }).then(function (s) {
-      el.textContent = '✓ Service online';
+      el.textContent = '✓ Service online (live)';
       el.style.color = 'var(--tc-green)';
       applyBackendModeSettings(s || {});
       updateEndpointLifecycleUI(s.endpointLifecycle || { component: 'model', status: 'unknown' });
     }).catch(function () {
-      el.textContent = '✕ Service offline';
-      el.style.color = 'var(--tc-red)';
-      updateEndpointLifecycleUI({ component: 'model', status: 'error', message: 'Backend not reachable' });
+      // If realtime socket is already connected, keep status as online despite REST check hiccups.
+      if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+        el.textContent = '✓ Service online (live)';
+        el.style.color = 'var(--tc-green)';
+        return;
+      }
+      el.textContent = '… Service reconnecting';
+      el.style.color = 'var(--tc-orange)';
+      updateEndpointLifecycleUI({ component: 'model', status: 'loading', message: 'Service reconnecting' });
     });
   }
 
@@ -2712,6 +2822,8 @@ body {
       if (S.isRecording) stopListening();
       else startListening();
     });
+    var wakeMainBtn = document.getElementById('wakeServerMainBtn');
+    if (wakeMainBtn) wakeMainBtn.addEventListener('click', wakeServerNow);
 
     // Connect WS eagerly on load so it's ready when user presses Start
     connectWS();
