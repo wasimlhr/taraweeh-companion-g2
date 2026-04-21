@@ -1853,7 +1853,12 @@ body {
     var bottomMode = (S.settings && S.settings.glassesBottom) || 'arabic';
     // Only the 'transliteration' mode shows Latin text. 'arabic' mode puts Arabic
     // in the image below; 'translation-only' shows English translation alone.
-    var effectiveTransliteration = (bottomMode === 'transliteration') ? transliteration : '';
+    // Long-ayah exception: when the ENGLISH translation alone already spans
+    // more than half the screen, suppress transliteration even if the user
+    // picked that mode — translation is more useful than scrolling past it
+    // to see Latin letters you won't finish reading during recitation.
+    var longAyah = transLines.length > Math.floor(maxLines / 2);
+    var effectiveTransliteration = (bottomMode === 'transliteration' && !longAyah) ? transliteration : '';
     var tlitLines  = effectiveTransliteration ? wrapText(effectiveTransliteration, G2_CHARS) : [];
     var tlitBlock  = tlitLines.length > 0 ? [G2_DIV].concat(tlitLines) : [];
     var tlitCost   = tlitBlock.length;

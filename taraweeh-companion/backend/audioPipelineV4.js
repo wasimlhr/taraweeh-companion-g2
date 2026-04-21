@@ -81,6 +81,10 @@ const SMOOTH_ADVANCE_STEP_MS   = parseInt(process.env.SMOOTH_ADVANCE_STEP_MS    
 const FIRST_LOCK_DURATION_FACTOR = parseFloat(process.env.FIRST_LOCK_DURATION_FACTOR || '0.25', 10);
 // After catch-up or back-correct: reciter is partway through ayah — use shorter timer
 const CORRECTED_DURATION_FACTOR = parseFloat(process.env.CORRECTED_DURATION_FACTOR || '0.5', 10);
+// Groq-specific: after a snap, the confirmed ayah was captured ~3s ago.
+// Reciter has moved forward in that window. Shorter factor so display
+// auto-advances sooner if Groq doesn't confirm the next ayah first.
+const GROQ_CORRECTED_DURATION_FACTOR = parseFloat(process.env.GROQ_CORRECTED_DURATION_FACTOR || '0.3', 10);
 // Cooldown after back-correction: suppress further back-corrections for this many ms
 const BACK_CORRECT_COOLDOWN_MS = parseInt(process.env.BACK_CORRECT_COOLDOWN_MS || '5000', 10);
 // User manual: press Prev when display 1 ayah ahead → logic advances too fast. Add lag to align.
