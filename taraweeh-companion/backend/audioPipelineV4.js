@@ -92,7 +92,7 @@ const PAUSE_ANALYSIS_BYTES = Math.floor(BYTES_PER_MS * PAUSE_ANALYSIS_MS);
 const PAUSE_THRESHOLD      = parseFloat(process.env.PAUSE_THRESHOLD   || '0.005');
 const PAUSE_ADVANCE_MS     = parseInt(process.env.PAUSE_ADVANCE_MS    || '2500', 10);
 const PAUSE_COOLDOWN_MS    = parseInt(process.env.PAUSE_COOLDOWN_MS   || '6000', 10);
-const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '4000', 10);
+const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '2000', 10);
 
 const BASE_DISPLAY_LEAD = 2;
 const BLOCKED_FORCE_UNBLOCK_MS = 8000;  // Force-unblock after 8s even without real Whisper match
@@ -245,10 +245,6 @@ export class AudioPipeline {
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
-    // Groq returns in ~300ms vs HF ~1500ms. When in Groq mode we drop the pipeline
-    // lag compensation, trust single confirmations, and use shorter floors.
-    this.isGroqMode      = this.whisperOpts?.provider === 'groq';
-    if (this.isGroqMode) console.log('[Pipeline] Groq mode: fast-path timing (no 6s lag, 1-confirm back-correct)');
 
     this.state     = createState();
     this.active    = false;
@@ -589,27 +585,6 @@ export class AudioPipeline {
     }
   }
 
-  // User-requested pace nudge: ×0.8 = speed up 20%, ×1.2 = slow down 20%.
-  // Applies to learned pace AND the currently running timer so effect is immediate.
-  paceNudge(factor) {
-    if (!factor || factor < 0.3 || factor > 3) return;
-    if (this._measuredMsPerWord > 0) {
-      this._measuredMsPerWord = Math.max(250, Math.round(this._measuredMsPerWord * factor));
-      console.log(`[Pipeline] Pace nudge ×${factor.toFixed(2)} → ${this._measuredMsPerWord}ms/w`);
-    } else {
-      console.log(`[Pipeline] Pace nudge ×${factor.toFixed(2)} (no measured pace yet — will apply next ayah)`);
-    }
-    // Adjust the currently running timer so the user sees immediate effect
-    if (this._displayAdvanceTimer && this._timerStartedAt && this._nextAdvanceMs > 0) {
-      const elapsed = Date.now() - this._timerStartedAt;
-      const remaining = Math.max(0, this._nextAdvanceMs - elapsed);
-      const adjusted = Math.max(500, Math.round(remaining * factor));
-      this._cancelReadAdvance();
-      this._scheduleReadAdvance(this.state.confidence, 0, 1.0, adjusted);
-    }
-    this._emitState(null, null);
-  }
-
   manualPrev() {
     this._cancelReadAdvance();
     this._sameAyahStreak = 0;
@@ -638,9 +613,8 @@ export class AudioPipeline {
     this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
       surah: this._displaySurah, ayah: this._displayAyah,
       lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
-    // Don't auto-schedule a new advance timer after manual_prev — user explicitly
-    // backed up because display moved ahead of reciter. Let the next transcription
-    // confirm the new position before any further auto-advance is considered.
+    // Reciter is already partway through — use shorter timer for catching up
+    this._scheduleReadAdvance(Math.max(this.state.confidence, 65), 0, 0.3);
     this._emitState(null, null);
   }
 
@@ -1272,34 +1246,10 @@ export class AudioPipeline {
       }
       const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
       const lag = this._displayAyah - confirmedAyah;
-      // SNAP-BACK: when display has moved past the reciter, snap immediately.
-      // In Groq mode, snap at lag ≥ 1 — Groq's 300ms latency means any
-      // confirmed-ayah-behind-display is a real reciter repeat/rewind, not
-      // stale audio. Refrain verses protected separately via the counting path.
-      // In HF mode, wait for lag ≥ 4 to protect against occasional mishears.
-      const snapLagThreshold = this.isGroqMode ? 1 : 4;
-      const snapConfThreshold = this.isGroqMode ? 60 : 60;
-      if (!refrainVerse && lag >= snapLagThreshold && score >= snapConfThreshold) {
-        console.log(`[Pipeline] Snap-back: ${this.isGroqMode ? 'Groq-fast' : 'way off'} — display :${this._displayAyah}, Whisper :${confirmedAyah} (lag=${lag}, conf=${score}%)`);
-        this._sameAyahStreak = 0;
-        this._bumpCountForAyah = 0;
-        this._cancelReadAdvance();
-        this._displayAyah  = confirmedAyah;
-        this._driftMult    = 1.0;
-        this._ayahStartTime = Date.now();
-        this._lastBackCorrectMs = Date.now();
-        this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
-          lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
-        this._behindRepeatCount = 0;
-        this._behindRepeatAyah  = 0;
-        this._emitState(text, rms);
-        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
-        return;
-      }
-      // Groq: trust single confirmations at any lag. HF: graduated.
-      const REPEAT_BACK_CORRECT_WINS = this.isGroqMode ? 1
-        : (score >= 80 ? 1 : (lag === 1 ? 2 : 3));
-      const REPEAT_BACK_CORRECT_MIN_CONF = this.isGroqMode ? 55 : 65;
+      // High confidence (≥80%) = immediate back-correct (1 confirm)
+      // Medium confidence: lag=1 needs 2, lag≥2 needs 3
+      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1 : (lag === 1 ? 2 : 3);
+      const REPEAT_BACK_CORRECT_MIN_CONF = 65;
 
       // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
       if (!refrainVerse && confirmedAyah === this._behindRepeatAyah && score >= REPEAT_BACK_CORRECT_MIN_CONF) {
@@ -1644,12 +1594,6 @@ export class AudioPipeline {
   // ── Timer: reading-pace advance (uncapped — Whisper corrects, never blocks) ─
 
   _canDisplayAdvance() {
-    // Don't auto-advance during manual cooldown — user explicitly adjusted, let
-    // Whisper/Groq confirmation drive the next move instead of the estimate timer.
-    if (this._lastManualAdjustMs
-        && (Date.now() - this._lastManualAdjustMs) < MANUAL_ADJUST_COOLDOWN_MS) {
-      return false;
-    }
     return this._displaySurah > 0 && this._displayAyah > 0
       && (this.state.mode === 'LOCKED' || this.state.mode === 'RESUMING' || this.state.mode === 'SEARCHING');
   }
@@ -1725,29 +1669,26 @@ export class AudioPipeline {
     // Live data shows ~1.9s/word for slow reciters, ~0.9s for normal, ~0.5s for fast.
     // Whisper confirms hold/extend if reciter is still on the ayah.
     // Use learned pace if available, otherwise fallback defaults
-    // Base default 900ms/w — tuned for typical taraweeh recitation speed (the
-    // most common real use case). Murattal/slow reciters are handled by the
-    // learned pace (kicks in after 1-3 samples). fastMode/slowMode are legacy
-    // and rarely toggled — they nudge ±30%.
-    const defaultMsPerWord = this.fastMode ? 700 : this.slowMode ? 1400 : 900;
+    // Base default 1400ms/w. Fast/slow nudge it ±30%. Learned pace overrides.
+    const defaultMsPerWord = this.fastMode ? 1000 : this.slowMode ? 1800 : 1400;
     // Trust manual pace after 1 sample (direct user feedback), Whisper-only after 3 confirmations
     const msPerWord = (this._measuredMsPerWord > 0 && (this._msPerWordSamples.length >= 1 || this._whisperClockSamples >= 3))
       ? this._measuredMsPerWord : defaultMsPerWord;
     // Use totalWeight (corpus-based) instead of plain wordCount for proportional timing
     const rawMs = Math.round(totalWeight * msPerWord) + elongBonusMs;
-    // Short ayahs (≤4 words, common in juz 30 khatam) get an aggressive floor —
-    // taraweeh imams race through juz 30. Was 1500ms; 900ms matches observed
-    // recitation times on fast taraweeh nights.
-    const shortAyahFloor = wordCount <= 4 ? 900 : 1800;
-    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 4000 : (this.fastMode ? Math.min(shortAyahFloor, 1400) : shortAyahFloor));
+    // Short ayahs (≤4 words, common in juz 30 khatam) get a lower floor — 1.5s instead
+    // of 2.5s. On khatam nights the imam races through these; 2.5s floor causes the
+    // display to lag behind by 2-3 ayahs, making tracking useless.
+    const shortAyahFloor = wordCount <= 4 ? 1500 : 2500;
+    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : (this.fastMode ? Math.min(shortAyahFloor, 2000) : shortAyahFloor));
     const baseDurationMs = Math.max(rawMs, floorMs);
     durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
     if (durationFactor < 1.0) {
-      // Whisper data is ~6s old on HF (4s capture + 2s RTT); Groq is ~4.4s
-      // (4s capture + 0.4s RTT) so we subtract much less there.
-      const PIPELINE_LAG_MS = this.isGroqMode ? 1500 : 6000;
+      // Whisper data is ~6s old. Subtract pipeline lag — but never more than half
+      // the timer. Short ayahs (3-6 words) shouldn't get crushed to 1s.
+      const PIPELINE_LAG_MS = 6000;
       const maxSubtract = Math.floor(durationMs * 0.5);
-      const minAfterLag = wordCount <= 4 ? (this.isGroqMode ? 800 : 1500) : (this.isGroqMode ? 1800 : 3000);
+      const minAfterLag = wordCount <= 4 ? 1500 : 3000;
       durationMs = Math.max(minAfterLag, durationMs - Math.min(PIPELINE_LAG_MS, maxSubtract));
     }
 
@@ -2176,8 +2117,7 @@ export class AudioPipeline {
         // V4: Word X/Y so frontend can show progress as soon as LOCKED (e.g. after reconnect)
         totalWords: stateTotalWords,
         wordIndex: stateWordIndex,
-        // Whisper/Groq's latest confirmed position — surfaced so the frontend
-        // can show "Heard" vs "Shown" pills and the user can spot drift live.
+        // Live-tracking pills on frontend show Whisper's confirmed position vs display
         whisperSurah: this._whisperSurah || undefined,
         whisperAyah: this._whisperAyah || undefined,
       },
