@@ -1697,18 +1697,21 @@ export class AudioPipeline {
     // Live data shows ~1.9s/word for slow reciters, ~0.9s for normal, ~0.5s for fast.
     // Whisper confirms hold/extend if reciter is still on the ayah.
     // Use learned pace if available, otherwise fallback defaults
-    // Base default 1400ms/w. Fast/slow nudge it ±30%. Learned pace overrides.
-    const defaultMsPerWord = this.fastMode ? 1000 : this.slowMode ? 1800 : 1400;
+    // Base default 900ms/w — tuned for typical taraweeh recitation speed (the
+    // most common real use case). Murattal/slow reciters are handled by the
+    // learned pace (kicks in after 1-3 samples). fastMode/slowMode are legacy
+    // and rarely toggled — they nudge ±30%.
+    const defaultMsPerWord = this.fastMode ? 700 : this.slowMode ? 1400 : 900;
     // Trust manual pace after 1 sample (direct user feedback), Whisper-only after 3 confirmations
     const msPerWord = (this._measuredMsPerWord > 0 && (this._msPerWordSamples.length >= 1 || this._whisperClockSamples >= 3))
       ? this._measuredMsPerWord : defaultMsPerWord;
     // Use totalWeight (corpus-based) instead of plain wordCount for proportional timing
     const rawMs = Math.round(totalWeight * msPerWord) + elongBonusMs;
-    // Short ayahs (≤4 words, common in juz 30 khatam) get a lower floor — 1.5s instead
-    // of 2.5s. On khatam nights the imam races through these; 2.5s floor causes the
-    // display to lag behind by 2-3 ayahs, making tracking useless.
-    const shortAyahFloor = wordCount <= 4 ? 1500 : 2500;
-    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : (this.fastMode ? Math.min(shortAyahFloor, 2000) : shortAyahFloor));
+    // Short ayahs (≤4 words, common in juz 30 khatam) get an aggressive floor —
+    // taraweeh imams race through juz 30. Was 1500ms; 900ms matches observed
+    // recitation times on fast taraweeh nights.
+    const shortAyahFloor = wordCount <= 4 ? 900 : 1800;
+    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 4000 : (this.fastMode ? Math.min(shortAyahFloor, 1400) : shortAyahFloor));
     const baseDurationMs = Math.max(rawMs, floorMs);
     durationMs = Math.min(Math.round(baseDurationMs), READ_ADVANCE_MAX_MS);
     if (durationFactor < 1.0) {
