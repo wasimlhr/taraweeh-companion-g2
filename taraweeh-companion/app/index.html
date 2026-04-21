@@ -2591,7 +2591,7 @@ body {
         if (hint) hint.textContent = 'Service start request sent.';
         checkBackend();
       })
-      .catch(function (err) {
+      .catch(function () {
         if (hint) hint.textContent = 'Warming up server… please wait';
       })
       .finally(function () {
