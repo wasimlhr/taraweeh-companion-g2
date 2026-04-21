@@ -77,6 +77,9 @@ export function createState() {
     // Sequential context: remembered across LOCKED → SEARCHING transitions
     lastLockedSurah: 0,
     lastLockedAyah: 0,
+    // Groq mode: require 2 consecutive back-match hints on the same earlier ayah
+    // before snapping display back. Single hint = possibly buffer lag; two = real drift.
+    _pendingBack: null,
   };
 }
 
@@ -445,7 +448,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
 
 
 function handleLocked(whisperText, state, fastMode = false, opts = {}) {
-  const { missBeforeResuming = MISSED_BEFORE_RESUMING } = opts;
+  const { missBeforeResuming = MISSED_BEFORE_RESUMING, isGroqMode = false } = opts;
   const keywords = extractKeywords(whisperText);
   if (keywords.length === 0) {
     const missed = state.missedChunks + 1;
@@ -471,6 +474,7 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
       lastKeywords: keywords,
       lastLockedSurah: match.surah,
       lastLockedAyah: match.ayah,
+      pendingBack: null,  // clear any pending Groq back-match hint when state changes
       _matches: [{ surah: match.surah, ayah: match.ayah, score: match.score, matchedWords: match.matchedWords }],
       _locked: true,
     };
@@ -525,10 +529,14 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
             _locked: true,
           };
         }
-        // Back by 1 ayah is almost always audio buffer lag — always ignore.
-        // Back by 2+ needs strong score, scaled by distance.
+        // HF mode: back-by-1 is usually buffer lag — always ignore.
+        // Groq mode: short frequent chunks; a back-hint is real drift — accept at low score.
+        // The pipeline's _behindRepeatCount already requires 2 confirms to actually snap
+        // the display back, so we don't need to double-gate at anchor.
         const backDist = state.ayah - wideCheck.ayah;
-        const backMinScore = backDist <= 1 ? 999 : backDist <= 2 ? 0.70 : 0.80;
+        const backMinScore = isGroqMode
+          ? (backDist <= 1 ? 0.25 : backDist <= 2 ? 0.45 : 0.55)
+          : (backDist <= 1 ? 999  : backDist <= 2 ? 0.70 : 0.80);
         if (wideCheck.score < backMinScore) {
           console.log(`[Anchor] Back-match ignored: :${wideCheck.ayah} (dist=${backDist}, score=${wideCheck.score.toFixed(2)} < ${backMinScore}) — holding :${state.ayah}`);
           return {
