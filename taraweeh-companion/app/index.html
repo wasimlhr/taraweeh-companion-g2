@@ -5,52 +5,75 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Taraweeh Companion</title>
   <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <style>
+/* Even Realities design tokens. FK Grotesk is the brand face (commercial);
+   Inter is the closest free substitute with the same geometric grotesk feel. */
 :root {
-  --tc-1: #1a1a1a;
-  --tc-2: #6b6b6b;
-  --tc-3: #999;
-  --tc-green: #2d9e4f;
-  --tc-red: #e53e3e;
-  --tc-gold: #b7860b;
+  /* Text colors */
+  --tc-highlight: #0a0a0a;  /* pure dark text — primary */
+  --tc-1: #1a1a1a;          /* body */
+  --tc-2: #6b6b6b;          /* secondary */
+  --tc-3: #9a9a9a;          /* tertiary */
+  --tc-red: #e53935;
+  --tc-green: #2ea44f;
+  --tc-gold: #b7860b;       /* retained for legacy refs */
+  /* Background colors */
+  --bc-highlight: #0a0a0a;  /* inverted accent bg */
   --bc-1: #ffffff;
-  --bc-2: #f7f7f5;
-  --bc-3: #eeece8;
-  --bc-4: #e0ddd7;
-  --bc-accent: #fef9e7;
-  --bc-accent-press: #fdf0c0;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --r: 10px;
-  --sp: 14px;
-  --shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --bc-2: #f5f5f5;
+  --bc-3: #ebebeb;
+  --bc-4: #dcdcdc;
+  --bc-highlight-yellow: #fff3b0;  /* highlight BG per design system */
+  --bc-accent: var(--bc-highlight-yellow);
+  --bc-accent-press: #ffeaa0;
+  /* Shaded (muted) */
+  --sc-1: #c7c7c7;
+  --sc-2: #e5e5e5;
+  /* Typography — FK scale (font-family falls back to Inter) */
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-ar: "Amiri", serif;
+  --track-tight: -0.03em;   /* ~-3% per FK spec */
+  /* Layout per Even Realities APP layout doc */
+  --screen-margin: 12px;
+  --card-margin: 16px;
+  --r: 8px;
+  --sp: 12px;
+  --shadow: 0 1px 2px rgba(0,0,0,0.04);
   color-scheme: light;
 }
 [data-theme="dark"] {
+  --tc-highlight: #ffffff;
   --tc-1: #e8e6e3;
   --tc-2: #9a9a9a;
   --tc-3: #666;
-  --tc-green: #4ade80;
   --tc-red: #f87171;
-  --tc-gold: #f59e0b;
+  --tc-green: #4ade80;
+  --bc-highlight: #ffffff;
   --bc-1: #1e1e1e;
   --bc-2: #141414;
   --bc-3: #2a2a2a;
   --bc-4: #3a3a3a;
-  --bc-accent: #2a2517;
+  --bc-highlight-yellow: #2a2517;
+  --bc-accent: var(--bc-highlight-yellow);
   --bc-accent-press: #3a3020;
-  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --sc-1: #3a3a3a;
+  --sc-2: #2a2a2a;
+  --shadow: 0 1px 2px rgba(0,0,0,0.3);
   color-scheme: dark;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: var(--font);
+  font-weight: 300;            /* FK Light body default */
+  letter-spacing: -0.01em;
   max-width: 480px;
   margin: 0 auto;
-  padding: var(--sp);
-  padding-top: max(var(--sp), env(safe-area-inset-top));
-  padding-bottom: max(var(--sp), env(safe-area-inset-bottom));
+  padding: var(--screen-margin);
+  padding-top: max(var(--screen-margin), env(safe-area-inset-top));
+  padding-bottom: max(var(--screen-margin), env(safe-area-inset-bottom));
   background: var(--bc-2);
-  color: var(--tc-1);
+  color: var(--tc-highlight);
   -webkit-font-smoothing: antialiased;
   transition: background 0.3s, color 0.3s;
 }
@@ -60,13 +83,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 0 12px;
+  padding: 14px 0 10px;
 }
 .header h1 {
-  font-size: 22px;
-  font-weight: 500;
-  color: var(--tc-1);
-  letter-spacing: -0.02em;
+  font-size: 20px;             /* Large Title — FK 20 Regular */
+  font-weight: 400;
+  color: var(--tc-highlight);
+  letter-spacing: var(--track-tight);
 }
 .header-right {
   display: flex;
@@ -74,9 +97,10 @@ body {
   gap: 8px;
 }
 .version {
-  font-size: 11px;
+  font-size: 11px;            /* Normal Detail */
   color: var(--tc-2);
-  font-family: monospace;
+  font-family: var(--font);
+  letter-spacing: 0;
 }
 #settingsBtn, #themeBtn {
   background: var(--bc-1);
@@ -359,46 +383,58 @@ body {
   transition: height 0.08s ease-out;
 }
 
-/* Controls */
+/* Controls — Even Realities button tokens.
+   Primary CTA: pill-shaped, dark bg, "→" arrow prefix on action text. */
 #recordBtn {
   width: 100%;
-  padding: 16px;
-  font-size: 16px;
-  font-weight: 600;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 400;
+  font-family: var(--font);
   border: none;
-  border-radius: var(--r);
+  border-radius: 999px;              /* fully rounded pill */
   cursor: pointer;
-  background: var(--tc-1);
-  color: #fff;
-  letter-spacing: -0.02em;
-  transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
-  box-shadow: var(--shadow);
+  background: var(--bc-highlight);
+  color: var(--bc-1);
+  letter-spacing: var(--track-tight);
+  transition: opacity 0.15s, transform 0.1s;
 }
 #recordBtn:active { transform: scale(0.98); }
 #recordBtn.recording { background: var(--tc-red); }
 #recordBtn:disabled { opacity: 0.45; cursor: not-allowed; }
-[data-theme="dark"] #recordBtn { background: #f5f5f5; color: #111; }
+[data-theme="dark"] #recordBtn { background: #ffffff; color: #0a0a0a; }
 [data-theme="dark"] #recordBtn.recording { background: var(--tc-red); color: #fff; }
 
+/* Secondary outlined pill — matches the outlined button variant in the spec. */
 .mode-btn {
   width: 100%;
   margin-top: 8px;
-  padding: 11px 15px;
-  font-size: 14px;
-  font-weight: 500;
-  border: 1.5px solid var(--bc-4);
-  border-radius: var(--r);
+  padding: 11px 16px;
+  font-size: 13px;
+  font-weight: 400;
+  font-family: var(--font);
+  border: 1px solid var(--bc-4);
+  border-radius: 999px;
   cursor: pointer;
   background: var(--bc-1);
-  color: var(--tc-2);
-  letter-spacing: -0.01em;
-  transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
-  box-shadow: var(--shadow);
+  color: var(--tc-highlight);
+  letter-spacing: var(--track-tight);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .mode-btn:active { transform: scale(0.98); }
-#fastModeBtn.active { background: #b45309; border-color: #b45309; color: #fff; }
-#slowModeBtn.active { background: #059669; border-color: #059669; color: #fff; }
-#taraweehBtn.active { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+/* Active state: yellow highlight bg per Even Realities */
+.mode-btn.active {
+  background: var(--bc-highlight-yellow);
+  border-color: var(--bc-highlight-yellow);
+  color: var(--tc-highlight);
+}
+#fastModeBtn.active,
+#slowModeBtn.active,
+#taraweehBtn.active {
+  background: var(--bc-highlight-yellow);
+  border-color: var(--bc-highlight-yellow);
+  color: var(--tc-highlight);
+}
 
 /* Taraweeh overlay — shown over verse content during ruku */
 #taraweehOverlay {
@@ -452,30 +488,36 @@ body {
   justify-content: space-between;
   padding: 16px 0 12px;
 }
-.settings-header h2 { font-size: 20px; font-weight: 500; }
+.settings-header h2 {
+  font-size: 20px;              /* Large Title — FK 20 Regular */
+  font-weight: 400;
+  letter-spacing: var(--track-tight);
+  color: var(--tc-highlight);
+}
 .back-btn {
   background: var(--bc-1);
   border: 1px solid var(--bc-4);
-  border-radius: var(--r);
-  padding: 6px 12px;
-  font-size: 14px;
-  color: var(--tc-2);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--tc-highlight);
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition: background 0.15s, border-color 0.15s;
+  letter-spacing: var(--track-tight);
 }
 .s-section {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 11px;             /* Normal Detail — FK 11 */
+  font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--tc-2);
-  margin: 14px 0 6px;
+  margin: 18px 0 6px;
 }
 .s-card {
   background: var(--bc-1);
   border: 1px solid var(--bc-4);
   border-radius: var(--r);
-  box-shadow: var(--shadow);
   margin-bottom: 6px;
   transition: background 0.2s, border-color 0.2s;
 }
@@ -483,54 +525,78 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 14px;
+  padding: 12px var(--card-margin);   /* 16px side margin per spec */
 }
 .s-row + .s-row { border-top: 1px solid var(--bc-3); }
 .s-check { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
 .s-check input { width: 18px; height: 18px; }
-.s-label { font-size: 12px; color: var(--tc-2); }
-.s-hint { font-size: 11px; color: var(--tc-2); font-style: italic; }
+.s-label {
+  font-size: 13px;              /* Normal Subtitle — FK 13 Regular */
+  font-weight: 400;
+  letter-spacing: var(--track-tight);
+  color: var(--tc-highlight);
+}
+.s-hint {
+  font-size: 11px;              /* Normal Detail */
+  color: var(--tc-2);
+  font-style: normal;           /* spec doesn't use italic for hints */
+  letter-spacing: var(--track-tight);
+}
 .s-card input, .s-card select {
   width: 100%;
-  padding: 8px 10px;
+  padding: 9px 12px;
   border: 1px solid var(--bc-4);
-  border-radius: 6px;
+  border-radius: var(--r);
   background: var(--bc-2);
-  font-size: 14px;
-  color: var(--tc-1);
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--tc-highlight);
   outline: none;
-  margin-top: 2px;
+  margin-top: 4px;
+  letter-spacing: var(--track-tight);
 }
-.s-card input:focus { border-color: var(--tc-gold); }
+.s-card input:focus, .s-card select:focus { border-color: var(--tc-highlight); }
 .s-status { font-size: 12px; color: var(--tc-2); padding: 10px 14px; }
+/* Segmented control per Even Realities "Selector" spec —
+   rounded pill container with fully-rounded inner active pill. */
 .toggle-group {
   display: flex;
-  border-radius: var(--r);
-  overflow: hidden;
-  border: 1px solid var(--bc-4);
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--bc-3);
   margin-top: 4px;
   width: 100%;
 }
 .toggle-btn {
   flex: 1;
   min-width: 0;
-  padding: 10px 16px;
-  font-size: 14px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 400;
+  font-family: var(--font);
   border: none;
-  background: var(--bc-2);
+  background: transparent;
   color: var(--tc-2);
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition: background 0.15s, color 0.15s;
   text-align: center;
+  border-radius: 999px;
+  letter-spacing: var(--track-tight);
 }
-.toggle-btn:not(:last-child) { border-right: 1px solid var(--bc-4); }
-.toggle-btn.active { background: var(--tc-gold); color: #1a1a1a; font-weight: 600; }
-.toggle-btn:hover:not(.active) { background: var(--bc-3); color: var(--tc-1); }
+.toggle-btn.active {
+  background: var(--bc-1);
+  color: var(--tc-highlight);
+}
+.toggle-btn:hover:not(.active) { color: var(--tc-highlight); }
 
-/* Main-view pill buttons — visually obvious they're interactive, in dark & light */
+/* Main-view segmented control — same pattern as settings, slightly larger. */
 .mv-toggle-group {
   display: flex;
-  gap: 6px;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bc-3);
+  border-radius: 999px;
   width: 100%;
 }
 .mv-toggle-btn {
@@ -538,25 +604,22 @@ body {
   min-width: 0;
   padding: 10px 8px;
   font-size: 13px;
-  border: 1.5px solid var(--bc-4);
-  border-radius: 10px;
-  background: var(--bc-2);
-  color: var(--tc-1);
+  font-weight: 400;
+  font-family: var(--font);
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--tc-2);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.05s;
+  transition: background 0.15s, color 0.15s;
   text-align: center;
-  font-weight: 500;
+  letter-spacing: var(--track-tight);
   user-select: none;
-  -webkit-tap-highlight-color: rgba(245, 158, 11, 0.3);
 }
-.mv-toggle-btn:hover:not(.active) { background: var(--bc-3); border-color: var(--tc-gold); }
-.mv-toggle-btn:active { transform: scale(0.97); }
+.mv-toggle-btn:active { transform: scale(0.98); }
 .mv-toggle-btn.active {
-  background: var(--tc-gold);
-  color: #1a1a1a;
-  border-color: var(--tc-gold);
-  font-weight: 700;
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+  background: var(--bc-1);
+  color: var(--tc-highlight);
 }
 .settings-footer {
   text-align: center;
@@ -628,7 +691,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.1.2</span>
+      <span class="version" id="versionEl">v2.1.3</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -891,7 +954,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.1.2';
+  const APP_VERSION = 'v2.1.3';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2996,7 +3059,7 @@ body {
       document.getElementById('matchPanel').style.display = '';
       resetMatchPanel();
 
-      btn.textContent = 'Stop Listening';
+      btn.textContent = '\u2192 Stop Listening';
       btn.classList.add('recording');
     }).catch(function (err) {
       S.isRecording = false;
@@ -3007,7 +3070,7 @@ body {
       if (S.isG2 && !(S.settings.forcePhoneMic || !S.isG2)) {
         log('Tip: Tap Start once on glasses-connected app to grant G2 mic access.', 'info');
       }
-      btn.textContent = S.isG2 ? '● Start Listening (G2 mic)' : 'Start Listening';
+      btn.textContent = S.isG2 ? '\u2192 Start Listening' : '\u2192 Start Listening';
       btn.classList.remove('recording');
     }).finally(function () {
       btn.disabled = false;
@@ -3040,7 +3103,7 @@ body {
     document.getElementById('lockProgress').style.display = 'none';
 
     var btn = document.getElementById('recordBtn');
-    btn.textContent = S.isG2 ? '\u25CF Start Listening (G2 mic)' : 'Start Listening';
+    btn.textContent = S.isG2 ? '\u2192 Start Listening' : '\u2192 Start Listening';
     btn.classList.remove('recording');
     setStatus('Stopped');
     stopPageFlip(); stopCountdown(); stopSearchingDots(); stopLockingDots();
@@ -3125,7 +3188,7 @@ body {
     } else {
       log('No G2 — browser mic mode');
       setPill('sPillG2', '', 'PC mic');
-      btn.textContent = 'Start Listening';
+      btn.textContent = '\u2192 Start Listening';
       btn.disabled = false;
     }
   }
