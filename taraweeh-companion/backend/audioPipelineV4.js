@@ -1292,7 +1292,7 @@ export class AudioPipeline {
       // is a real race-ahead, not stale audio. Lag=1 still waits for the
       // existing repeat-count path (avoids bouncing on single-confirm mishears
       // between adjacent short ayahs).
-      if (this.isGroqMode && !refrainVerse && lag >= 2 && score >= 35) {
+      if (this.isGroqMode && !refrainVerse && lag >= 2 && score >= 15) {
         console.log(`[Pipeline] Groq snap-back: display :${this._displayAyah} → :${confirmedAyah} (lag=${lag}, conf=${score}%)`);
         this._sameAyahStreak = 0;
         this._bumpCountForAyah = 0;

@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.8.5</span>
+      <span class="version" id="versionEl">v4.8.6</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -878,7 +878,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.8.5';
+  const APP_VERSION = 'v4.8.6';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1230,8 +1230,15 @@ body {
           if (!S.isRecording) setStatus('Ready (public HF fallback) — tap Start', 'result');
           break;
         case 'error':
-          setPill('sPillModel', 'warn', 'Server warming up…');
-          if (!S.isRecording) setStatus('Server warming up\u2026 retrying', 'result');
+          // Groq has no warmup — an error here is a transient API failure
+          // (rate limit, bad key, network), not a cold-start. Label accordingly.
+          if (s.provider === 'groq' || _modelProvider === 'groq') {
+            setPill('sPillModel', 'warn', 'Groq: retry');
+            if (!S.isRecording) setStatus('Groq API error — retrying\u2026', 'result');
+          } else {
+            setPill('sPillModel', 'warn', 'Server warming up…');
+            if (!S.isRecording) setStatus('Server warming up\u2026 retrying', 'result');
+          }
           break;
       }
     } else if (s.type === 'fast_mode') {
