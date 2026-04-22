@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Taraweeh Companion</title>
+  <title>Quran Companion</title>
   <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <style>
@@ -743,7 +743,7 @@ body {
 <!-- Splash screen — shown for ~1.2s on app launch, then fades out -->
 <div id="splashScreen" style="position:fixed;inset:0;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity 400ms ease;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
   <div style="font-size:40px;line-height:1;margin-bottom:16px">☽</div>
-  <div style="font-size:22px;font-weight:600;letter-spacing:0.5px">Taraweeh Companion</div>
+  <div style="font-size:22px;font-weight:600;letter-spacing:0.5px">Quran Companion</div>
   <div style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">for Even Realities G2</div>
   <div id="splashVersion" style="position:absolute;bottom:24px;font-size:11px;opacity:0.4;letter-spacing:0.5px"></div>
 </div>
@@ -751,9 +751,9 @@ body {
 <!-- Main view -->
 <div id="mainView">
   <div class="header">
-    <h1>☽ Taraweeh Companion</h1>
+    <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.1.9</span>
+      <span class="version" id="versionEl">v2.1.12</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -1032,7 +1032,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.1.9';
+  const APP_VERSION = 'v2.1.12';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1657,7 +1657,7 @@ body {
   var G2_BODY_LINES = 10; // lines per page — conservative to prevent scroll bar
   var G2_DIV = '-'.repeat(G2_CHARS);  // single line — hyphen renders as one line (box char looked double)
 
-  function appTitleHdr() { return 'Taraweeh Companion'; }
+  function appTitleHdr() { return 'Quran Companion'; }
   function appVersionHdr() { return APP_VERSION; }
 
   function clip(s, n) { return (s || '').length > n ? s.slice(0, n - 1) + '\u2026' : (s || ''); }
@@ -2462,8 +2462,10 @@ body {
     stopCountdown();
     try { stopG2Mic(); } catch (_) {}
     try { stopBrowserMic(); } catch (_) {}
+    // Use 'pause' (not 'stop') — preserves pipeline state, remembers display
+    // position + timer remainder, keeps Whisper listening so resume is seamless.
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      try { S.ws.send(JSON.stringify({ type: 'stop' })); } catch (_) {}
+      try { S.ws.send(JSON.stringify({ type: 'pause' })); } catch (_) {}
     }
     setStatus('Paused in background', 'error');
     log('Paused capture while app is backgrounded', 'w');
@@ -2472,19 +2474,10 @@ body {
   function handleForegroundEnter() {
     if (!S.pausedByBackground) return;
     S.pausedByBackground = false;
+    // Resume from saved state — do NOT send init, that destroys the pipeline
+    // and resets to SEARCHING. audio_return restores from the paused position.
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      try {
-        S.ws.send(JSON.stringify({
-          type: 'init',
-          sessionId: _clientSessionId,
-          preferredSurah: parseInt(S.settings.defaultSurah || '0'),
-          lang: (S.settings.lang || '').trim() || null,
-          pipelineVersion: S.settings.pipelineVersion || 'v4',
-          fastMode: _fastMode,
-          slowMode: _slowMode,
-        }));
-        S.ws.send(JSON.stringify({ type: 'start' }));
-      } catch (_) {}
+      try { S.ws.send(JSON.stringify({ type: 'audio_return' })); } catch (_) {}
     }
     var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
     if (useBrowserMic) startBrowserMic();
