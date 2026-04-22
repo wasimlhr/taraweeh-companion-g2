@@ -398,8 +398,12 @@ export class AudioPipeline {
       this._taraweehLastFrom = 'reciting';
       this._sajdaCount = 0;
       this._rakatCount = 0;
+      this._expectFatiha = false;
+    } else if (this.state.mode === 'SEARCHING') {
+      // Imam always opens with Fatiha — prime fast-lock from the first rakat.
+      this._expectFatiha = true;
     }
-    console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}`);
+    console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}${this._expectFatiha ? ' (expectFatiha=true)' : ''}`);
     this.onStatus({ type: 'taraweeh_mode', enabled: this.taraweehMode,
       position: this._taraweehPos, rakat: this._rakatCount });
   }
@@ -427,6 +431,8 @@ export class AudioPipeline {
     this._taraweehPos = 'QIYAM';
     this._taraweehLastFrom = 'reciting';
     this._sajdaCount = 0;
+    // Fresh rakat starts with Fatiha — prime fast-lock if taraweeh mode is on.
+    this._expectFatiha = !!this.taraweehMode;
     this._emitTaraweeh();
   }
 
@@ -1328,38 +1334,17 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       }
-      // GROQ SNAP-BACK: when display is 2+ ayahs ahead of what Groq is hearing,
-      // snap back immediately. Groq's 300ms latency means a confirmed lag of 2+
-      // is a real race-ahead, not stale audio. Lag=1 still waits for the
-      // existing repeat-count path (avoids bouncing on single-confirm mishears
-      // between adjacent short ayahs).
-      if (this.isGroqMode && !refrainVerse && lag >= 2 && score >= 15) {
-        console.log(`[Pipeline] Groq snap-back: display :${this._displayAyah} → :${confirmedAyah} (lag=${lag}, conf=${score}%)`);
-        this._sameAyahStreak = 0;
-        this._bumpCountForAyah = 0;
-        this._cancelReadAdvance();
-        this._displayAyah  = confirmedAyah;
-        this._driftMult    = 1.0;
-        this._ayahStartTime = Date.now();
-        this._lastBackCorrectMs = Date.now();
-        this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
-          lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
-        this._behindRepeatCount = 0;
-        this._behindRepeatAyah  = 0;
-        this._emitState(text, rms);
-        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
-        return;
-      }
-      // lag=1 back-correct disabled entirely — 1-ayah drift is within normal
-      // live-tracking latency and bouncing the display back on small jitter
-      // hurts readability more than it helps. Real drift is detected at lag≥2,
-      // handled either here or by the immediate Groq snap-back path above.
-      if (lag === 1) {
+      // Snap-back disabled for lag ≤ 2. Field feedback: display snapping back
+      // ~1s after every ayah (aggressive Groq lag=2 trigger) hurt readability
+      // more than it helped. Normal 1-2 ayah drift is within Whisper latency
+      // and resolves itself as the reciter continues. Only genuine drift
+      // (lag ≥ 3 with repeat-count confirmations) still snaps below.
+      if (lag <= 2) {
         this._emitState(text, rms);
         return;
       }
-      // lag≥2 still follows the repeat-count gate.
-      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1 : 3;
+      // lag≥3 still follows the repeat-count gate — real drift, not jitter.
+      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 2 : 3;
       const REPEAT_BACK_CORRECT_MIN_CONF = this.isGroqMode ? 45 : 65;
 
       // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
@@ -1837,7 +1822,9 @@ export class AudioPipeline {
     // Whisper confirms hold/extend if reciter is still on the ayah.
     // Use learned pace if available, otherwise fallback defaults
     // Base default 1400ms/w. Fast/slow nudge it ±30%. Learned pace overrides.
-    const defaultMsPerWord = this.fastMode ? 1000 : this.slowMode ? 1800 : 1400;
+    // Fast mode ~700ms/word (half again faster than normal) so tight khatam-pace
+    // recitation doesn't lag the display. Slow mode extends. Normal = 1400.
+    const defaultMsPerWord = this.fastMode ? 700 : this.slowMode ? 1800 : 1400;
     // Trust manual pace after 1 sample (direct user feedback), Whisper-only after 3 confirmations
     const msPerWord = (this._measuredMsPerWord > 0 && (this._msPerWordSamples.length >= 1 || this._whisperClockSamples >= 3))
       ? this._measuredMsPerWord : defaultMsPerWord;
@@ -1847,7 +1834,10 @@ export class AudioPipeline {
     // of 2.5s. On khatam nights the imam races through these; 2.5s floor causes the
     // display to lag behind by 2-3 ayahs, making tracking useless.
     const shortAyahFloor = wordCount <= 4 ? 1500 : 2500;
-    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : (this.fastMode ? Math.min(shortAyahFloor, 2000) : shortAyahFloor));
+    // Fast mode drops the floor more aggressively: 1s on ≤4-word ayahs, 1.5s otherwise.
+    // This matters for khatam-night juz-30 racing where 2.5s floors stall the display.
+    const fastFloor = wordCount <= 4 ? 1000 : 1500;
+    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : (this.fastMode ? fastFloor : shortAyahFloor));
     const baseDurationMs = Math.max(rawMs, floorMs);
     // Per-word-count ceilings prevent short ayahs getting taraweeh-absurd timers
     // even when learned pace drifts slow. Taraweeh imams typically take:
@@ -1862,8 +1852,9 @@ export class AudioPipeline {
     durationMs = Math.min(Math.round(baseDurationMs), perCountCap, READ_ADVANCE_MAX_MS);
     // Groq cushion: pad by 20% so display naturally lingers toward Groq's heard
     // position instead of racing 1 ayah ahead on slow recitations. Groq will
-    // snap us forward if we truly fall behind.
-    if (this.isGroqMode) {
+    // snap us forward if we truly fall behind. Skip entirely in fast mode —
+    // fast reciters need the opposite (shorter, not padded).
+    if (this.isGroqMode && !this.fastMode) {
       durationMs = Math.min(Math.round(durationMs * 1.2), READ_ADVANCE_MAX_MS);
     }
     // Slow-mode user override: explicit "stretch everything" multiplier that

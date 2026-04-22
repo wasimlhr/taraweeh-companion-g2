@@ -1023,9 +1023,15 @@ export class AudioPipeline {
       }
       const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
       const lag = this._displayAyah - confirmedAyah;
-      // High confidence (≥80%) = immediate back-correct (1 confirm)
-      // Medium confidence: lag=1 needs 2, lag≥2 needs 3
-      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1 : (lag === 1 ? 2 : 3);
+      // Snap-back disabled for lag ≤ 2 — matches V4 behaviour. Normal 1-2 ayah
+      // drift is within Whisper latency and resolves as reciter continues;
+      // snapping back every ayah hurt readability more than it helped.
+      if (lag <= 2) {
+        this._emitState(text, rms);
+        return;
+      }
+      // High confidence (≥80%) = 2 confirms before snap. Otherwise 3.
+      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 2 : 3;
       const REPEAT_BACK_CORRECT_MIN_CONF = 65;
 
       // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
