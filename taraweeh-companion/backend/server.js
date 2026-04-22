@@ -291,7 +291,6 @@ wss.on('connection', (ws, req) => {
           case 'set_fast_mode': pipeline?.setFastMode(msg.enabled); break;
           case 'set_slow_mode': pipeline?.setSlowMode(msg.enabled); break;
           case 'set_taraweeh_mode': pipeline?.setTaraweehMode(msg.enabled); break;
-          case 'set_auto_next': pipeline?.setAutoNext?.(msg.enabled); break;
           case 'pace_nudge': pipeline?.paceNudge?.(Number(msg.factor) || 1.0); break;
           case 'reset_rakat': pipeline?.resetRakat(); break;
         }

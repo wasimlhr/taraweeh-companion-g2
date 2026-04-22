@@ -339,10 +339,6 @@ export class AudioPipeline {
     this._expectFatiha   = false;    // set after ruku/sajda cycle — next recitation is Fatiha
     this._taraweehPosEnteredAt = 0;  // timestamp when current taraweeh position was entered
 
-    // Auto-next: when true, timer advances display. When false, display ONLY
-    // moves when Groq hears the next ayah — no timer-based progression.
-    this.autoNext = true;
-
     // V4: Word-level tracking fields
     this._currentWordIndex = 0;           // Current word position within ayah (0-indexed)
     this._currentAyahWords = [];          // Word array for current ayah
@@ -398,12 +394,6 @@ export class AudioPipeline {
     console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}`);
     this.onStatus({ type: 'taraweeh_mode', enabled: this.taraweehMode,
       position: this._taraweehPos, rakat: this._rakatCount });
-  }
-
-  setAutoNext(enabled) {
-    this.autoNext = !!enabled;
-    console.log(`[Pipeline] Auto-next ${this.autoNext ? 'ON' : 'OFF'}`);
-    if (!this.autoNext) this._cancelReadAdvance();  // stop any running timer
   }
 
   resetRakat() {
@@ -1702,10 +1692,6 @@ export class AudioPipeline {
   // ── Timer: reading-pace advance (uncapped — Whisper corrects, never blocks) ─
 
   _canDisplayAdvance() {
-    // Auto-next OFF: blanket block on all auto-advance paths (timer, pause-advance,
-    // smooth-advance). Groq confirmations still move the display via _onWhisperConfirm.
-    if (!this.autoNext) return false;
-
     // End-of-surah exception: if we're on the last ayah, let the timer run even
     // during silence. Firing it is the trigger that resets state to SEARCHING;
     // blocking it would leave us frozen on the final ayah waiting for words
@@ -1732,10 +1718,6 @@ export class AudioPipeline {
 
   _scheduleReadAdvance(confidence, afterPauseMinMs = 0, durationFactor = 1.0, overrideDurationMs = 0) {
     this._cancelReadAdvance();
-    // Auto-next OFF: no timer-based display advance. Groq confirmations will
-    // still move the display via _onWhisperConfirm; only the read-ahead timer is
-    // disabled.
-    if (!this.autoNext) return;
     if (!this._canDisplayAdvance()) return;
 
     let durationMs;
