@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.9.0</span>
+      <span class="version" id="versionEl">v4.9.1</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -839,33 +839,19 @@ body {
   <div class="s-section">Transcription engine</div>
   <div class="s-card">
     <div class="s-row">
-      <span class="s-label">Speech recognition</span>
-      <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
-        <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq API</button>
-        <button type="button" class="toggle-btn" id="btnProviderWhisper" onclick="setProvider('whisper')" style="display:none">Whisper-Quran (custom)</button>
-      </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">
-        <b>Groq API:</b> <code>whisper-large-v3-turbo</code> (~300ms latency, free tier ~6k/day, needs your own key).
+      <span class="s-label">Groq API key</span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
+        Uses Groq's <code>whisper-large-v3-turbo</code> (~300ms latency, free tier).
       </span>
-      <div id="groqKeyRow" style="margin-top:10px">
-        <input id="settingGroqKey" type="password" placeholder="gsk_... (your Groq API key)" autocomplete="off" spellcheck="false" />
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-          <button type="button" class="back-btn" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
-          <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
-        </div>
-        <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a free key →</a>
-          Key stays on your phone (localStorage). Sent to server only when you start listening.
-        </span>
+      <input id="settingGroqKey" type="password" placeholder="gsk_... (your Groq API key)" autocomplete="off" spellcheck="false" />
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+        <button type="button" class="back-btn" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
+        <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
       </div>
-      <div id="whisperUnlockRow" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--bc-4)">
-        <span class="s-hint" style="font-size:11px;display:block;margin-bottom:6px;color:var(--tc-3)">Advanced: alternate engine</span>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <input id="whisperUnlockInput" type="text" placeholder="unlock code" autocomplete="off" spellcheck="false" style="flex:1;min-width:120px" />
-          <button type="button" class="back-btn" onclick="tryUnlockWhisper()" style="font-size:13px">Unlock</button>
-        </div>
-        <span id="whisperUnlockMsg" style="font-size:11px;display:block;margin-top:4px;color:var(--tc-3)"></span>
-      </div>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
+        <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a free key →</a>
+        Key stays on your phone (localStorage). Sent to server only when you start listening.
+      </span>
     </div>
   </div>
 
@@ -877,7 +863,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.9.0';
+  const APP_VERSION = 'v4.9.1';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1103,9 +1089,7 @@ body {
     forcePhoneMic: false,
     fastMode: true,
     slowMode: false,
-    groqApiKey: '',  // User's Groq API key (required for default mode)
-    transcriptionProvider: 'groq',  // 'groq' (default, user's Groq key) | 'whisper' (gated behind unlock code)
-    whisperUnlocked: false,  // gated: user must enter unlock code "letmetry" to reveal Whisper option
+    groqApiKey: '',  // User's Groq API key (required — Groq is the only provider)
     glassesBottom: 'arabic',  // 'arabic' (Mushaf image) | 'transliteration' (Latin text)
   };
 
@@ -1126,12 +1110,11 @@ body {
       const merged = { ...DEFAULT_SETTINGS, ...saved };
       merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
       merged.lang = sanitizeTranslationLang(merged.lang);
-      // Migrate old users who had transcriptionProvider='whisper' stored from
-      // the pre-v4.8.4 defaults. Whisper is now gated behind the unlock code —
-      // if they haven't unlocked, force them to Groq (the new default).
-      if (merged.transcriptionProvider === 'whisper' && !merged.whisperUnlocked) {
-        merged.transcriptionProvider = 'groq';
-      }
+      // Whisper was removed in v4.9.1 — Groq is the only supported provider.
+      // Force any stale stored value to 'groq' so old sessions don't reopen in
+      // an invalid state.
+      merged.transcriptionProvider = 'groq';
+      delete merged.whisperUnlocked;
       return merged;
     } catch { return { ...DEFAULT_SETTINGS, pipelineVersion: 'v4', lang: '' }; }
   }
@@ -3130,36 +3113,6 @@ body {
     log('Translation: ' + (clean || 'English (built-in)'), 'ok');
   };
 
-  window.setProvider = function (p) {
-    // Whisper is gated — force back to Groq if user tries it without unlock
-    if (p === 'whisper' && !S.settings.whisperUnlocked) p = 'groq';
-    p = (p === 'whisper') ? 'whisper' : 'groq';
-    S.settings.transcriptionProvider = p;
-    var whisperBtn = document.getElementById('btnProviderWhisper');
-    var groqBtn = document.getElementById('btnProviderGroq');
-    if (whisperBtn) whisperBtn.classList.toggle('active', p === 'whisper');
-    if (groqBtn) groqBtn.classList.toggle('active', p === 'groq');
-    var keyRow = document.getElementById('groqKeyRow');
-    if (keyRow) keyRow.style.display = (p === 'groq') ? '' : 'none';
-  };
-
-  window.tryUnlockWhisper = function () {
-    var input = document.getElementById('whisperUnlockInput');
-    var msg = document.getElementById('whisperUnlockMsg');
-    var code = (input.value || '').trim().toLowerCase();
-    if (code === 'letmetry') {
-      S.settings.whisperUnlocked = true;
-      saveSettings();
-      var wbtn = document.getElementById('btnProviderWhisper');
-      if (wbtn) wbtn.style.display = '';
-      msg.textContent = 'Unlocked — Whisper-Quran now available.';
-      msg.style.color = 'var(--tc-green)';
-      input.value = '';
-    } else {
-      msg.textContent = 'Invalid code.';
-      msg.style.color = 'var(--tc-red)';
-    }
-  };
 
   window.setGlassesBottom = function (mode) {
     var valid = { transliteration: 1, 'translation-only': 1 };
@@ -3282,12 +3235,6 @@ body {
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
-    // Show Whisper button only if previously unlocked via code
-    var wbtn = document.getElementById('btnProviderWhisper');
-    if (wbtn) wbtn.style.display = S.settings.whisperUnlocked ? '' : 'none';
-    var unlockRow = document.getElementById('whisperUnlockRow');
-    if (unlockRow) unlockRow.style.display = S.settings.whisperUnlocked ? 'none' : '';
-    setProvider(S.settings.transcriptionProvider === 'groq' ? 'groq' : 'whisper');
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
@@ -3333,10 +3280,9 @@ body {
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);
     S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
-    S.settings.transcriptionProvider = document.getElementById('btnProviderGroq').classList.contains('active')
-      ? 'groq' : 'whisper';
+    S.settings.transcriptionProvider = 'groq';
     S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')
-      ? 'transliteration' : 'arabic';
+      ? 'transliteration' : 'transliteration';
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');
