@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.8.9</span>
+      <span class="version" id="versionEl">v4.9.0</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -739,8 +739,8 @@ body {
   <!-- Glasses second-line selector (Arabic / Transliteration / English only) -->
   <div style="margin-top:12px">
     <div class="mv-toggle-group" role="group">
-      <button type="button" class="mv-toggle-btn active" id="btnGlassesArabic" onclick="setGlassesBottom('arabic')">Arabic</button>
-      <button type="button" class="mv-toggle-btn" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
+      <button type="button" class="mv-toggle-btn" id="btnGlassesArabic" onclick="setGlassesBottom('arabic')" style="display:none">Arabic</button>
+      <button type="button" class="mv-toggle-btn active" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
       <button type="button" class="mv-toggle-btn" id="btnGlassesEnOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
     </div>
   </div>
@@ -827,11 +827,11 @@ body {
     <div class="s-row">
       <span class="s-label">Second line on glasses</span>
       <div class="toggle-group" role="group">
-        <button type="button" class="toggle-btn active" id="btnBottomArabic" onclick="setGlassesBottom('arabic')">Arabic (Mushaf)</button>
-        <button type="button" class="toggle-btn" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
+        <button type="button" class="toggle-btn" id="btnBottomArabic" onclick="setGlassesBottom('arabic')" style="display:none">Arabic (Mushaf)</button>
+        <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
       </div>
       <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">
-        English translation always shows on top. Bottom line is either the authentic Arabic Mushaf image or Latin transliteration.
+        English translation always shows on top. Bottom line is Latin transliteration.
       </span>
     </div>
   </div>
@@ -877,7 +877,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.8.9';
+  const APP_VERSION = 'v4.9.0';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1126,6 +1126,12 @@ body {
       const merged = { ...DEFAULT_SETTINGS, ...saved };
       merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
       merged.lang = sanitizeTranslationLang(merged.lang);
+      // Migrate old users who had transcriptionProvider='whisper' stored from
+      // the pre-v4.8.4 defaults. Whisper is now gated behind the unlock code —
+      // if they haven't unlocked, force them to Groq (the new default).
+      if (merged.transcriptionProvider === 'whisper' && !merged.whisperUnlocked) {
+        merged.transcriptionProvider = 'groq';
+      }
       return merged;
     } catch { return { ...DEFAULT_SETTINGS, pipelineVersion: 'v4', lang: '' }; }
   }
@@ -3156,8 +3162,10 @@ body {
   };
 
   window.setGlassesBottom = function (mode) {
-    var valid = { arabic: 1, transliteration: 1, 'translation-only': 1 };
-    if (!valid[mode]) mode = 'arabic';
+    var valid = { transliteration: 1, 'translation-only': 1 };
+    // 'arabic' was removed — Mushaf rendering on G2 is unreliable; force
+    // anyone on the old default to transliteration.
+    if (mode === 'arabic' || !valid[mode]) mode = 'transliteration';
     S.settings.glassesBottom = mode;
     saveSettings();
     // Main-view pills
@@ -3281,7 +3289,7 @@ body {
     if (unlockRow) unlockRow.style.display = S.settings.whisperUnlocked ? 'none' : '';
     setProvider(S.settings.transcriptionProvider === 'groq' ? 'groq' : 'whisper');
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
-    setGlassesBottom(S.settings.glassesBottom === 'transliteration' ? 'transliteration' : 'arabic');
+    setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     updateTranslationDesc();
     checkBackend();
@@ -3435,9 +3443,10 @@ body {
     if (_slowMode) _fastMode = false;
     _updatePaceButtons();
     document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v4').toUpperCase();
-    // Sync main-view glasses-display pills with saved setting.
+    // Sync main-view glasses-display pills with saved setting. Arabic was removed;
+    // migrate anyone on the old default to transliteration.
     var savedGlasses = S.settings.glassesBottom;
-    if (savedGlasses !== 'transliteration' && savedGlasses !== 'translation-only') savedGlasses = 'arabic';
+    if (savedGlasses !== 'transliteration' && savedGlasses !== 'translation-only') savedGlasses = 'transliteration';
     setGlassesBottom(savedGlasses);
     populateSurahs();
     initWave();
