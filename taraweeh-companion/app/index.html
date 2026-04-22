@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.9.5</span>
+      <span class="version" id="versionEl">v4.9.6</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -747,6 +747,7 @@ body {
 
   <div class="btn-group" style="margin-top:8px">
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
+    <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Slow mode — lengthens per-ayah timer (use for slow reciters)">🐢 Slow: Off</button>
   </div>
 
 </div>
@@ -882,7 +883,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.9.5';
+  const APP_VERSION = 'v4.9.6';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1008,6 +1009,11 @@ body {
       var btn = document.getElementById('btnPace' + name);
       if (btn) btn.classList.toggle('active', activePace === name.toLowerCase());
     });
+    var slowBtn = document.getElementById('slowModeBtn');
+    if (slowBtn) {
+      slowBtn.textContent = '\uD83D\uDC22 Slow: ' + (_slowMode ? 'On' : 'Off');
+      slowBtn.classList.toggle('active', _slowMode);
+    }
   }
   _updatePaceButtons();
 

@@ -86,7 +86,7 @@ const CORRECTED_DURATION_FACTOR = parseFloat(process.env.CORRECTED_DURATION_FACT
 // auto-advances sooner if Groq doesn't confirm the next ayah first.
 const GROQ_CORRECTED_DURATION_FACTOR = parseFloat(process.env.GROQ_CORRECTED_DURATION_FACTOR || '0.3', 10);
 // Cooldown after back-correction: suppress further back-corrections for this many ms
-const BACK_CORRECT_COOLDOWN_MS = parseInt(process.env.BACK_CORRECT_COOLDOWN_MS || '5000', 10);
+const BACK_CORRECT_COOLDOWN_MS = parseInt(process.env.BACK_CORRECT_COOLDOWN_MS || '2500', 10);
 // User manual: press Prev when display 1 ayah ahead → logic advances too fast. Add lag to align.
 // Mode-aware: Slow needs more lag (measured reciters), Fast less (keep up).
 const DISPLAY_LAG_BASE_MS = parseInt(process.env.DISPLAY_LAG_MS || '1200', 10);
@@ -1316,14 +1316,18 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       }
-      // Post-back-correction cooldown: don't snap back again right away
-      if (this._lastBackCorrectMs && (Date.now() - this._lastBackCorrectMs) < BACK_CORRECT_COOLDOWN_MS) {
-        console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} — ignoring (back-correct cooldown)`);
+      const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
+      const lag = this._displayAyah - confirmedAyah;
+      // Post-back-correction cooldown: don't snap back again right away —
+      // UNLESS the drift has grown worse since the last correction (e.g. we
+      // snapped at lag=2, drift is now lag=3+). Escalating drift should break
+      // the cooldown so the display catches the reciter faster.
+      const inCooldown = this._lastBackCorrectMs && (Date.now() - this._lastBackCorrectMs) < BACK_CORRECT_COOLDOWN_MS;
+      if (inCooldown && lag < 3) {
+        console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} — ignoring (back-correct cooldown, lag=${lag})`);
         this._emitState(text, rms);
         return;
       }
-      const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
-      const lag = this._displayAyah - confirmedAyah;
       // GROQ SNAP-BACK: when display is 2+ ayahs ahead of what Groq is hearing,
       // snap back immediately. Groq's 300ms latency means a confirmed lag of 2+
       // is a real race-ahead, not stale audio. Lag=1 still waits for the
@@ -1861,6 +1865,11 @@ export class AudioPipeline {
     // snap us forward if we truly fall behind.
     if (this.isGroqMode) {
       durationMs = Math.min(Math.round(durationMs * 1.2), READ_ADVANCE_MAX_MS);
+    }
+    // Slow-mode user override: explicit "stretch everything" multiplier that
+    // rides on top of learned pace. Cap the caps — perCountCap becomes 2x too.
+    if (this.slowMode) {
+      durationMs = Math.min(Math.round(durationMs * 1.5), perCountCap * 2, READ_ADVANCE_MAX_MS);
     }
     if (durationFactor < 1.0) {
       // Whisper data is ~6s old. Subtract pipeline lag — but never more than half

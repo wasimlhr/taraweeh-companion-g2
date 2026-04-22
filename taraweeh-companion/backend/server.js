@@ -250,11 +250,12 @@ wss.on('connection', (ws, req) => {
       },
       onError: (err) => send({ type: 'error', error: err }),
     });
-    // Ignore client fast/slow — learned pace handles it. Client localStorage
-    // may have stale fastMode=true from old defaults.
-    if (pipeline.setFastMode) pipeline.setFastMode(false);
-    if (pipeline.setSlowMode) pipeline.setSlowMode(false);
-    console.log(`[Init] Pace: normal (client sent: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'})`);
+    // Honour client fast/slow explicitly. Slow mode now stretches the timer
+    // on top of learned pace so the display lingers through slow recitations
+    // instead of advancing at the naive measured rate.
+    if (pipeline.setFastMode) pipeline.setFastMode(!!opts.fastMode);
+    if (pipeline.setSlowMode) pipeline.setSlowMode(!!opts.slowMode);
+    console.log(`[Init] Pace: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'} (client)`);
     send({ type: 'pipeline_version', version: pipelineVersion });
   }
 
