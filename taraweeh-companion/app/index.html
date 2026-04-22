@@ -753,7 +753,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.1.12</span>
+      <span class="version" id="versionEl">v2.1.13</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -1032,7 +1032,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.1.12';
+  const APP_VERSION = 'v2.1.13';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1579,18 +1579,32 @@ body {
   function glassesStartup() {
     if (!S.bridge) return;
     S.startupPageCreated = false;
+    // Per SDK: createStartUpPageContainer may be called ONLY ONCE ever; all
+    // subsequent page ops must use rebuildPageContainer. On reload/reconnect
+    // the first call returns non-zero (container already exists) — fall
+    // through to rebuildPageContainer instead of throwing + needing recovery.
     queueBridgeCall('createStartUpPageContainer', function () {
       return S.bridge.createStartUpPageContainer({
         containerTotalNum: 3,
         textObject: _startupTextContainers(),
       }).then(function (result) {
-        // Protobuf zero-omission: success code 0 arrives as undefined. Treat
-        // null/undefined/0 all as success; any other value is a real error code.
+        // Protobuf zero-omission: success code 0 arrives as undefined.
         var code = (result == null) ? 0 : result;
-        if (code !== 0) throw new Error('startup result=' + code);
-        S.startupPageCreated = true;
-        S.displayRebuilt = false;
-        log('G2: startup screen shown', 'ok');
+        if (code === 0) {
+          S.startupPageCreated = true;
+          S.displayRebuilt = false;
+          log('G2: startup page created', 'ok');
+          return;
+        }
+        log('G2: startup container already exists (code=' + code + ') — rebuilding', 'w');
+        return S.bridge.rebuildPageContainer({
+          containerTotalNum: 3,
+          textObject: _startupTextContainers(),
+        }).then(function () {
+          S.startupPageCreated = true;
+          S.displayRebuilt = true;   // just rebuilt — ready for text upgrades
+          log('G2: startup page rebuilt', 'ok');
+        });
       });
     });
   }
