@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.8.6</span>
+      <span class="version" id="versionEl">v4.8.7</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -878,7 +878,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.8.6';
+  const APP_VERSION = 'v4.8.7';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2902,6 +2902,9 @@ body {
     _pcmChunkCount = 0;
     _pcmBytesSent  = 0;
     initWave();
+    // Clear any stale "Stopped" text from the last session immediately — state
+    // updates will refine this once audio starts flowing.
+    setStatus('Listening\u2026');
 
     // Only reconnect if not already connected — reuse existing connection if open
     if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
