@@ -8,6 +8,7 @@
 import { transcribeWithWhisper } from './whisperProvider.js';
 import { transcribeWithGemini, closeGeminiSession } from './geminiProvider.js';
 import { transcribeWithGroq } from './groqProvider.js';
+import { transcribeWithOpenAI } from './openaiProvider.js';
 
 export const PROVIDER = process.env.TRANSCRIPTION_PROVIDER || 'whisper';
 
@@ -21,9 +22,12 @@ console.log(`[Transcription] Default provider: ${PROVIDER}`);
  * @returns {Promise<{text: string, provider: string}>}
  */
 export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
-  // Per-session provider override (e.g. user supplied their own Groq API key in the app).
+  // Per-session provider override (e.g. user supplied their own API key in the app).
   if (whisperOpts && typeof whisperOpts === 'object' && whisperOpts.provider === 'groq') {
     return transcribeWithGroq(pcmBuffer, whisperOpts.apiKey, emit);
+  }
+  if (whisperOpts && typeof whisperOpts === 'object' && whisperOpts.provider === 'openai') {
+    return transcribeWithOpenAI(pcmBuffer, whisperOpts.apiKey, emit);
   }
 
   switch (PROVIDER) {

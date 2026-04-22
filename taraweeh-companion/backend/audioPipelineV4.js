@@ -251,8 +251,11 @@ export class AudioPipeline {
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
     // Groq mode flag — drives snap-back/snap-forward aggressiveness, pacer blend,
     // and pace-learning override.
-    this.isGroqMode      = this.whisperOpts?.provider === 'groq';
-    console.log(`[Pipeline] Constructed — provider=${this.whisperOpts?.provider || 'default'}, isGroqMode=${this.isGroqMode}`);
+    // BYOK API providers (Groq, OpenAI Whisper). Both behave identically from
+    // the pipeline's POV: no warmup, word timestamps, lower per-chunk scores.
+    // isGroqMode name kept for back-compat with existing threshold branches.
+    this.isGroqMode      = this.whisperOpts?.provider === 'groq' || this.whisperOpts?.provider === 'openai';
+    console.log(`[Pipeline] Constructed — provider=${this.whisperOpts?.provider || 'default'}, byok=${this.isGroqMode}`);
 
     this.state     = createState();
     this.active    = false;

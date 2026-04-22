@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.9.4</span>
+      <span class="version" id="versionEl">v4.9.5</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -839,17 +839,36 @@ body {
   <div class="s-section">Transcription engine</div>
   <div class="s-card">
     <div class="s-row">
-      <span class="s-label">Groq API key</span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
-        Uses Groq's <code>whisper-large-v3-turbo</code> (~300ms latency, free tier).
-      </span>
-      <input id="settingGroqKey" type="password" placeholder="gsk_... (your Groq API key)" autocomplete="off" spellcheck="false" />
-      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-        <button type="button" class="back-btn" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
-        <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+      <span class="s-label">Provider</span>
+      <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
+        <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
+        <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
       </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-        <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a free key →</a>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">
+        <b>Groq:</b> <code>whisper-large-v3-turbo</code> — fast (~300ms), free tier has 20 RPM cap.<br>
+        <b>OpenAI:</b> <code>whisper-1</code> — slower (~500ms), no RPM cap, $0.006/min audio.
+      </span>
+      <div id="groqKeyRow" style="margin-top:10px">
+        <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+          <button type="button" class="back-btn" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
+          <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+        </div>
+        <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a Groq key →</a>
+        </span>
+      </div>
+      <div id="openaiKeyRow" style="margin-top:10px;display:none">
+        <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false" />
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+          <button type="button" class="back-btn" id="btnOpenAITest" onclick="testOpenAIKey()" style="font-size:13px">Test key</button>
+          <span id="openaiTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+        </div>
+        <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
+          <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get an OpenAI key →</a>
+        </span>
+      </div>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
         Key stays on your phone (localStorage). Sent to server only when you start listening.
       </span>
     </div>
@@ -863,7 +882,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.9.4';
+  const APP_VERSION = 'v4.9.5';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1089,7 +1108,9 @@ body {
     forcePhoneMic: false,
     fastMode: true,
     slowMode: false,
-    groqApiKey: '',  // User's Groq API key (required — Groq is the only provider)
+    groqApiKey: '',         // Groq API key
+    openaiApiKey: '',       // OpenAI API key
+    transcriptionProvider: 'groq',  // 'groq' or 'openai' — explicitly selected, no fallback
     glassesBottom: 'arabic',  // 'arabic' (Mushaf image) | 'transliteration' (Latin text)
   };
 
@@ -1110,10 +1131,10 @@ body {
       const merged = { ...DEFAULT_SETTINGS, ...saved };
       merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
       merged.lang = sanitizeTranslationLang(merged.lang);
-      // Whisper was removed in v4.9.4 — Groq is the only supported provider.
-      // Force any stale stored value to 'groq' so old sessions don't reopen in
-      // an invalid state.
-      merged.transcriptionProvider = 'groq';
+      // Providers: 'groq' | 'openai'. Anything else (incl. legacy 'whisper') → groq.
+      if (merged.transcriptionProvider !== 'groq' && merged.transcriptionProvider !== 'openai') {
+        merged.transcriptionProvider = 'groq';
+      }
       delete merged.whisperUnlocked;
       return merged;
     } catch { return { ...DEFAULT_SETTINGS, pipelineVersion: 'v4', lang: '' }; }
@@ -2326,12 +2347,8 @@ body {
 
     S.ws.onopen = function () {
       setWsPill('ok', 'Service: online');
-      var useGroq = S.settings.transcriptionProvider === 'groq';
-      // Groq is BYOK and warms instantly — skip the "connecting…" message, server
-      // will emit ready immediately after init. Whisper cold-start needs the wait text.
-      if (!useGroq) {
-        setStatus('Connecting to transcription server\u2026', 'result');
-      }
+      // Both Groq and OpenAI are BYOK API providers — no warmup, skip the
+      // "connecting…" message. Keep it around only for unknown provider state.
       log('WS connected', 'ok');
       _startWsPing();
       S.ws.send(JSON.stringify({
@@ -2341,7 +2358,9 @@ body {
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         fastMode: _fastMode,
         slowMode: _slowMode,
-        groqApiKey: (useGroq && (S.settings.groqApiKey || '').trim()) || null,
+        transcriptionProvider: S.settings.transcriptionProvider || 'groq',
+        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
+        openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
       }));
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -2906,10 +2925,15 @@ body {
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {
-    // Block start in Groq mode if no API key — prompt user to enter one.
-    if (S.settings.transcriptionProvider === 'groq' && !(S.settings.groqApiKey || '').trim()) {
-      setStatus('Groq API key required — opening settings', 'warn');
-      if (typeof log === 'function') log('No Groq key set — open Settings and enter one', 'warn');
+    // Block start if no API key for the selected provider.
+    var provSel = S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq';
+    var keyForProv = provSel === 'openai'
+      ? (S.settings.openaiApiKey || '').trim()
+      : (S.settings.groqApiKey || '').trim();
+    if (!keyForProv) {
+      var pLabel = provSel === 'openai' ? 'OpenAI' : 'Groq';
+      setStatus(pLabel + ' API key required — opening settings', 'warn');
+      if (typeof log === 'function') log('No ' + pLabel + ' key set — open Settings and enter one', 'warn');
       setTimeout(function () { try { showSettings(); } catch (_) {} }, 400);
       return;
     }
@@ -2937,7 +2961,9 @@ body {
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
+        transcriptionProvider: S.settings.transcriptionProvider || 'groq',
         groqApiKey: (S.settings.groqApiKey || '').trim() || null,
+        openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
       }));
       S.ws.send(JSON.stringify({ type: 'start' }));
       log('Reused existing WS, sent start', 'ok');
@@ -3105,6 +3131,54 @@ body {
     var isPhone = src === 'phone';
     document.getElementById('btnG2Mic').classList.toggle('active', !isPhone);
     document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
+  };
+
+  window.setProvider = function (p) {
+    p = (p === 'openai') ? 'openai' : 'groq';
+    S.settings.transcriptionProvider = p;
+    var gBtn = document.getElementById('btnProviderGroq');
+    var oBtn = document.getElementById('btnProviderOpenAI');
+    if (gBtn) gBtn.classList.toggle('active', p === 'groq');
+    if (oBtn) oBtn.classList.toggle('active', p === 'openai');
+    var gRow = document.getElementById('groqKeyRow');
+    var oRow = document.getElementById('openaiKeyRow');
+    if (gRow) gRow.style.display = (p === 'groq') ? '' : 'none';
+    if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
+  };
+
+  window.testOpenAIKey = async function () {
+    var keyEl = document.getElementById('settingOpenAIKey');
+    var resultEl = document.getElementById('openaiTestResult');
+    var key = (keyEl && keyEl.value || '').trim();
+    if (!key) {
+      resultEl.textContent = 'Paste a key first';
+      resultEl.style.color = '#e53e3e';
+      return;
+    }
+    resultEl.textContent = 'Testing…';
+    resultEl.style.color = 'var(--tc-2)';
+    try {
+      var res = await fetch('https://api.openai.com/v1/models', {
+        headers: { 'Authorization': 'Bearer ' + key },
+      });
+      if (res.status === 401 || res.status === 403) {
+        resultEl.textContent = 'Invalid key (' + res.status + ')';
+        resultEl.style.color = '#e53e3e';
+        return;
+      }
+      if (!res.ok) {
+        resultEl.textContent = 'HTTP ' + res.status;
+        resultEl.style.color = '#e53e3e';
+        return;
+      }
+      var data = await res.json();
+      var count = (data.data || []).length;
+      resultEl.textContent = '\u2713 Valid — ' + count + ' models available';
+      resultEl.style.color = '#2d9e4f';
+    } catch (e) {
+      resultEl.textContent = 'Network error: ' + (e.message || e);
+      resultEl.style.color = '#e53e3e';
+    }
   };
 
   window.testGroqKey = async function () {
@@ -3275,6 +3349,9 @@ body {
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
+    var oaiInput = document.getElementById('settingOpenAIKey');
+    if (oaiInput) oaiInput.value = S.settings.openaiApiKey || '';
+    setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq');
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
@@ -3288,18 +3365,12 @@ body {
 
   function reinitPipeline() {
     if (!S.ws || S.ws.readyState !== WebSocket.OPEN) return;
-    var useGroq = S.settings.transcriptionProvider === 'groq';
-    // Reset any stale provider-specific pills from the previous mode before
-    // the new sys_status events arrive (Groq→Whisper and vice-versa).
+    var provider = S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq';
+    // Reset stale provider-specific pills before new sys_status arrives.
     var fePill = document.getElementById('sPillEndpoint');
     if (fePill) fePill.style.display = 'none';
-    if (useGroq) {
-      _modelProvider = 'groq';
-      setPill('sPillModel', 'ok', 'Ready');
-    } else {
-      _modelProvider = '';
-      setPill('sPillModel', 'warn', 'Server waking\u2026');
-    }
+    _modelProvider = provider;
+    setPill('sPillModel', 'ok', 'Ready');
     S.ws.send(JSON.stringify({
       type: 'init',
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
@@ -3307,7 +3378,9 @@ body {
       pipelineVersion: S.settings.pipelineVersion || 'v4',
       fastMode: _fastMode,
       slowMode: _slowMode,
-      groqApiKey: (useGroq && (S.settings.groqApiKey || '').trim()) || null,
+      transcriptionProvider: provider,
+      groqApiKey: (S.settings.groqApiKey || '').trim() || null,
+      openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
     }));
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
     S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -3320,7 +3393,10 @@ body {
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);
     S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
-    S.settings.transcriptionProvider = 'groq';
+    var oaiEl = document.getElementById('settingOpenAIKey');
+    S.settings.openaiApiKey = oaiEl ? (oaiEl.value || '').trim() : (S.settings.openaiApiKey || '');
+    S.settings.transcriptionProvider =
+      document.getElementById('btnProviderOpenAI').classList.contains('active') ? 'openai' : 'groq';
     S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')
       ? 'transliteration' : 'transliteration';
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode

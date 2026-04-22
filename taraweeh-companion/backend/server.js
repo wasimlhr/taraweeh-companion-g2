@@ -205,21 +205,30 @@ wss.on('connection', (ws, req) => {
     let whisperOpts = buildWhisperOpts();
     // Client-supplied Groq key — user brings their own API key, overrides provider.
     // Everything else in whisperOpts remains host-managed.
-    if (opts && typeof opts === 'object' && opts.groqApiKey && typeof opts.groqApiKey === 'string') {
-      whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: opts.groqApiKey.trim() };
+    // Client-supplied provider selection. Prefer openai > groq when both are
+    // set (openai has no RPM cap on normal accounts). Never fall back to HF.
+    const clientProvider = opts?.transcriptionProvider || '';
+    const openaiKey = (typeof opts?.openaiApiKey === 'string') ? opts.openaiApiKey.trim() : '';
+    const groqKey   = (typeof opts?.groqApiKey   === 'string') ? opts.groqApiKey.trim()   : '';
+    const wantOpenAI = clientProvider === 'openai' && openaiKey;
+    const wantGroq   = clientProvider === 'groq' && groqKey;
+    // Back-compat: if no explicit provider, use whichever key is present (prefer openai).
+    const fallbackOpenAI = !clientProvider && openaiKey;
+    const fallbackGroq   = !clientProvider && groqKey;
+
+    if (wantOpenAI || fallbackOpenAI) {
+      whisperOpts = { ...whisperOpts, provider: 'openai', apiKey: openaiKey };
+      console.log('[Init] Client provided OpenAI API key — using OpenAI Whisper for this session');
+      send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'openai' });
+    } else if (wantGroq || fallbackGroq) {
+      whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: groqKey };
       console.log('[Init] Client provided Groq API key — using Groq provider for this session');
-      // Groq is BYOK with no warmup probe; signal ready immediately so the UI
-      // stops lingering on "Connecting to transcription server…". Real status
-      // updates arrive after the first chunk is transcribed.
       send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'groq' });
     } else {
-      // No Groq key in init payload. Whisper/HF is deprecated for this app —
-      // force Groq mode with no key so transcribe() throws a clear "API key
-      // missing" error rather than silently routing to the HF endpoint and
-      // flashing "Server warming up / whisper-v3" in the UI.
+      // No key in init. Surface a clear error instead of routing to HF.
       whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: '' };
-      console.log('[Init] No Groq key — forcing Groq mode (transcribe will error until key is provided)');
-      send({ type: 'sys_status', component: 'model', status: 'error', provider: 'groq', message: 'Groq API key required' });
+      console.log('[Init] No transcription API key — transcribe will error until one is provided');
+      send({ type: 'sys_status', component: 'model', status: 'error', provider: 'groq', message: 'API key required (Groq or OpenAI)' });
     }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
     const translationLang = sanitizeTranslationLang(requestedTranslation);
