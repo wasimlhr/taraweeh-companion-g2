@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.9.3</span>
+      <span class="version" id="versionEl">v4.9.4</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -863,7 +863,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.9.3';
+  const APP_VERSION = 'v4.9.4';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1110,7 +1110,7 @@ body {
       const merged = { ...DEFAULT_SETTINGS, ...saved };
       merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
       merged.lang = sanitizeTranslationLang(merged.lang);
-      // Whisper was removed in v4.9.3 — Groq is the only supported provider.
+      // Whisper was removed in v4.9.4 — Groq is the only supported provider.
       // Force any stale stored value to 'groq' so old sessions don't reopen in
       // an invalid state.
       merged.transcriptionProvider = 'groq';
@@ -1235,8 +1235,14 @@ body {
           // Groq has no warmup — an error here is a transient API failure
           // (rate limit, bad key, network), not a cold-start. Label accordingly.
           if (s.provider === 'groq' || _modelProvider === 'groq') {
-            setPill('sPillModel', 'warn', 'Groq: retry');
-            if (!S.isRecording) setStatus('Groq API error — retrying\u2026', 'result');
+            if (s.httpStatus === 429 && s.retryAfterMs > 0) {
+              var waitS = Math.ceil(s.retryAfterMs / 1000);
+              setPill('sPillModel', 'warn', 'Groq: rate limit — ' + waitS + 's');
+              if (!S.isRecording) setStatus('Groq rate-limited, retry in ' + waitS + 's', 'result');
+            } else {
+              setPill('sPillModel', 'warn', 'Groq: retry');
+              if (!S.isRecording) setStatus('Groq API error — retrying\u2026', 'result');
+            }
           } else {
             setPill('sPillModel', 'warn', 'Server warming up…');
             if (!S.isRecording) setStatus('Server warming up\u2026 retrying', 'result');

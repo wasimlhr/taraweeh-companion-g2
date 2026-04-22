@@ -306,6 +306,9 @@ export class AudioPipeline {
     // Groq word-level tracking: absolute ms of last heard word's end time.
     // Used by _canDisplayAdvance() to block timer during silences/pauses.
     this._lastHeardWordMs    = 0;
+    // Groq rate-limit cooldown: pipeline stops calling transcribe() until
+    // this timestamp (set by 429 Retry-After hints).
+    this._rateLimitedUntilMs = 0;
     this._lastHeardWordCount = 0;
 
     this.fastMode = false;
@@ -394,6 +397,24 @@ export class AudioPipeline {
     console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}`);
     this.onStatus({ type: 'taraweeh_mode', enabled: this.taraweehMode,
       position: this._taraweehPos, rakat: this._rakatCount });
+  }
+
+  _handleTranscriptionError(err) {
+    if (err && (err.status === 429 || /HTTP 429/.test(err.message || ''))) {
+      // Use server-supplied hint, clamped to [5s, 60s]. We never want to
+      // freeze longer than a minute even on day-cap 429s — user can see the
+      // Model pill "Groq: rate-limited Xs" and decide to stop/retry.
+      const hintMs = err.retryAfterMs || 0;
+      const waitMs = Math.max(5000, Math.min(hintMs || 15000, 60000));
+      this._rateLimitedUntilMs = Date.now() + waitMs;
+      console.warn(`[Pipeline] Groq 429 — cooldown ${Math.round(waitMs/1000)}s before next request`);
+      this.onStatus({ component: 'model', status: 'error', provider: 'groq',
+        message: `Rate limit — waiting ${Math.round(waitMs/1000)}s`, retryAfterMs: waitMs, httpStatus: 429 });
+    }
+  }
+
+  _isRateLimited() {
+    return this._rateLimitedUntilMs > 0 && Date.now() < this._rateLimitedUntilMs;
   }
 
   resetRakat() {
@@ -771,6 +792,7 @@ export class AudioPipeline {
   _maybeProcessLockedBufferedChunk() {
     if (!this.active) return false;
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
+    if (this._isRateLimited()) return false;
     // Groq free tier caps at 20 RPM. Tighten locked chunking so a single session
     // stays under the limit: min 5s between sends, 1 in-flight at a time.
     // HF keeps the faster 4s / 2-inflight defaults.
@@ -834,6 +856,13 @@ export class AudioPipeline {
 
     const stale = () => this._searchGen !== myGen || !this.active;
 
+    // Hold off entirely while rate-limited — don't waste windows or burn
+    // calls into an already-hot 429 bucket.
+    if (this._isRateLimited()) {
+      this.processing = false;
+      return;
+    }
+
     try {
       const rms = computeRms(this._searchBuf);
       this.onStatus({ component: 'audio', status: 'active', rms: +rms.toFixed(4) });
@@ -862,6 +891,7 @@ export class AudioPipeline {
         console.log(`[Pipeline] Whisper (${bufMs}ms): "${text.substring(0, 80)}"${words.length > 0 ? ` [${words.length} words]` : ''}`);
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
+        this._handleTranscriptionError(err);
         this.onError(err.message);
         if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
         return;
@@ -1127,6 +1157,7 @@ export class AudioPipeline {
         resultAgeMs = Date.now() - startedAt;
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
+        this._handleTranscriptionError(err);
         return;
       }
 

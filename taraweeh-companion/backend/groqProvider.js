@@ -43,8 +43,20 @@ export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null) {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     const msg = `Groq HTTP ${res.status}: ${body.slice(0, 200)}`;
-    emit?.({ component: 'model', status: 'error', provider: 'groq', message: body.slice(0, 100) });
-    throw new Error(msg);
+    // Surface Retry-After so the pipeline can back off on 429s instead of
+    // continuing to hammer Groq (which extends the rate-limit penalty window).
+    const retryAfterHdr = res.headers.get('retry-after') || res.headers.get('x-ratelimit-reset') || '';
+    let retryAfterSec = parseInt(retryAfterHdr, 10);
+    // Fallback: parse "Please try again in 1m23s" / "in 45s" from the body
+    if (!Number.isFinite(retryAfterSec) || retryAfterSec <= 0) {
+      const m = body.match(/try again in\s+(?:(\d+)m)?(\d+(?:\.\d+)?)s/i);
+      if (m) retryAfterSec = Math.ceil((parseInt(m[1] || '0', 10) * 60) + parseFloat(m[2]));
+    }
+    const err = new Error(msg);
+    err.status = res.status;
+    err.retryAfterMs = (Number.isFinite(retryAfterSec) && retryAfterSec > 0) ? retryAfterSec * 1000 : 0;
+    emit?.({ component: 'model', status: 'error', provider: 'groq', message: body.slice(0, 100), retryAfterMs: err.retryAfterMs, httpStatus: res.status });
+    throw err;
   }
 
   const data = await res.json();
