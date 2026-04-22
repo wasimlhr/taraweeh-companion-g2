@@ -251,11 +251,13 @@ export class AudioPipeline {
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
     // Groq mode flag — drives snap-back/snap-forward aggressiveness, pacer blend,
     // and pace-learning override.
-    // BYOK API providers (Groq, OpenAI Whisper). Both behave identically from
-    // the pipeline's POV: no warmup, word timestamps, lower per-chunk scores.
-    // isGroqMode name kept for back-compat with existing threshold branches.
+    // BYOK API providers. Both share Groq-style tuning (no warmup, lower
+    // anchor thresholds) — `isGroqMode` stays the flag for that shared path.
+    // `isOpenAIMode` tracks OpenAI specifically for chunk-rate tuning (no RPM
+    // cap, so we can send as fast as the old HF defaults).
     this.isGroqMode      = this.whisperOpts?.provider === 'groq' || this.whisperOpts?.provider === 'openai';
-    console.log(`[Pipeline] Constructed — provider=${this.whisperOpts?.provider || 'default'}, byok=${this.isGroqMode}`);
+    this.isOpenAIMode    = this.whisperOpts?.provider === 'openai';
+    console.log(`[Pipeline] Constructed — provider=${this.whisperOpts?.provider || 'default'}, byok=${this.isGroqMode}, openai=${this.isOpenAIMode}`);
 
     this.state     = createState();
     this.active    = false;
@@ -796,11 +798,12 @@ export class AudioPipeline {
     if (!this.active) return false;
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
     if (this._isRateLimited()) return false;
-    // Groq free tier caps at 20 RPM. Tighten locked chunking so a single session
-    // stays under the limit: min 5s between sends, 1 in-flight at a time.
-    // HF keeps the faster 4s / 2-inflight defaults.
-    const maxInFlight = this.isGroqMode ? 1 : LOCKED_MAX_INFLIGHT;
-    const minIntervalMs = this.isGroqMode ? 5000 : LOCKED_MIN_MS;
+    // Groq free tier caps at 20 RPM → tighten (5s / 1 in-flight).
+    // OpenAI has no practical RPM cap → use the faster default (4s / 2 in-flight),
+    // which is what HF used.
+    const tightenForGroq = this.isGroqMode && !this.isOpenAIMode;
+    const maxInFlight = tightenForGroq ? 1 : LOCKED_MAX_INFLIGHT;
+    const minIntervalMs = tightenForGroq ? 5000 : LOCKED_MIN_MS;
     if (this._lockedInFlight >= maxInFlight || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
     const timeSinceLastSend = this._lastLockedCall ? (now - this._lastLockedCall) : Infinity;
@@ -1343,13 +1346,16 @@ export class AudioPipeline {
         this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
         return;
       }
-      // High confidence (≥80%) = immediate back-correct (1 confirm)
-      // Medium confidence: lag=1 needs 2, lag≥2 needs 3
-      // Groq mode: lag=1 with score ≥50% snaps on 1 confirm — slow recitations
-      // drift display 1 ahead; trust Groq's hint rather than proving it twice.
-      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1
-        : (this.isGroqMode && lag === 1 && score >= 50) ? 1
-        : (lag === 1 ? 2 : 3);
+      // lag=1 back-correct disabled entirely — 1-ayah drift is within normal
+      // live-tracking latency and bouncing the display back on small jitter
+      // hurts readability more than it helps. Real drift is detected at lag≥2,
+      // handled either here or by the immediate Groq snap-back path above.
+      if (lag === 1) {
+        this._emitState(text, rms);
+        return;
+      }
+      // lag≥2 still follows the repeat-count gate.
+      const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 1 : 3;
       const REPEAT_BACK_CORRECT_MIN_CONF = this.isGroqMode ? 45 : 65;
 
       // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
