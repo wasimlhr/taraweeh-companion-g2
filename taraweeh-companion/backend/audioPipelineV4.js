@@ -771,10 +771,15 @@ export class AudioPipeline {
   _maybeProcessLockedBufferedChunk() {
     if (!this.active) return false;
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
-    if (this._lockedInFlight >= LOCKED_MAX_INFLIGHT || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
+    // Groq free tier caps at 20 RPM. Tighten locked chunking so a single session
+    // stays under the limit: min 5s between sends, 1 in-flight at a time.
+    // HF keeps the faster 4s / 2-inflight defaults.
+    const maxInFlight = this.isGroqMode ? 1 : LOCKED_MAX_INFLIGHT;
+    const minIntervalMs = this.isGroqMode ? 5000 : LOCKED_MIN_MS;
+    if (this._lockedInFlight >= maxInFlight || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
     const timeSinceLastSend = this._lastLockedCall ? (now - this._lastLockedCall) : Infinity;
-    if (timeSinceLastSend < LOCKED_MIN_MS) return false;
+    if (timeSinceLastSend < minIntervalMs) return false;
 
     // Backpressure: send only the newest tail window so slow endpoint responses
     // do not force us to keep transcribing stale 8-10s buffers.
