@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.9.1</span>
+      <span class="version" id="versionEl">v4.9.2</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -863,7 +863,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.9.1';
+  const APP_VERSION = 'v4.9.2';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1110,7 +1110,7 @@ body {
       const merged = { ...DEFAULT_SETTINGS, ...saved };
       merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
       merged.lang = sanitizeTranslationLang(merged.lang);
-      // Whisper was removed in v4.9.1 — Groq is the only supported provider.
+      // Whisper was removed in v4.9.2 — Groq is the only supported provider.
       // Force any stale stored value to 'groq' so old sessions don't reopen in
       // an invalid state.
       merged.transcriptionProvider = 'groq';
@@ -2892,12 +2892,16 @@ body {
     if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
       connectWS();
     } else {
-      // Already connected — just re-init pipeline and activate
+      // Already connected — just re-init pipeline and activate.
+      // MUST include groqApiKey or the server falls back to HF and the UI
+      // flashes "Server warming up / whisper-v3" until the user opens
+      // settings (which triggers a correct reinit).
       S.ws.send(JSON.stringify({
         type: 'init',
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
+        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
       }));
       S.ws.send(JSON.stringify({ type: 'start' }));
       log('Reused existing WS, sent start', 'ok');

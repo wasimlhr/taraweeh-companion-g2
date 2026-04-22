@@ -212,6 +212,14 @@ wss.on('connection', (ws, req) => {
       // stops lingering on "Connecting to transcription server…". Real status
       // updates arrive after the first chunk is transcribed.
       send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'groq' });
+    } else {
+      // No Groq key in init payload. Whisper/HF is deprecated for this app —
+      // force Groq mode with no key so transcribe() throws a clear "API key
+      // missing" error rather than silently routing to the HF endpoint and
+      // flashing "Server warming up / whisper-v3" in the UI.
+      whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: '' };
+      console.log('[Init] No Groq key — forcing Groq mode (transcribe will error until key is provided)');
+      send({ type: 'sys_status', component: 'model', status: 'error', provider: 'groq', message: 'Groq API key required' });
     }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
     const translationLang = sanitizeTranslationLang(requestedTranslation);
