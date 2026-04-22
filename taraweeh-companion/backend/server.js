@@ -186,8 +186,19 @@ const keepaliveInterval = setInterval(() => {
 
 wss.on('close', () => clearInterval(keepaliveInterval));
 
+// Session dedup — kill stale pipelines when same client opens a new WS.
+// Field bug: phone + sim both connected → two pipelines emit state → display
+// bounces between positions. Enforce one active WS per client IP.
+const _activeConnections = new Map(); // ip → ws
+
 wss.on('connection', (ws, req) => {
   const clientIp = req.socket.remoteAddress;
+  const existing = _activeConnections.get(clientIp);
+  if (existing && existing !== ws && existing.readyState === existing.OPEN) {
+    console.log(`[WS] New connection from ${clientIp} — closing stale connection to prevent duplicate pipelines`);
+    try { existing.close(1000, 'superseded by new connection'); } catch (_) {}
+  }
+  _activeConnections.set(clientIp, ws);
   console.log(`[WS] Client connected from ${clientIp}`);
   let pipeline = null;
 
@@ -319,6 +330,7 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     console.log(`[WS] Client disconnected from ${clientIp}`);
     if (pipeline) { pipeline.destroy(); pipeline = null; }
+    if (_activeConnections.get(clientIp) === ws) _activeConnections.delete(clientIp);
   });
 
   send({ type: 'connected', sampleRate: SAMPLE_RATE });

@@ -1458,24 +1458,17 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       }
-      // Gap 1: Whisper detected next ayah. But this data is ~6s old (4s capture
-      // + 2s RTT), so the reciter is already partway through. Subtract pipeline
-      // lag from the timer instead of using full duration.
+      // Gap 1: don't touch the display. Whisper is 6s lagged — 1 ayah off is
+      // within normal live-tracking latency and usually resolves as the reciter
+      // continues. Snapping forward on gap=1 was causing visible jitter when
+      // combined with the timer's natural advance. Keep the existing timer and
+      // let it expire on its own.
       if (gap === 1) {
-        this._cancelReadAdvance();
-        this._displaySurah = confirmedSurah;
-        this._displayAyah  = confirmedAyah;
-        this._ayahStartTime = Date.now();
-        this.state = { ...this.state, surah: confirmedSurah, ayah: confirmedAyah,
-          lastLockedSurah: confirmedSurah, lastLockedAyah: confirmedAyah };
         this._emitState(text, rms);
-        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
         return;
       }
-      // GROQ: snap immediately for any gap ≥ 2. Groq is authoritative and the
-      // smooth-step delay (2s per ayah) was letting display lag 4-8s behind on
-      // gap=4 cases. HF keeps smooth catch-up because its mishears need the
-      // buffer to avoid wild jumps.
+      // GROQ: snap immediately for gap ≥ 2 (user asked: only intervene when
+      // we're "way off, like 2 or 3 ayahs"). Groq is authoritative.
       if (this.isGroqMode && score >= 35) {
         this._cancelReadAdvance();
         console.log(`[Pipeline] Groq catch-up snap: :${this._displayAyah} → :${confirmedAyah} (gap=${gap}, conf=${score}%)`);
