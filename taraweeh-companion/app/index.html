@@ -615,12 +615,20 @@ body {
 </head>
 <body>
 
+<!-- Splash screen — shown for ~1.2s on app launch, then fades out -->
+<div id="splashScreen" style="position:fixed;inset:0;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity 400ms ease;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <div style="font-size:40px;line-height:1;margin-bottom:16px">☽</div>
+  <div style="font-size:22px;font-weight:600;letter-spacing:0.5px">Taraweeh Companion</div>
+  <div style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">for Even Realities G2</div>
+  <div id="splashVersion" style="position:absolute;bottom:24px;font-size:11px;opacity:0.4;letter-spacing:0.5px"></div>
+</div>
+
 <!-- Main view -->
 <div id="mainView">
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.1.1</span>
+      <span class="version" id="versionEl">v2.1.2</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -883,7 +891,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.1.1';
+  const APP_VERSION = 'v2.1.2';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -3511,6 +3519,15 @@ body {
     if (_slowMode) _fastMode = false;
     _updatePaceButtons();
     document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v4').toUpperCase();
+    // Splash: show version, fade out after 1.2s
+    var splashV = document.getElementById('splashVersion');
+    if (splashV) splashV.textContent = APP_VERSION;
+    setTimeout(function () {
+      var sp = document.getElementById('splashScreen');
+      if (!sp) return;
+      sp.style.opacity = '0';
+      setTimeout(function () { sp.style.display = 'none'; }, 450);
+    }, 1200);
     // Sync main-view glasses-display pills with saved setting. Arabic was removed;
     // migrate anyone on the old default to transliteration.
     var savedGlasses = S.settings.glassesBottom;
