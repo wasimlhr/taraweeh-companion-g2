@@ -753,7 +753,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.1.8</span>
+      <span class="version" id="versionEl">v2.1.9</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -874,6 +874,14 @@ body {
     <div class="mv-toggle-group" role="group">
       <button type="button" class="mv-toggle-btn active" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
       <button type="button" class="mv-toggle-btn" id="btnGlassesEnOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
+    </div>
+  </div>
+
+  <!-- Transcription provider switch (main screen) -->
+  <div style="margin-top:8px">
+    <div class="mv-toggle-group" role="group" aria-label="Transcription provider">
+      <button type="button" class="mv-toggle-btn active" id="btnProviderGroqMain" onclick="setProvider('groq')">Groq</button>
+      <button type="button" class="mv-toggle-btn" id="btnProviderOpenAIMain" onclick="setProvider('openai')">OpenAI</button>
     </div>
   </div>
 
@@ -1024,7 +1032,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.1.8';
+  const APP_VERSION = 'v2.1.9';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1270,6 +1278,24 @@ body {
     var normalized = String(v || '').toLowerCase().trim();
     return ALLOWED_PIPELINES.has(normalized) ? normalized : 'v4';
   }
+
+  // Stable per-install session ID. Backend uses this to dedup duplicate WS
+  // connections from the SAME install (e.g. reload without close) without
+  // breaking multi-user traffic on shared NAT/carrier IPs.
+  var _clientSessionId = (function () {
+    var KEY = 'taraweeh_session_id';
+    try {
+      var id = localStorage.getItem(KEY);
+      if (!id) {
+        id = (crypto.randomUUID ? crypto.randomUUID()
+          : ('sid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)));
+        localStorage.setItem(KEY, id);
+      }
+      return id;
+    } catch (_) {
+      return 'sid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    }
+  })();
 
   function sanitizeTranslationLang(lang) {
     var normalized = String(lang || '').trim();
@@ -2090,6 +2116,7 @@ body {
       _startWsPing();
       S.ws.send(JSON.stringify({
         type: 'init',
+        sessionId: _clientSessionId,
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
@@ -2449,6 +2476,7 @@ body {
       try {
         S.ws.send(JSON.stringify({
           type: 'init',
+          sessionId: _clientSessionId,
           preferredSurah: parseInt(S.settings.defaultSurah || '0'),
           lang: (S.settings.lang || '').trim() || null,
           pipelineVersion: S.settings.pipelineVersion || 'v4',
@@ -2698,6 +2726,7 @@ body {
       // settings (which triggers a correct reinit).
       S.ws.send(JSON.stringify({
         type: 'init',
+        sessionId: _clientSessionId,
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
@@ -2876,14 +2905,35 @@ body {
   window.setProvider = function (p) {
     p = (p === 'openai') ? 'openai' : 'groq';
     S.settings.transcriptionProvider = p;
+    try { saveSettings(); } catch (_) {}
+    // Settings view
     var gBtn = document.getElementById('btnProviderGroq');
     var oBtn = document.getElementById('btnProviderOpenAI');
     if (gBtn) gBtn.classList.toggle('active', p === 'groq');
     if (oBtn) oBtn.classList.toggle('active', p === 'openai');
+    // Main view
+    var gBtnM = document.getElementById('btnProviderGroqMain');
+    var oBtnM = document.getElementById('btnProviderOpenAIMain');
+    if (gBtnM) gBtnM.classList.toggle('active', p === 'groq');
+    if (oBtnM) oBtnM.classList.toggle('active', p === 'openai');
     var gRow = document.getElementById('groqKeyRow');
     var oRow = document.getElementById('openaiKeyRow');
     if (gRow) gRow.style.display = (p === 'groq') ? '' : 'none';
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
+    // Re-init pipeline live if recording so the switch takes immediate effect.
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      S.ws.send(JSON.stringify({
+        type: 'init',
+        sessionId: _clientSessionId,
+        preferredSurah: parseInt(S.settings.defaultSurah || '0'),
+        lang: (S.settings.lang || '').trim() || null,
+        pipelineVersion: S.settings.pipelineVersion || 'v4',
+        transcriptionProvider: p,
+        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
+        openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
+      }));
+      log('Provider → ' + (p === 'openai' ? 'OpenAI' : 'Groq'), 'ok');
+    }
   };
 
   window.testOpenAIKey = async function () {
@@ -3082,6 +3132,7 @@ body {
     setPill('sPillModel', 'ok', 'Ready');
     S.ws.send(JSON.stringify({
       type: 'init',
+      sessionId: _clientSessionId,
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       lang: (S.settings.lang || '').trim() || null,
       pipelineVersion: S.settings.pipelineVersion || 'v4',

@@ -186,21 +186,17 @@ const keepaliveInterval = setInterval(() => {
 
 wss.on('close', () => clearInterval(keepaliveInterval));
 
-// Session dedup — kill stale pipelines when same client opens a new WS.
-// Field bug: phone + sim both connected → two pipelines emit state → display
-// bounces between positions. Enforce one active WS per client IP.
-const _activeConnections = new Map(); // ip → ws
+// Session dedup by client-supplied session ID (not IP — prod users share NAT/carrier
+// IPs and would cannibalise each other). Clients send a stable per-install ID on init;
+// if the SAME session ID is already connected, close the stale one. Different users
+// have different IDs so they never interfere.
+const _activeSessions = new Map(); // sessionId → ws
 
 wss.on('connection', (ws, req) => {
   const clientIp = req.socket.remoteAddress;
-  const existing = _activeConnections.get(clientIp);
-  if (existing && existing !== ws && existing.readyState === existing.OPEN) {
-    console.log(`[WS] New connection from ${clientIp} — closing stale connection to prevent duplicate pipelines`);
-    try { existing.close(1000, 'superseded by new connection'); } catch (_) {}
-  }
-  _activeConnections.set(clientIp, ws);
   console.log(`[WS] Client connected from ${clientIp}`);
   let pipeline = null;
+  let sessionId = null;
 
   function send(msg) {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -301,7 +297,18 @@ wss.on('connection', (ws, req) => {
               ? msg.preferredSurah : 0;
             const requestedVer = sanitizePipelineVersion(msg.pipelineVersion);
             const ver = requestedVer;
-            console.log(`[Init] preferredSurah=${surah} pipeline=${ver} (client requested: ${requestedVer})`);
+            // Session dedup: if client re-opened without closing the old WS, kill it.
+            const incomingSid = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+            if (incomingSid) {
+              const stale = _activeSessions.get(incomingSid);
+              if (stale && stale !== ws && stale.readyState === stale.OPEN) {
+                console.log(`[WS] Session ${incomingSid.slice(0,8)}… reopened — closing stale connection`);
+                try { stale.close(1000, 'superseded by new connection'); } catch (_) {}
+              }
+              sessionId = incomingSid;
+              _activeSessions.set(sessionId, ws);
+            }
+            console.log(`[Init] preferredSurah=${surah} pipeline=${ver} sid=${sessionId ? sessionId.slice(0,8) : '(none)'} (client requested: ${requestedVer})`);
             createPipeline(surah, msg, ver);
             _binaryLogged = false;
             break;
@@ -330,7 +337,7 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     console.log(`[WS] Client disconnected from ${clientIp}`);
     if (pipeline) { pipeline.destroy(); pipeline = null; }
-    if (_activeConnections.get(clientIp) === ws) _activeConnections.delete(clientIp);
+    if (sessionId && _activeSessions.get(sessionId) === ws) _activeSessions.delete(sessionId);
   });
 
   send({ type: 'connected', sampleRate: SAMPLE_RATE });
