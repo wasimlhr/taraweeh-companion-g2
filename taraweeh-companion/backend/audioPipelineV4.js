@@ -355,7 +355,12 @@ export class AudioPipeline {
     this._preRukuSurah   = 0;
     this._preRukuAyah    = 0;
 
-    probeWhisperEndpoint(this.whisperOpts, this.onStatus).catch(() => {});
+    // Skip the HF warmup probe in Groq mode — the probe's 'dedicated' status
+    // events overwrite Groq's 'ready' signal and flash "Server warming up…"
+    // on the UI during transient 401/503s.
+    if (!this.isGroqMode) {
+      probeWhisperEndpoint(this.whisperOpts, this.onStatus).catch(() => {});
+    }
   }
 
   get _maxDisplayLead() {

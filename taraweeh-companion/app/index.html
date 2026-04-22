@@ -620,7 +620,7 @@ body {
   <div class="header">
     <h1>☽ Taraweeh Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v4.8.7</span>
+      <span class="version" id="versionEl">v4.8.8</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -878,7 +878,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v4.8.7';
+  const APP_VERSION = 'v4.8.8';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2435,8 +2435,12 @@ body {
   function handleServerMsg(msg) {
     if (msg.type === 'connected') {
       log('Backend ready', 'ok');
-      _modelProvider = '';
-      setPill('sPillModel', 'warn', 'Server waking\u2026');
+      // Groq has no warmup; in Groq mode skip the "Server waking…" flash that
+      // was designed for the HF endpoint cold-start path.
+      var usingGroq = S.settings && S.settings.transcriptionProvider === 'groq';
+      _modelProvider = usingGroq ? 'groq' : '';
+      if (usingGroq) setPill('sPillModel', 'ok', 'Ready');
+      else setPill('sPillModel', 'warn', 'Server waking\u2026');
       setPill('sPillConf', '', 'Match: --');
       // Send start if recording button was already active (reconnect case)
       if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN)
