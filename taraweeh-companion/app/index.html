@@ -3,39 +3,38 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Taraweeh Companion</title>
+  <title>Quran Companion</title>
   <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <style>
 /* Even Realities design tokens. FK Grotesk is the brand face (commercial);
    Inter is the closest free substitute with the same geometric grotesk feel. */
 :root {
-  /* Text colors */
-  --tc-highlight: #0a0a0a;  /* pure dark text — primary */
-  --tc-1: #1a1a1a;          /* body */
-  --tc-2: #6b6b6b;          /* secondary */
+  /* Text colors — Even Realities spec */
+  --tc-highlight: #232323;  /* primary */
+  --tc-1: #232323;          /* body */
+  --tc-2: #7B7B7B;          /* secondary */
   --tc-3: #9a9a9a;          /* tertiary */
   --tc-red: #e53935;
   --tc-green: #2ea44f;
   --tc-gold: #b7860b;       /* retained for legacy refs */
   /* Background colors */
-  --bc-highlight: #0a0a0a;  /* inverted accent bg */
-  --bc-1: #ffffff;
-  --bc-2: #f5f5f5;
-  --bc-3: #ebebeb;
-  --bc-4: #dcdcdc;
-  --bc-highlight-yellow: #fff3b0;  /* highlight BG per design system */
-  --bc-accent: var(--bc-highlight-yellow);
-  --bc-accent-press: #ffeaa0;
+  --bc-highlight: #232323;  /* inverted accent bg */
+  --bc-1: #FFFFFF;          /* page base */
+  --bc-2: #EEEEEE;          /* surface */
+  --bc-3: #e2e2e2;
+  --bc-4: #d4d4d4;
+  --bc-accent: #FEF991;     /* Even Realities accent */
+  --bc-accent-press: #f4ef85;
   /* Shaded (muted) */
   --sc-1: #c7c7c7;
   --sc-2: #e5e5e5;
-  /* Typography — FK scale (font-family falls back to Inter) */
-  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Typography — FK Grotesk Neue (fallback: Inter) */
+  --font: "FK Grotesk Neue", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-ar: "Amiri", serif;
-  --track-tight: -0.03em;   /* ~-3% per FK spec */
-  /* Layout per Even Realities APP layout doc */
-  --screen-margin: 12px;
+  --track-tight: -0.02em;   /* Even Realities display/title tracking */
+  /* Layout — 20px screen edges per spec, 16px card padding, 4/8/12/16/24 spacing */
+  --screen-margin: 20px;
   --card-margin: 16px;
   --r: 8px;
   --sp: 12px;
@@ -43,20 +42,19 @@
   color-scheme: light;
 }
 [data-theme="dark"] {
-  --tc-highlight: #ffffff;
-  --tc-1: #e8e6e3;
-  --tc-2: #9a9a9a;
+  --tc-highlight: #FFFFFF;
+  --tc-1: #FFFFFF;
+  --tc-2: #8A8A8A;
   --tc-3: #666;
   --tc-red: #f87171;
   --tc-green: #4ade80;
-  --bc-highlight: #ffffff;
-  --bc-1: #1e1e1e;
-  --bc-2: #141414;
+  --bc-highlight: #FFFFFF;
+  --bc-1: #111111;          /* page base */
+  --bc-2: #1A1A1A;          /* surface */
   --bc-3: #2a2a2a;
   --bc-4: #3a3a3a;
-  --bc-highlight-yellow: #2a2517;
-  --bc-accent: var(--bc-highlight-yellow);
-  --bc-accent-press: #3a3020;
+  --bc-accent: #FEF991;
+  --bc-accent-press: #f4ef85;
   --sc-1: #3a3a3a;
   --sc-2: #2a2a2a;
   --shadow: 0 1px 2px rgba(0,0,0,0.3);
@@ -133,7 +131,29 @@ body {
   justify-content: center;
   transition: background 0.2s, border-color 0.2s;
 }
-#status.error { color: var(--tc-red); }
+#status.error,
+#status.err {
+  background: #fef2f2;
+  border-color: var(--tc-red);
+  color: #b91c1c;
+  font-weight: 500;
+}
+[data-theme="dark"] #status.error,
+[data-theme="dark"] #status.err {
+  background: #2a1515;
+  border-color: var(--tc-red);
+  color: #f87171;
+}
+#status.warn {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+[data-theme="dark"] #status.warn {
+  background: #2a2015;
+  border-color: #f59e0b;
+  color: #fbbf24;
+}
 #status.result { color: var(--tc-green); }
 
 /* G2 connection — now a pill in the status bar */
@@ -424,15 +444,15 @@ body {
 .mode-btn:active { transform: scale(0.98); }
 /* Active state: yellow highlight bg per Even Realities */
 .mode-btn.active {
-  background: var(--bc-highlight-yellow);
-  border-color: var(--bc-highlight-yellow);
+  background: var(--bc-accent);
+  border-color: var(--bc-accent);
   color: var(--tc-highlight);
 }
 #fastModeBtn.active,
 #slowModeBtn.active,
 #taraweehBtn.active {
-  background: var(--bc-highlight-yellow);
-  border-color: var(--bc-highlight-yellow);
+  background: var(--bc-accent);
+  border-color: var(--bc-accent);
   color: var(--tc-highlight);
 }
 
@@ -468,12 +488,16 @@ body {
   margin-top: 4px;
   padding: 6px 16px;
   font-size: 12px;
-  border: 1px solid var(--bc-4);
-  border-radius: 20px;
-  background: transparent;
-  color: var(--tc-2);
+  border: 1px solid var(--tc-red);
+  border-radius: 999px;
+  background: var(--bc-1);
+  color: var(--tc-red);
   cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
 }
+.tw-reset-btn:active { background: #fff0f0; }
+[data-theme="dark"] .tw-reset-btn:active { background: #2a1515; }
+.tw-reset-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-group { margin-bottom: 10px; }
 
@@ -503,8 +527,46 @@ body {
   font-family: var(--font);
   color: var(--tc-highlight);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
   letter-spacing: var(--track-tight);
+}
+
+/* Even Realities button spec — pill with optional leading arrow.
+   Primary = filled black, Danger = outlined red, Accent = filled yellow. */
+.btn-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.btn-arrow::before {
+  content: "\2192";          /* → */
+  display: inline-block;
+  font-size: 0.95em;
+  line-height: 1;
+}
+.btn-primary {
+  background: #0a0a0a;
+  border: 1px solid #0a0a0a;
+  color: #ffffff;
+}
+.btn-primary:active { background: #2a2a2a; border-color: #2a2a2a; }
+.btn-danger {
+  background: var(--bc-1);
+  border: 1px solid var(--tc-red);
+  color: var(--tc-red);
+}
+.btn-danger:active { background: #fff0f0; }
+[data-theme="dark"] .btn-danger:active { background: #2a1515; }
+/* Spec: "Disabled should be using opacity instead of an overlay." */
+.back-btn:disabled,
+.mode-btn:disabled,
+.toggle-btn:disabled,
+.mv-toggle-btn:disabled,
+.btn-primary:disabled,
+.btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .s-section {
   font-size: 11px;             /* Normal Detail — FK 11 */
@@ -681,7 +743,7 @@ body {
 <!-- Splash screen — shown for ~1.2s on app launch, then fades out -->
 <div id="splashScreen" style="position:fixed;inset:0;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity 400ms ease;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
   <div style="font-size:40px;line-height:1;margin-bottom:16px">☽</div>
-  <div style="font-size:22px;font-weight:600;letter-spacing:0.5px">Taraweeh Companion</div>
+  <div style="font-size:22px;font-weight:600;letter-spacing:0.5px">Quran Companion</div>
   <div style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">for Even Realities G2</div>
   <div id="splashVersion" style="position:absolute;bottom:24px;font-size:11px;opacity:0.4;letter-spacing:0.5px"></div>
 </div>
@@ -689,9 +751,9 @@ body {
 <!-- Main view -->
 <div id="mainView">
   <div class="header">
-    <h1>☽ Taraweeh Companion</h1>
+    <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.1.3</span>
+      <span class="version" id="versionEl">v2.3.0</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -805,19 +867,27 @@ body {
   <div id="waveRow"></div>
 
   <button id="recordBtn" disabled>Detecting glasses...</button>
-  <button id="wakeServerMainBtn" class="back-btn" style="display:none;margin-top:8px;font-size:13px">☁ Wake server</button>
+  <button id="wakeServerMainBtn" class="back-btn btn-primary btn-arrow" style="display:none;margin-top:8px;font-size:13px">Wake server</button>
 
   <!-- Glasses second-line selector (Arabic / Transliteration / English only) -->
   <div style="margin-top:12px">
     <div class="mv-toggle-group" role="group">
-      <button type="button" class="mv-toggle-btn" id="btnGlassesArabic" onclick="setGlassesBottom('arabic')" style="display:none">Arabic</button>
       <button type="button" class="mv-toggle-btn active" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
       <button type="button" class="mv-toggle-btn" id="btnGlassesEnOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
     </div>
   </div>
 
+  <!-- Transcription provider switch (main screen) -->
+  <div style="margin-top:8px">
+    <div class="mv-toggle-group" role="group" aria-label="Transcription provider">
+      <button type="button" class="mv-toggle-btn active" id="btnProviderGroqMain" onclick="setProvider('groq')">Groq</button>
+      <button type="button" class="mv-toggle-btn" id="btnProviderOpenAIMain" onclick="setProvider('openai')">OpenAI</button>
+    </div>
+  </div>
+
   <div class="btn-group" style="margin-top:8px">
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
+    <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Fast mode — shortens per-ayah timer (use for fast reciters)">🐇 Fast: Off</button>
     <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Slow mode — lengthens per-ayah timer (use for slow reciters)">🐢 Slow: Off</button>
   </div>
 
@@ -842,7 +912,7 @@ body {
       </div>
       <span class="s-hint" style="margin-top:4px;display:block">Use G2 mic by default, or Phone mic after permission prompt.</span>
       <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">—</span>
-      <button type="button" id="settingMicTest" class="back-btn" style="margin-top:6px;font-size:13px">🎤 Request mic permission</button>
+      <button type="button" id="settingMicTest" class="back-btn btn-arrow" style="margin-top:6px;font-size:13px">Request mic permission</button>
     </div>
     <div class="s-warn" style="margin-top:8px;padding:10px 14px;background:var(--bc-accent);border-radius:var(--r);font-size:12px;color:var(--tc-1)">
       <strong>Note:</strong> G2 and Phone mic both work when permission is granted.
@@ -890,7 +960,7 @@ body {
     <span class="s-hint">Enabled by host env. Phone mic is enforced for this deployment.</span>
   </div>
   <div class="s-row" id="wakeServerRow" style="display:none;margin-top:8px">
-    <button type="button" id="wakeServerBtn" class="back-btn" style="font-size:13px">Start service now</button>
+    <button type="button" id="wakeServerBtn" class="back-btn btn-primary btn-arrow" style="font-size:13px">Start service now</button>
     <span class="s-hint" id="wakeServerHint" style="margin-top:6px;display:block">Use this if service is sleeping.</span>
   </div>
 
@@ -899,7 +969,6 @@ body {
     <div class="s-row">
       <span class="s-label">Second line on glasses</span>
       <div class="toggle-group" role="group">
-        <button type="button" class="toggle-btn" id="btnBottomArabic" onclick="setGlassesBottom('arabic')" style="display:none">Arabic (Mushaf)</button>
         <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
       </div>
       <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">
@@ -908,41 +977,61 @@ body {
     </div>
   </div>
 
-  <div class="s-section">Transcription engine</div>
+  <div class="s-section">Transcription</div>
   <div class="s-card">
     <div class="s-row">
-      <span class="s-label">Provider</span>
+      <span class="s-label">Mode</span>
       <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
-        <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
-        <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
+        <button type="button" class="toggle-btn active" id="btnModeShared" onclick="setKeyMode('shared')">Free (shared)</button>
+        <button type="button" class="toggle-btn" id="btnModeBYOK" onclick="setKeyMode('byok')">Use my own key</button>
       </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">
-        <b>Groq:</b> <code>whisper-large-v3-turbo</code> — fast (~300ms), free tier has 20 RPM cap.<br>
-        <b>OpenAI:</b> <code>whisper-1</code> — slower (~500ms), no RPM cap, $0.006/min audio.
-      </span>
-      <div id="groqKeyRow" style="margin-top:10px">
-        <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-          <button type="button" class="back-btn" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
-          <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+      <div id="sharedHint" style="margin-top:8px;padding:10px 12px;background:var(--bc-2);border-radius:var(--r);font-size:12px;line-height:1.55;color:var(--tc-1)">
+        <b>Free mode</b> uses a shared key paid for by the developer as <i>sadaka jariya</i>. Each session is capped at <b>~90 minutes</b> of audio to protect the budget. If the shared Groq key is rate-limited, requests automatically fail over to OpenAI.<br><br>
+        For unlimited use, switch to <b>"Use my own key"</b> and paste a free Groq key.
+      </div>
+
+      <div id="byokSection" style="display:none;margin-top:12px">
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
+          <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
         </div>
-        <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a Groq key →</a>
+        <span class="s-hint" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
+          <b>Groq</b> <code>whisper-large-v3-turbo</code> — fast (~300ms), free tier 20 RPM.<br>
+          <b>OpenAI</b> <code>whisper-1</code> — slower (~500ms), no RPM cap, $0.006/min.
+        </span>
+        <div id="groqKeyRow">
+          <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+            <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
+            <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+          </div>
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
+            <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a free Groq key →</a>
+          </span>
+        </div>
+        <div id="openaiKeyRow" style="margin-top:10px;display:none">
+          <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false" />
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+            <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testOpenAIKey()" style="font-size:13px">Test key</button>
+            <span id="openaiTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+          </div>
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
+            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get an OpenAI key →</a>
+          </span>
+        </div>
+        <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
+          Key stays on your device. Sent to server only when listening starts.
         </span>
       </div>
-      <div id="openaiKeyRow" style="margin-top:10px;display:none">
-        <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false" />
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-          <button type="button" class="back-btn" id="btnOpenAITest" onclick="testOpenAIKey()" style="font-size:13px">Test key</button>
-          <span id="openaiTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
-        </div>
-        <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-          <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get an OpenAI key →</a>
-        </span>
-      </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
-        Key stays on your phone (localStorage). Sent to server only when you start listening.
-      </span>
+    </div>
+  </div>
+
+  <div class="s-section">Diagnostics</div>
+  <div class="s-card">
+    <div class="s-row">
+      <span class="s-label">Event & bridge trace</span>
+      <button type="button" class="back-btn btn-arrow" onclick="copyDiagLog()" style="font-size:13px">Copy diagnostic log</button>
+      <span class="s-hint" id="diagCopyHint" style="margin-top:6px;display:block">Last 500 events (ring buffer). Paste into an issue when reporting glasses/UI bugs.</span>
     </div>
   </div>
 
@@ -954,7 +1043,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.1.3';
+  const APP_VERSION = 'v2.3.0';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1085,6 +1174,11 @@ body {
       slowBtn.textContent = '\uD83D\uDC22 Slow: ' + (_slowMode ? 'On' : 'Off');
       slowBtn.classList.toggle('active', _slowMode);
     }
+    var fastBtn = document.getElementById('fastModeBtn');
+    if (fastBtn) {
+      fastBtn.textContent = '\uD83D\uDC07 Fast: ' + (_fastMode ? 'On' : 'Off');
+      fastBtn.classList.toggle('active', _fastMode);
+    }
   }
   _updatePaceButtons();
 
@@ -1152,6 +1246,110 @@ body {
   const MAX_UPGRADE_CHARS = 2000;  // textContainerUpgrade limit
   const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
   const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+
+  // ─── Persistent storage ───────────────────────────────────────────────────
+  // Browser localStorage is wiped on Even Hub / glasses restart inside the
+  // .ehpk WebView. bridge.setLocalStorage / getLocalStorage is the only
+  // persistent storage on G2. Wrap both behind a sync API backed by an
+  // in-memory cache; bridge is authoritative when present.
+  var Storage = (function () {
+    var cache = new Map();
+    var bridge = null;
+    var KNOWN_KEYS = ['qlive_settings', 'qc_theme', 'taraweeh_session_id'];
+
+    function _readBrowser(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+    function _writeBrowser(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+
+    // Pre-seed cache from browser localStorage so synchronous reads have
+    // something during the brief window before bridge hydration finishes.
+    KNOWN_KEYS.forEach(function (k) {
+      var v = _readBrowser(k);
+      if (v != null && v !== '') cache.set(k, v);
+    });
+
+    // Defer setItem writes that arrive before the bridge attaches. On
+    // attach we flush them so any keys saved during the boot window
+    // actually persist. Without this, the session-ID IIFE (top-of-script)
+    // and any "save settings before bridge ready" path were lost on cold
+    // restart even though the bridge was healthy.
+    var pendingWrites = [];
+    function _trace(tag, detail) {
+      try { if (typeof trace === 'function') trace(tag, detail); } catch (_) {}
+      try { console.log('[Storage] ' + tag + (detail ? ' ' + detail : '')); } catch (_) {}
+    }
+
+    return {
+      hasBridge: function () { return !!bridge; },
+
+      // Hydrate from the bridge once it is ready. Bridge values WIN over
+      // browser cache (browser is volatile, bridge is the source of truth).
+      // If the bridge has no value but the browser does, write the browser
+      // value back to the bridge — handles upgrades from pre-bridge versions.
+      attach: function (b) {
+        bridge = b;
+        if (!bridge) {
+          _trace('storage.attach.no-bridge');
+          return Promise.resolve();
+        }
+        var hasGet = typeof bridge.getLocalStorage === 'function';
+        var hasSet = typeof bridge.setLocalStorage === 'function';
+        _trace('storage.attach', 'hasGet=' + hasGet + ' hasSet=' + hasSet);
+        if (!hasGet || !hasSet) return Promise.resolve();
+
+        // Flush any pending writes that happened before bridge attached
+        // (e.g. session-ID generated at module load, settings saved during
+        // the boot async window). These otherwise stay only in browser
+        // localStorage which is wiped on .ehpk WebView restart.
+        var flush = pendingWrites.splice(0).map(function (w) {
+          _trace('storage.flush', w.key);
+          return Promise.resolve(bridge.setLocalStorage(w.key, w.value)).then(
+            function (ok) { _trace('storage.flush.done', w.key + ' ok=' + ok); },
+            function (e) { _trace('storage.flush.err', w.key + ' ' + (e && e.message || e)); }
+          );
+        });
+
+        return Promise.all(flush).then(function () {
+          return Promise.all(KNOWN_KEYS.map(function (k) {
+            return Promise.resolve(bridge.getLocalStorage(k)).then(function (v) {
+              if (v && v !== '') {
+                _trace('storage.hydrate.has', k + ' len=' + v.length);
+                cache.set(k, v);
+                _writeBrowser(k, v);
+              } else if (cache.has(k)) {
+                _trace('storage.hydrate.migrate', k);
+                return Promise.resolve(bridge.setLocalStorage(k, cache.get(k))).then(
+                  function (ok) { _trace('storage.migrate.done', k + ' ok=' + ok); },
+                  function (e) { _trace('storage.migrate.err', k + ' ' + (e && e.message || e)); }
+                );
+              } else {
+                _trace('storage.hydrate.empty', k);
+              }
+            }, function (e) { _trace('storage.hydrate.err', k + ' ' + (e && e.message || e)); });
+          }));
+        });
+      },
+      getItem: function (key) {
+        return cache.has(key) ? cache.get(key) : null;
+      },
+      setItem: function (key, value) {
+        var v = String(value);
+        cache.set(key, v);
+        _writeBrowser(key, v);
+        if (bridge && typeof bridge.setLocalStorage === 'function') {
+          _trace('storage.set', key);
+          Promise.resolve(bridge.setLocalStorage(key, v)).then(
+            function (ok) { _trace('storage.set.done', key + ' ok=' + ok); },
+            function (e) { _trace('storage.set.err', key + ' ' + (e && e.message || e)); }
+          );
+        } else {
+          // Bridge not attached yet — queue for flush on attach so the
+          // write persists across restarts.
+          _trace('storage.queue', key);
+          pendingWrites.push({ key: key, value: v });
+        }
+      },
+    };
+  })();
   const DEFAULT_HOSTED_PROVIDER = 'hf-public';
   var _backendStatusInfo = {
     endpointOnDemandEnabled: false,
@@ -1185,16 +1383,31 @@ body {
     forcePhoneMic: false,
     fastMode: true,
     slowMode: false,
-    groqApiKey: '',         // Groq API key
-    openaiApiKey: '',       // OpenAI API key
-    transcriptionProvider: 'groq',  // 'groq' or 'openai' — explicitly selected, no fallback
-    glassesBottom: 'arabic',  // 'arabic' (Mushaf image) | 'transliteration' (Latin text)
+    keyMode: 'shared',      // 'shared' = use server-held free key; 'byok' = user key
+    groqApiKey: '',         // Groq API key (only used when keyMode='byok')
+    openaiApiKey: '',       // OpenAI API key (only used when keyMode='byok')
+    transcriptionProvider: 'groq',  // BYOK provider: 'groq' or 'openai'
+    glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
   };
 
   function sanitizePipelineVersion(v) {
     var normalized = String(v || '').toLowerCase().trim();
     return ALLOWED_PIPELINES.has(normalized) ? normalized : 'v4';
   }
+
+  // Stable per-install session ID. Backend uses this to dedup duplicate WS
+  // connections from the SAME install (e.g. reload without close) without
+  // breaking multi-user traffic on shared NAT/carrier IPs.
+  var _clientSessionId = (function () {
+    var KEY = 'taraweeh_session_id';
+    var id = Storage.getItem(KEY);
+    if (!id) {
+      id = (crypto.randomUUID ? crypto.randomUUID()
+        : ('sid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)));
+      Storage.setItem(KEY, id);
+    }
+    return id;
+  })();
 
   function sanitizeTranslationLang(lang) {
     var normalized = String(lang || '').trim();
@@ -1203,7 +1416,7 @@ body {
 
   function loadSettings() {
     try {
-      const s = localStorage.getItem(SETTINGS_KEY);
+      const s = Storage.getItem(SETTINGS_KEY);
       const saved = s ? JSON.parse(s) : {};
       const merged = { ...DEFAULT_SETTINGS, ...saved };
       merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
@@ -1218,7 +1431,7 @@ body {
   }
 
   function saveSettings() {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(S.settings));
+    Storage.setItem(SETTINGS_KEY, JSON.stringify(S.settings));
   }
 
   function getWsUrl() {
@@ -1322,28 +1535,41 @@ body {
           if (!S.isRecording) setStatus('Ready to listen — tap Start Listening', 'result');
           break;
         case 'fallback':
+          // Backend is supposed to honour the user's selected provider strictly.
+          // If we ever see a fallback status, make it loud so the bug is obvious.
           _modelProvider = 'fallback';
-          setPill('sPillModel', 'info', 'Ready (public HF)');
-          var fe = document.getElementById('sPillEndpoint');
-          fe.style.display = '';
-          fe.querySelector('.s-label').textContent = 'whisper-v3';
-          if (!S.isRecording) setStatus('Ready (public HF fallback) — tap Start', 'result');
+          setPill('sPillModel', 'err', 'Wrong provider — fallback');
+          setStatus('Backend fell back to public HF — your selected provider is not being used', 'err');
           break;
         case 'error':
-          // Groq has no warmup — an error here is a transient API failure
-          // (rate limit, bad key, network), not a cold-start. Label accordingly.
+          // Surface transcription errors LOUDLY — even while recording — so users
+          // know why nothing is translating. Prior behaviour hid these behind the
+          // pill only while S.isRecording, which made a dead session look healthy.
+          var provLbl = (s.provider || _modelProvider || 'provider').toUpperCase();
+          var detail = s.message ? (' — ' + s.message) : '';
           if (s.provider === 'groq' || _modelProvider === 'groq') {
             if (s.httpStatus === 429 && s.retryAfterMs > 0) {
               var waitS = Math.ceil(s.retryAfterMs / 1000);
               setPill('sPillModel', 'warn', 'Groq: rate limit — ' + waitS + 's');
-              if (!S.isRecording) setStatus('Groq rate-limited, retry in ' + waitS + 's', 'result');
+              setStatus('Groq rate-limited, retry in ' + waitS + 's', 'result');
+            } else if (s.httpStatus === 401 || /invalid.*key|unauthoriz/i.test(s.message || '')) {
+              setPill('sPillModel', 'err', 'Groq: bad API key');
+              setStatus('Groq API key invalid — open Settings to fix', 'err');
             } else {
-              setPill('sPillModel', 'warn', 'Groq: retry');
-              if (!S.isRecording) setStatus('Groq API error — retrying\u2026', 'result');
+              setPill('sPillModel', 'err', 'Groq: error');
+              setStatus('Groq error' + detail + ' — check key/network', 'err');
+            }
+          } else if (s.provider === 'openai' || _modelProvider === 'openai') {
+            if (s.httpStatus === 401 || /invalid.*key|unauthoriz/i.test(s.message || '')) {
+              setPill('sPillModel', 'err', 'OpenAI: bad API key');
+              setStatus('OpenAI API key invalid — open Settings to fix', 'err');
+            } else {
+              setPill('sPillModel', 'err', 'OpenAI: error');
+              setStatus('OpenAI error' + detail + ' — check key/network', 'err');
             }
           } else {
-            setPill('sPillModel', 'warn', 'Server warming up…');
-            if (!S.isRecording) setStatus('Server warming up\u2026 retrying', 'result');
+            setPill('sPillModel', 'err', provLbl + ': error');
+            setStatus(provLbl + ' error' + detail, 'err');
           }
           break;
       }
@@ -1358,6 +1584,15 @@ body {
       var tb = document.getElementById('taraweehBtn');
       tb.textContent = '\uD83C\uDF19 Taraweeh: ' + (_taraweehMode ? 'On' : 'Off');
       tb.classList.toggle('active', _taraweehMode);
+    } else if (s.type === 'session_quota') {
+      // Shared-mode per-session usage cap: warn at 80%, hard-stop at 100%.
+      // Surface as the main status banner so user can switch to BYOK.
+      if (s.status === 'error') {
+        setStatus(s.message || 'Free-session limit reached. Add your own Groq key in Settings.', 'err');
+        if (typeof log === 'function') log('Quota exceeded \u2014 recording will pause until BYOK is configured', 'err');
+      } else if (s.status === 'warn') {
+        setStatus(s.message || 'Approaching free-session limit', 'warn');
+      }
     } else if (s.component === 'audio') {
       // Audio heartbeat — keep pill alive but don't show RMS
       clearTimeout(_audioTimer);
@@ -1398,10 +1633,35 @@ body {
     el.className = type || '';
   }
 
+  // Diagnostic ring buffer — last 500 timestamped entries for bridge calls + ring events.
+  // Export via window.dumpDiag() in console or the "Copy Diag" settings button.
+  var _diagLog = [];
+  function trace(tag, detail) {
+    var t = performance.now().toFixed(1);
+    var entry = t + ' ' + tag + (detail ? ' ' + detail : '');
+    _diagLog.push(entry);
+    if (_diagLog.length > 500) _diagLog.shift();
+    console.log('[trace] ' + entry);
+  }
+  window.dumpDiag = function () { return _diagLog.join('\n'); };
+  window.copyDiagLog = function () {
+    var text = _diagLog.join('\n') || '(empty)';
+    var hint = document.getElementById('diagCopyHint');
+    function ok() { if (hint) hint.textContent = 'Copied ' + _diagLog.length + ' entries to clipboard.'; }
+    function fail(e) { if (hint) hint.textContent = 'Copy failed — dumped to console instead. ' + (e && e.message || ''); console.log(text); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok, fail);
+    } else { fail(new Error('clipboard API unavailable')); }
+  };
+
   function queueBridgeCall(name, fn) {
+    trace('bridge.enqueue', name);
+    var started = 0;
     S.bridgeCallQueue = S.bridgeCallQueue
-      .then(function () { return fn(); })
+      .then(function () { started = performance.now(); trace('bridge.start', name); return fn(); })
+      .then(function (r) { trace('bridge.done', name + ' +' + (performance.now() - started).toFixed(0) + 'ms'); return r; })
       .catch(function (err) {
+        trace('bridge.err', name + ' ' + (err && err.message ? err.message : String(err)));
         log(name + ' failed: ' + (err && err.message ? err.message : String(err)), 'err');
       });
     return S.bridgeCallQueue;
@@ -1417,384 +1677,6 @@ body {
   var G2_VER_X   = G2_HDR_W;  // version flush to right edge
   var G2_BODY_Y  = G2_HDR_H;
   var G2_BODY_H  = 288 - G2_HDR_H;
-  var G2_SPLASH_ID = 4;
-  var G2_SPLASH_NAME = 'splash';
-  var G2_SPLASH_W = 180;
-  var G2_SPLASH_H = 96;
-  var G2_SPLASH_X = Math.floor((576 - G2_SPLASH_W) / 2);
-  var G2_SPLASH_Y = 88;
-  // Disabled for now to keep startup fully stable on all glasses builds.
-  // Re-enable later once splash behavior is finalized end-to-end on device.
-  var G2_SPLASH_ENABLED = false;
-  // Optional host override:
-  // - window.G2_SPLASH_IMAGE_SRC = "data:image/jpeg;base64,..."
-  // - window.G2_SPLASH_IMAGE_SRC = "/assets/my-quran-photo.jpg"
-  // If not provided, fallback to bundled Quran icon SVG below.
-  var G2_SPLASH_IMAGE_SRC = '';
-  var G2_SPLASH_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="180" height="96" viewBox="0 0 180 96" role="img" aria-label="Quran startup splash"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f0f0f0"/><stop offset="100%" stop-color="#c7c7c7"/></linearGradient></defs><rect x="1" y="1" width="178" height="94" rx="9" fill="url(#bg)" stroke="#2f2f2f" stroke-width="2"/><rect x="10" y="10" width="160" height="76" rx="7" fill="#e9e9e9" stroke="#4a4a4a" stroke-width="1.2"/><path d="M24 73 L90 22 L156 73" fill="none" stroke="#2e2e2e" stroke-width="2.5" stroke-linecap="round"/><path d="M44 61 L90 30 L136 61" fill="none" stroke="#4b4b4b" stroke-width="2" stroke-linecap="round"/><rect x="72" y="36" width="36" height="26" rx="2" fill="#ffffff" stroke="#3a3a3a" stroke-width="1.3"/><line x1="90" y1="36" x2="90" y2="62" stroke="#3a3a3a" stroke-width="1.2"/><line x1="76" y1="43" x2="86" y2="43" stroke="#707070" stroke-width="1"/><line x1="94" y1="43" x2="104" y2="43" stroke="#707070" stroke-width="1"/><line x1="76" y1="48" x2="86" y2="48" stroke="#707070" stroke-width="1"/><line x1="94" y1="48" x2="104" y2="48" stroke="#707070" stroke-width="1"/><line x1="76" y1="53" x2="86" y2="53" stroke="#707070" stroke-width="1"/><line x1="94" y1="53" x2="104" y2="53" stroke="#707070" stroke-width="1"/><circle cx="30" cy="24" r="4.5" fill="#606060"/><circle cx="150" cy="24" r="4.5" fill="#606060"/></svg>';
-  var _splashBytesPromise = null;
-
-  function resolveSplashImageSource() {
-    var winSrc = '';
-    try {
-      if (typeof window !== 'undefined') {
-        winSrc = String(window.G2_SPLASH_IMAGE_SRC || window.G2_SPLASH_IMAGE_DATA_URL || '');
-      }
-    } catch (_) {}
-    var src = (winSrc || G2_SPLASH_IMAGE_SRC || S.hostSplashImageDataUrl || '').trim();
-    if (src) return { src: src, revocable: false, label: 'custom' };
-    return {
-      src: URL.createObjectURL(new Blob([G2_SPLASH_SVG], { type: 'image/svg+xml' })),
-      revocable: true,
-      label: 'fallback-svg',
-    };
-  }
-
-  function rasterizeSplashToPngBytes(source) {
-    return new Promise(function (resolve, reject) {
-      var img = new Image();
-      img.onload = function () {
-        try {
-          var canvas = document.createElement('canvas');
-          canvas.width = G2_SPLASH_W;
-          canvas.height = G2_SPLASH_H;
-          var ctx = canvas.getContext('2d');
-          if (!ctx) throw new Error('canvas context unavailable');
-
-          var srcW = img.naturalWidth || img.width;
-          var srcH = img.naturalHeight || img.height;
-          if (!srcW || !srcH) throw new Error('invalid splash dimensions');
-
-          // Center-crop to fit target aspect ratio, then scale to container.
-          var dstAspect = G2_SPLASH_W / G2_SPLASH_H;
-          var srcAspect = srcW / srcH;
-          var sx = 0, sy = 0, sw = srcW, sh = srcH;
-          if (srcAspect > dstAspect) {
-            sw = Math.round(srcH * dstAspect);
-            sx = Math.floor((srcW - sw) / 2);
-          } else if (srcAspect < dstAspect) {
-            sh = Math.round(srcW / dstAspect);
-            sy = Math.floor((srcH - sh) / 2);
-          }
-
-          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, G2_SPLASH_W, G2_SPLASH_H);
-          canvas.toBlob(function (pngBlob) {
-            if (!pngBlob) { reject(new Error('png conversion failed')); return; }
-            pngBlob.arrayBuffer().then(function (ab) {
-              resolve(new Uint8Array(ab));
-            }, reject);
-          }, 'image/png');
-        } catch (err) {
-          reject(err);
-        } finally {
-          if (source.revocable && source.src && source.src.indexOf('blob:') === 0) {
-            URL.revokeObjectURL(source.src);
-          }
-        }
-      };
-      img.onerror = function () {
-        if (source.revocable && source.src && source.src.indexOf('blob:') === 0) {
-          URL.revokeObjectURL(source.src);
-        }
-        reject(new Error('splash image load failed'));
-      };
-      img.src = source.src;
-    });
-  }
-
-  function loadStartupSplashBytes() {
-    if (_splashBytesPromise) return _splashBytesPromise;
-    _splashBytesPromise = Promise.resolve(resolveSplashImageSource())
-      .then(rasterizeSplashToPngBytes)
-      .catch(function (err) {
-        _splashBytesPromise = null;
-        throw err;
-      });
-    return _splashBytesPromise;
-  }
-
-  function pushStartupSplashImage() {
-    return loadStartupSplashBytes()
-      .then(function (bytes) {
-        if (!S.bridge || !bytes || !bytes.length) return;
-        return S.bridge.updateImageRawData({
-          containerID: G2_SPLASH_ID,
-          containerName: G2_SPLASH_NAME,
-          imageData: bytes,
-        }).then(function (status) {
-          var normalized = String(status || '').toLowerCase();
-          if (normalized && normalized !== 'success' && normalized !== '0' && normalized !== 'true') {
-            throw new Error('updateImageRawData status=' + status);
-          }
-          log('G2: startup splash image loaded', 'ok');
-        });
-      })
-      .catch(function (err) {
-        log('G2: splash image skipped (' + (err && err.message ? err.message : String(err)) + ')', 'w');
-      });
-  }
-
-  // ─── Mushaf Arabic image renderer (ported from noor-recite, GPL v3) ─────────
-  // Renders the matched ayah in UthmanicHafs font on a 400x200 canvas, slices
-  // into 4x (200x100) quadrants, pushes each to its G2 image container.
-  // The G2 SDK doesn't render Arabic text well; rendering client-side and
-  // pushing bitmaps sidesteps that entirely.
-  var MUSHAF_ENABLED = true;          // toggle in settings when we add it
-  var MUSHAF_IMG_W = 400, MUSHAF_IMG_H = 200;
-  var MUSHAF_QUAD_W = 200, MUSHAF_QUAD_H = 100;
-  var MUSHAF_OFFSET_X = Math.floor((576 - MUSHAF_IMG_W) / 2);    // 88
-  var MUSHAF_OFFSET_Y = G2_BODY_Y + 4;                           // 44 (4px gap under header)
-  var MUSHAF_TEXT_AREA_H = 174;                                  // same as noor-recite
-  var MUSHAF_FOOTER_H = MUSHAF_IMG_H - MUSHAF_TEXT_AREA_H;       // 26
-  var MUSHAF_LINES_PER_SCREEN = 5;
-  var MUSHAF_FONT_FAMILY = 'UthmanicHafs';
-  var MUSHAF_TEXT_FONT = 20;
-  var MUSHAF_HEADER_FONT = 16;
-  var MUSHAF_TEXT_COL_W = 380;
-  var MUSHAF_COL_LEFT = Math.floor((MUSHAF_IMG_W - MUSHAF_TEXT_COL_W) / 2);   // 10
-  var MUSHAF_COL_RIGHT = MUSHAF_COL_LEFT + MUSHAF_TEXT_COL_W;
-  var MUSHAF_Q_IDS = { tl: 5, tr: 6, bl: 7, br: 8 };
-  var _mushafFontLoaded = false;
-  var _mushafPageCache = new Map();
-  var _mushafIndex = null;             // {surah:ayah} → page
-  var _lastRenderedAyah = '';          // dedupe — avoid re-rendering same ayah
-  var _mushafRenderRunning = false;
-  var _mushafRenderQueued = null;      // latest pending render (we only care about the last)
-
-  function _mushafEnsureFont() {
-    if (_mushafFontLoaded) return Promise.resolve();
-    try {
-      var f = new FontFace(MUSHAF_FONT_FAMILY, "url('/fonts/UthmanicHafs.woff2')");
-      return f.load().then(function (loaded) {
-        document.fonts.add(loaded);
-        _mushafFontLoaded = true;
-        log('Mushaf font loaded', 'ok');
-      }).catch(function (e) {
-        log('Mushaf font load failed (' + e.message + '), using system fallback', 'w');
-        _mushafFontLoaded = true;  // stop retrying
-      });
-    } catch (e) { _mushafFontLoaded = true; return Promise.resolve(); }
-  }
-
-  function _mushafEnsureIndex() {
-    if (_mushafIndex) return Promise.resolve(_mushafIndex);
-    return fetch('/mushaf/index.json').then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    }).then(function (idx) { _mushafIndex = idx; return idx; });
-  }
-
-  function _mushafFetchPage(n) {
-    if (_mushafPageCache.has(n)) return Promise.resolve(_mushafPageCache.get(n));
-    var padded = String(n).padStart(3, '0');
-    return fetch('/mushaf/page-' + padded + '.json').then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status + ' for page ' + n);
-      return r.json();
-    }).then(function (data) {
-      if (_mushafPageCache.size >= 12) _mushafPageCache.delete(_mushafPageCache.keys().next().value);
-      _mushafPageCache.set(n, data);
-      return data;
-    });
-  }
-
-  function _mushafMakeCanvas(w, h) {
-    var c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    var ctx = c.getContext('2d');
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
-    return [c, ctx];
-  }
-
-  function _mushafCanvasToPng(canvas) {
-    var b64 = canvas.toDataURL('image/png').split(',')[1];
-    var bin = atob(b64);
-    var bytes = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return bytes;
-  }
-
-  function _mushafSliceQuadrants(canvas) {
-    function quad(sx, sy) {
-      var pair = _mushafMakeCanvas(MUSHAF_QUAD_W, MUSHAF_QUAD_H);
-      pair[1].drawImage(canvas, sx, sy, MUSHAF_QUAD_W, MUSHAF_QUAD_H, 0, 0, MUSHAF_QUAD_W, MUSHAF_QUAD_H);
-      return _mushafCanvasToPng(pair[0]);
-    }
-    return [quad(0, 0), quad(MUSHAF_QUAD_W, 0), quad(0, MUSHAF_QUAD_H), quad(MUSHAF_QUAD_W, MUSHAF_QUAD_H)];
-  }
-
-  function _mushafMakeImageUpdate(id, name, bytes) {
-    // Wrap in the SDK's typed class if available — the class runs normalizeImageData
-    // to serialise Uint8Array → List<int> correctly for the G2 bridge. Raw objects
-    // may skip that normalisation and end up sending a JSON-serialised Uint8Array
-    // that the glasses firmware can't decode.
-    var payload = { containerID: id, containerName: name, imageData: bytes };
-    if (S.sdk && S.sdk.ImageRawDataUpdate) {
-      try { return new S.sdk.ImageRawDataUpdate(payload); } catch (_) {}
-    }
-    return payload;
-  }
-
-  function _mushafPushQuads(quads) {
-    if (!S.bridge) return Promise.resolve();
-    return Promise.all([
-      S.bridge.updateImageRawData(_mushafMakeImageUpdate(MUSHAF_Q_IDS.tl, 'q_tl', quads[0])),
-      S.bridge.updateImageRawData(_mushafMakeImageUpdate(MUSHAF_Q_IDS.tr, 'q_tr', quads[1])),
-      S.bridge.updateImageRawData(_mushafMakeImageUpdate(MUSHAF_Q_IDS.bl, 'q_bl', quads[2])),
-      S.bridge.updateImageRawData(_mushafMakeImageUpdate(MUSHAF_Q_IDS.br, 'q_br', quads[3])),
-    ]);
-  }
-
-  function _mushafStripWaqf(text) {
-    return (text || '').replace(/[\u06DF-\u06E8\u06EA-\u06ED\u0600-\u0605]/g, '');
-  }
-  function _mushafArabicNum(n) {
-    return String(n).replace(/\d/g, function (d) { return String.fromCharCode(0x0660 + parseInt(d, 10)); });
-  }
-
-  function _mushafFindAyahLines(lines, surah, ayah) {
-    var out = [];
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (!line.verseRange) continue;
-      var parts = line.verseRange.split('-');
-      if (parts.length !== 2) continue;
-      var sp = parts[0].split(':').map(Number);
-      var ep = parts[1].split(':').map(Number);
-      var startV = sp[0] * 10000 + sp[1];
-      var endV = ep[0] * 10000 + ep[1];
-      var tgt = surah * 10000 + ayah;
-      if (tgt >= startV && tgt <= endV) out.push(i);
-    }
-    return out;
-  }
-
-  function _mushafDrawFooter(ctx, left, right) {
-    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(MUSHAF_COL_LEFT, MUSHAF_TEXT_AREA_H);
-    ctx.lineTo(MUSHAF_COL_RIGHT, MUSHAF_TEXT_AREA_H); ctx.stroke();
-    var y = MUSHAF_TEXT_AREA_H + MUSHAF_FOOTER_H / 2;
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#888'; ctx.font = '11px monospace'; ctx.direction = 'ltr';
-    ctx.textAlign = 'left'; ctx.fillText(left, MUSHAF_COL_LEFT, y);
-    ctx.font = "11px '" + MUSHAF_FONT_FAMILY + "', serif"; ctx.direction = 'rtl';
-    ctx.textAlign = 'right'; ctx.fillText(right, MUSHAF_COL_RIGHT, y);
-  }
-
-  function _mushafRenderLine(ctx, line, y, lineH, highlighted) {
-    if (line.type === 'surah-header') {
-      ctx.strokeStyle = highlighted ? '#666' : '#333'; ctx.lineWidth = 1;
-      var top = y - lineH / 2 + 3, bot = y + lineH / 2 - 3;
-      ctx.beginPath(); ctx.moveTo(MUSHAF_COL_LEFT, top); ctx.lineTo(MUSHAF_COL_RIGHT, top); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(MUSHAF_COL_LEFT, bot); ctx.lineTo(MUSHAF_COL_RIGHT, bot); ctx.stroke();
-      ctx.font = "bold " + MUSHAF_HEADER_FONT + "px '" + MUSHAF_FONT_FAMILY + "', serif";
-      ctx.fillStyle = highlighted ? '#ffffff' : '#888';
-      ctx.textAlign = 'center'; ctx.direction = 'rtl';
-      ctx.fillText(line.text || '', MUSHAF_IMG_W / 2, y);
-      return;
-    }
-    if (line.type === 'basmala') {
-      ctx.font = MUSHAF_HEADER_FONT + "px '" + MUSHAF_FONT_FAMILY + "', serif";
-      ctx.fillStyle = highlighted ? '#ddd' : '#666';
-      ctx.textAlign = 'center'; ctx.direction = 'rtl';
-      ctx.fillText('\u0628\u0650\u0633\u0652\u0645\u0650 \u0627\u0644\u0644\u064e\u0651\u0647\u0650 \u0627\u0644\u0631\u064e\u0651\u062d\u0652\u0645\u064e\u0670\u0646\u0650 \u0627\u0644\u0631\u064e\u0651\u062d\u0650\u064a\u0645\u0650', MUSHAF_IMG_W / 2, y);
-      return;
-    }
-    var raw = (line.words && line.words.length > 0)
-      ? line.words.map(function (w) { return w.word; }).join(' ')
-      : (line.text || '');
-    var text = _mushafStripWaqf(raw);
-    var fs = MUSHAF_TEXT_FONT;
-    ctx.font = fs + "px '" + MUSHAF_FONT_FAMILY + "', serif";
-    while (ctx.measureText(text).width > MUSHAF_TEXT_COL_W && fs > 12) {
-      fs--; ctx.font = fs + "px '" + MUSHAF_FONT_FAMILY + "', serif";
-    }
-    ctx.fillStyle = highlighted ? '#ffffff' : '#666666';
-    ctx.direction = 'rtl';
-    var words = text.split(' ').filter(Boolean);
-    if (words.length <= 1) {
-      ctx.textAlign = 'center'; ctx.fillText(text, MUSHAF_IMG_W / 2, y);
-    } else {
-      var widths = words.map(function (w) { return ctx.measureText(w).width; });
-      var total = widths.reduce(function (a, b) { return a + b; }, 0);
-      var gap = Math.max(2, (MUSHAF_TEXT_COL_W - total) / (words.length - 1));
-      ctx.textAlign = 'left';
-      var x = MUSHAF_COL_RIGHT;
-      for (var wi = 0; wi < words.length; wi++) {
-        x -= widths[wi];
-        ctx.fillText(words[wi], x, y);
-        if (wi < words.length - 1) x -= gap;
-      }
-    }
-  }
-
-  async function _mushafDoRender(surah, ayah) {
-    var key = surah + ':' + ayah;
-    if (key === _lastRenderedAyah) return;  // dedupe
-    await _mushafEnsureFont();
-    var index = await _mushafEnsureIndex();
-    var page = index[key];
-    if (!page) { log('Mushaf: no page for ' + key, 'w'); return; }
-
-    var pageData;
-    try { pageData = await _mushafFetchPage(page); }
-    catch (e) { log('Mushaf fetch page ' + page + ' failed: ' + e.message, 'err'); return; }
-
-    var lines = pageData.lines || [];
-    var ayahLines = _mushafFindAyahLines(lines, surah, ayah);
-    var start;
-    if (ayahLines.length === 0) {
-      start = 0;
-    } else {
-      var mid = ayahLines[Math.floor(ayahLines.length / 2)];
-      start = Math.max(0, mid - Math.floor(MUSHAF_LINES_PER_SCREEN / 2));
-      start = Math.min(start, Math.max(0, lines.length - MUSHAF_LINES_PER_SCREEN));
-    }
-    var window_ = lines.slice(start, start + MUSHAF_LINES_PER_SCREEN);
-    var highlightSet = new Set(ayahLines);
-
-    var pair = _mushafMakeCanvas(MUSHAF_IMG_W, MUSHAF_IMG_H);
-    var canvas = pair[0], ctx = pair[1];
-    var lineH = Math.floor(MUSHAF_TEXT_AREA_H / MUSHAF_LINES_PER_SCREEN);
-    ctx.textBaseline = 'middle';
-    window_.forEach(function (line, i) {
-      var hi = highlightSet.has(start + i);
-      _mushafRenderLine(ctx, line, i * lineH + lineH / 2, lineH, hi);
-    });
-    var ayahRef = _mushafArabicNum(surah) + ':' + _mushafArabicNum(ayah);
-    _mushafDrawFooter(ctx, 'p.' + page, ayahRef);
-
-    var quads = _mushafSliceQuadrants(canvas);
-    await _mushafPushQuads(quads);
-    _lastRenderedAyah = key;
-    log('Mushaf rendered ' + key + ' (p.' + page + ')', 'ok');
-  }
-
-  function renderMushafAyah(surah, ayah) {
-    if (!MUSHAF_ENABLED) { log('Mushaf skip: disabled (startup probably failed)', 'w'); return; }
-    if (!S.isG2) { log('Mushaf skip: not G2', 'w'); return; }
-    if (!S.startupPageCreated) { log('Mushaf skip: startup page not ready', 'w'); return; }
-    if (!surah || !ayah) return;
-    var mode = (S.settings && S.settings.glassesBottom) || 'arabic';
-    if (mode !== 'arabic') { log('Mushaf skip: glassesBottom=' + mode, 'w'); return; }
-    log('Mushaf render start: ' + surah + ':' + ayah, 'ok');
-    // Keep only the LAST requested render; skip superseded ones.
-    _mushafRenderQueued = { surah: surah, ayah: ayah };
-    if (_mushafRenderRunning) return;
-    (async function drainMushaf() {
-      _mushafRenderRunning = true;
-      try {
-        while (_mushafRenderQueued) {
-          var job = _mushafRenderQueued; _mushafRenderQueued = null;
-          await _mushafDoRender(job.surah, job.ayah);
-        }
-      } catch (e) {
-        log('Mushaf render error: ' + e.message, 'err');
-      } finally {
-        _mushafRenderRunning = false;
-      }
-    })();
-  }
-
   function _startupTextContainers() {
     return [
       { containerID: 1, containerName: 'hdr',
@@ -1815,93 +1697,35 @@ body {
     ];
   }
 
-  function _mushafImageContainers() {
-    // 4 image containers forming a 2x2 grid of 200x100 quadrants, placed below the header.
-    // Use the SDK's typed ImageContainerProperty class when available for correct
-    // protobuf serialisation (matches noor-recite's working pattern).
-    var raw = [
-      { containerID: MUSHAF_Q_IDS.tl, containerName: 'q_tl',
-        xPosition: MUSHAF_OFFSET_X,                   yPosition: MUSHAF_OFFSET_Y,
-        width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
-      { containerID: MUSHAF_Q_IDS.tr, containerName: 'q_tr',
-        xPosition: MUSHAF_OFFSET_X + MUSHAF_QUAD_W,    yPosition: MUSHAF_OFFSET_Y,
-        width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
-      { containerID: MUSHAF_Q_IDS.bl, containerName: 'q_bl',
-        xPosition: MUSHAF_OFFSET_X,                   yPosition: MUSHAF_OFFSET_Y + MUSHAF_QUAD_H,
-        width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
-      { containerID: MUSHAF_Q_IDS.br, containerName: 'q_br',
-        xPosition: MUSHAF_OFFSET_X + MUSHAF_QUAD_W,    yPosition: MUSHAF_OFFSET_Y + MUSHAF_QUAD_H,
-        width: MUSHAF_QUAD_W, height: MUSHAF_QUAD_H },
-    ];
-    if (S.sdk && S.sdk.ImageContainerProperty) {
-      return raw.map(function (r) { return new S.sdk.ImageContainerProperty(r); });
-    }
-    return raw;
-  }
-
-  function _createStartupContainerWithFallback() {
-    if (!G2_SPLASH_ENABLED) {
-      var useMushaf = MUSHAF_ENABLED;
-      var config = {
-        containerTotalNum: useMushaf ? 7 : 3,
-        textObject: _startupTextContainers(),
-      };
-      if (useMushaf) config.imageObject = _mushafImageContainers();
-      return S.bridge.createStartUpPageContainer(config).then(function (result0) {
-        if (result0 !== 0) {
-          // If the 7-container form fails, fall back to text-only (3 containers).
-          if (useMushaf) {
-            log('G2: 7-container startup failed (' + result0 + '), falling back to text-only', 'w');
-            return S.bridge.createStartUpPageContainer({
-              containerTotalNum: 3,
-              textObject: _startupTextContainers(),
-            }).then(function (r2) {
-              if (r2 !== 0) throw new Error('startup text-only fallback result=' + r2);
-              MUSHAF_ENABLED = false;   // disable Mushaf for this session
-              return 'text-only';
-            });
-          }
-          throw new Error('startup text-only result=' + result0);
-        }
-        return useMushaf ? 'mushaf' : 'text-only';
-      });
-    }
-    return S.bridge.createStartUpPageContainer({
-      containerTotalNum: 4,
-      textObject: _startupTextContainers(),
-      imageObject: [
-        { containerID: G2_SPLASH_ID, containerName: G2_SPLASH_NAME,
-          xPosition: G2_SPLASH_X, yPosition: G2_SPLASH_Y,
-          width: G2_SPLASH_W, height: G2_SPLASH_H },
-      ],
-    }).then(function (result) {
-      if (result === 0) return 'image';
-      throw new Error('startup result=' + result);
-    }).catch(function (err) {
-      log('G2: startup image container failed, retrying text-only (' + (err && err.message ? err.message : String(err)) + ')', 'w');
-      return S.bridge.createStartUpPageContainer({
-        containerTotalNum: 3,
-        textObject: _startupTextContainers(),
-      }).then(function (result2) {
-        if (result2 !== 0) throw new Error('startup fallback result=' + result2);
-        return 'text-only';
-      });
-    });
-  }
-
   function glassesStartup() {
     if (!S.bridge) return;
     S.startupPageCreated = false;
+    // Per SDK: createStartUpPageContainer may be called ONLY ONCE ever; all
+    // subsequent page ops must use rebuildPageContainer. On reload/reconnect
+    // the first call returns non-zero (container already exists) — fall
+    // through to rebuildPageContainer instead of throwing + needing recovery.
     queueBridgeCall('createStartUpPageContainer', function () {
-      return _createStartupContainerWithFallback().then(function (mode) {
-        S.startupPageCreated = true;
-        S.displayRebuilt = false;
-        if (mode === 'image') {
-          log('G2: startup screen shown (image container)', 'ok');
-          return pushStartupSplashImage();
+      return S.bridge.createStartUpPageContainer({
+        containerTotalNum: 3,
+        textObject: _startupTextContainers(),
+      }).then(function (result) {
+        // Protobuf zero-omission: success code 0 arrives as undefined.
+        var code = (result == null) ? 0 : result;
+        if (code === 0) {
+          S.startupPageCreated = true;
+          S.displayRebuilt = false;
+          log('G2: startup page created', 'ok');
+          return;
         }
-        log('G2: startup screen shown (text-only fallback)', 'ok');
-        return null;
+        log('G2: startup container already exists (code=' + code + ') — rebuilding', 'w');
+        return S.bridge.rebuildPageContainer({
+          containerTotalNum: 3,
+          textObject: _startupTextContainers(),
+        }).then(function () {
+          S.startupPageCreated = true;
+          S.displayRebuilt = true;   // just rebuilt — ready for text upgrades
+          log('G2: startup page rebuilt', 'ok');
+        });
       });
     });
   }
@@ -1968,7 +1792,7 @@ body {
   var G2_BODY_LINES = 10; // lines per page — conservative to prevent scroll bar
   var G2_DIV = '-'.repeat(G2_CHARS);  // single line — hyphen renders as one line (box char looked double)
 
-  function appTitleHdr() { return 'Taraweeh Companion'; }
+  function appTitleHdr() { return 'Quran Companion'; }
   function appVersionHdr() { return APP_VERSION; }
 
   function clip(s, n) { return (s || '').length > n ? s.slice(0, n - 1) + '\u2026' : (s || ''); }
@@ -1986,14 +1810,11 @@ body {
 
   // Paginate translation first, then transliteration. Translation fills the screen;
   // when user scrolls to next page, transliteration appears (on last page if it fits, else its own page).
-  // When glassesBottom='arabic', transliteration is suppressed here (Arabic is rendered
-  // as a Mushaf image below the text via renderMushafAyah instead).
   function buildPages(translation, transliteration, reserveLines) {
     var maxLines = G2_BODY_LINES - (reserveLines || 0);
     var transLines = wrapText(translation || '', G2_CHARS);
-    var bottomMode = (S.settings && S.settings.glassesBottom) || 'arabic';
-    // Only the 'transliteration' mode shows Latin text. 'arabic' mode puts Arabic
-    // in the image below; 'translation-only' shows English translation alone.
+    var bottomMode = (S.settings && S.settings.glassesBottom) || 'transliteration';
+    // 'transliteration' mode shows Latin text. 'translation-only' shows English translation alone.
     // Long-ayah exception: when the ENGLISH translation alone already spans
     // more than half the screen, suppress transliteration even if the user
     // picked that mode — translation is more useful than scrolling past it
@@ -2430,14 +2251,15 @@ body {
       _startWsPing();
       S.ws.send(JSON.stringify({
         type: 'init',
+        sessionId: _clientSessionId,
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         fastMode: _fastMode,
         slowMode: _slowMode,
         transcriptionProvider: S.settings.transcriptionProvider || 'groq',
-        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
-        openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
+        groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
+        openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
       }));
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -2624,9 +2446,6 @@ body {
             // Force full rebuild so glasses reliably receive the new verse
             // (textContainerUpgrade can fail to push over BLE in some cases)
             S.displayRebuilt = false;
-            // Render the authentic Mushaf page image on G2 (overlays the text body).
-            _lastStateForMushaf = { surah: msg.state.surah, ayah: msg.state.ayah };
-            try { renderMushafAyah(msg.state.surah, msg.state.ayah); } catch (_) {}
             var wc = (msg.state.arabic || '').split(/\s+/).length || 4;
             var rawMs = msg.state.timerMs || Math.max(3000, wc * 700);
             // With Groq (fast transcription), the next ayah lock arrives sooner than
@@ -2778,8 +2597,10 @@ body {
     stopCountdown();
     try { stopG2Mic(); } catch (_) {}
     try { stopBrowserMic(); } catch (_) {}
+    // Use 'pause' (not 'stop') — preserves pipeline state, remembers display
+    // position + timer remainder, keeps Whisper listening so resume is seamless.
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      try { S.ws.send(JSON.stringify({ type: 'stop' })); } catch (_) {}
+      try { S.ws.send(JSON.stringify({ type: 'pause' })); } catch (_) {}
     }
     setStatus('Paused in background', 'error');
     log('Paused capture while app is backgrounded', 'w');
@@ -2788,18 +2609,10 @@ body {
   function handleForegroundEnter() {
     if (!S.pausedByBackground) return;
     S.pausedByBackground = false;
+    // Resume from saved state — do NOT send init, that destroys the pipeline
+    // and resets to SEARCHING. audio_return restores from the paused position.
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      try {
-        S.ws.send(JSON.stringify({
-          type: 'init',
-          preferredSurah: parseInt(S.settings.defaultSurah || '0'),
-          lang: (S.settings.lang || '').trim() || null,
-          pipelineVersion: S.settings.pipelineVersion || 'v4',
-          fastMode: _fastMode,
-          slowMode: _slowMode,
-        }));
-        S.ws.send(JSON.stringify({ type: 'start' }));
-      } catch (_) {}
+      try { S.ws.send(JSON.stringify({ type: 'audio_return' })); } catch (_) {}
     }
     var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
     if (useBrowserMic) startBrowserMic();
@@ -2899,6 +2712,12 @@ body {
       sendPcm(event.audioEvent.audioPcm);
       return;
     }
+    // Trace everything except the high-frequency audio stream.
+    var _evKind = event.sysEvent ? 'sys' : event.textEvent ? 'text' : event.listEvent ? 'list' : 'other';
+    var _evType = (event[_evKind + 'Event'] && event[_evKind + 'Event'].eventType);
+    if (_evType == null) _evType = 0;
+    var _evSrc = (event.sysEvent && event.sysEvent.eventSource != null) ? event.sysEvent.eventSource : '-';
+    trace('g2.event', _evKind + ':' + _evType + ' src=' + _evSrc);
     if (event.sysEvent) {
       var st = (event.sysEvent.eventType == null ? 0 : event.sysEvent.eventType);
       if (st === 4) {
@@ -3002,17 +2821,21 @@ body {
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {
-    // Block start if no API key for the selected provider.
-    var provSel = S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq';
-    var keyForProv = provSel === 'openai'
-      ? (S.settings.openaiApiKey || '').trim()
-      : (S.settings.groqApiKey || '').trim();
-    if (!keyForProv) {
-      var pLabel = provSel === 'openai' ? 'OpenAI' : 'Groq';
-      setStatus(pLabel + ' API key required — opening settings', 'warn');
-      if (typeof log === 'function') log('No ' + pLabel + ' key set — open Settings and enter one', 'warn');
-      setTimeout(function () { try { showSettings(); } catch (_) {} }, 400);
-      return;
+    // BYOK only: block start if no API key for the selected provider. Shared
+    // mode uses server-held keys — no precheck needed (backend will tell us
+    // via sys_status if neither shared key is configured).
+    if (S.settings.keyMode === 'byok') {
+      var provSel = S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq';
+      var keyForProv = provSel === 'openai'
+        ? (S.settings.openaiApiKey || '').trim()
+        : (S.settings.groqApiKey || '').trim();
+      if (!keyForProv) {
+        var pLabel = provSel === 'openai' ? 'OpenAI' : 'Groq';
+        setStatus(pLabel + ' API key required — opening settings', 'warn');
+        if (typeof log === 'function') log('No ' + pLabel + ' key set — open Settings and enter one', 'warn');
+        setTimeout(function () { try { showSettings(); } catch (_) {} }, 400);
+        return;
+      }
     }
     S.isRecording = true;
     S.displayRebuilt = false;
@@ -3035,12 +2858,13 @@ body {
       // settings (which triggers a correct reinit).
       S.ws.send(JSON.stringify({
         type: 'init',
+        sessionId: _clientSessionId,
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         transcriptionProvider: S.settings.transcriptionProvider || 'groq',
-        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
-        openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
+        groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
+        openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
       }));
       S.ws.send(JSON.stringify({ type: 'start' }));
       log('Reused existing WS, sent start', 'ok');
@@ -3146,7 +2970,7 @@ body {
 
     try {
       var sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.10/dist/index.js');
-      S.sdk = sdk;  // keep typed constructors (ImageRawDataUpdate, ImageContainerProperty, ...)
+      S.sdk = sdk;
       S.bridge = await new Promise(function (resolve, reject) {
         var t = setTimeout(function () { reject(new Error('timeout 2s')); }, 2000);
         sdk.waitForEvenAppBridge().then(function (b) { clearTimeout(t); resolve(b); }, reject);
@@ -3159,6 +2983,47 @@ body {
         S.bridge = window.EvenAppBridge.getInstance();
         S.isG2 = true;
         log('G2 bridge detected (raw)', 'ok');
+      }
+    }
+
+    // Hydrate persistent storage from the bridge (browser localStorage gets
+    // wiped on .ehpk WebView restart). Then re-load settings so any values
+    // the user set on a prior session — API keys especially — come back.
+    if (S.bridge) {
+      try {
+        await Storage.attach(S.bridge);
+        var freshSettings = loadSettings();
+        S.settings = { ...S.settings, ...freshSettings };
+        // Refresh any settings inputs that were rendered with stale (empty)
+        // values before bridge hydration finished.
+        try {
+          var gKey = document.getElementById('settingGroqKey');
+          if (gKey && !gKey.value) gKey.value = S.settings.groqApiKey || '';
+          var oKey = document.getElementById('settingOpenAIKey');
+          if (oKey && !oKey.value) oKey.value = S.settings.openaiApiKey || '';
+          var lang = document.getElementById('settingLang');
+          if (lang) lang.value = sanitizeTranslationLang(S.settings.lang || '');
+          var surah = document.getElementById('settingSurah');
+          if (surah) surah.value = S.settings.defaultSurah || '0';
+          var pipe = document.getElementById('settingPipeline');
+          if (pipe) pipe.value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
+          if (typeof setProvider === 'function')
+            setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq');
+        } catch (_) {}
+        // Theme may have been overwritten by bridge value too.
+        var t = Storage.getItem('qc_theme');
+        if (t === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          var tb = document.getElementById('themeBtn');
+          if (tb) tb.textContent = '☾';
+        } else if (t === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+          var tb2 = document.getElementById('themeBtn');
+          if (tb2) tb2.textContent = '☽';
+        }
+        log('Bridge storage hydrated', 'ok');
+      } catch (e) {
+        log('Bridge storage hydrate failed: ' + (e && e.message || e), 'w');
       }
     }
 
@@ -3199,7 +3064,7 @@ body {
     var isDark = html.getAttribute('data-theme') === 'dark';
     html.setAttribute('data-theme', isDark ? 'light' : 'dark');
     document.getElementById('themeBtn').textContent = isDark ? '\u25D1' : '\u263E';
-    try { localStorage.setItem('qc_theme', isDark ? 'light' : 'dark'); } catch (_) {}
+    Storage.setItem('qc_theme', isDark ? 'light' : 'dark');
   };
 
   // ─── Settings UI ──────────────────────────────────────────────────────────
@@ -3210,17 +3075,57 @@ body {
     document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
   };
 
+  // Free vs BYOK key mode. Shared mode = no client key sent → backend uses
+  // SHARED_GROQ_KEY/SHARED_OPENAI_KEY env vars and enforces the per-session
+  // minute cap. BYOK = user's own key, no cap, no failover.
+  window.setKeyMode = function (m) {
+    m = (m === 'byok') ? 'byok' : 'shared';
+    S.settings.keyMode = m;
+    try { saveSettings(); } catch (_) {}
+    var sBtn = document.getElementById('btnModeShared');
+    var bBtn = document.getElementById('btnModeBYOK');
+    if (sBtn) sBtn.classList.toggle('active', m === 'shared');
+    if (bBtn) bBtn.classList.toggle('active', m === 'byok');
+    var sHint = document.getElementById('sharedHint');
+    var byokSec = document.getElementById('byokSection');
+    if (sHint) sHint.style.display = (m === 'shared') ? '' : 'none';
+    if (byokSec) byokSec.style.display = (m === 'byok') ? '' : 'none';
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
+    log('Key mode: ' + (m === 'shared' ? 'Free (shared)' : 'My own key'), 'ok');
+  };
+
   window.setProvider = function (p) {
     p = (p === 'openai') ? 'openai' : 'groq';
     S.settings.transcriptionProvider = p;
+    try { saveSettings(); } catch (_) {}
+    // Settings view
     var gBtn = document.getElementById('btnProviderGroq');
     var oBtn = document.getElementById('btnProviderOpenAI');
     if (gBtn) gBtn.classList.toggle('active', p === 'groq');
     if (oBtn) oBtn.classList.toggle('active', p === 'openai');
+    // Main view
+    var gBtnM = document.getElementById('btnProviderGroqMain');
+    var oBtnM = document.getElementById('btnProviderOpenAIMain');
+    if (gBtnM) gBtnM.classList.toggle('active', p === 'groq');
+    if (oBtnM) oBtnM.classList.toggle('active', p === 'openai');
     var gRow = document.getElementById('groqKeyRow');
     var oRow = document.getElementById('openaiKeyRow');
     if (gRow) gRow.style.display = (p === 'groq') ? '' : 'none';
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
+    // Re-init pipeline live if recording so the switch takes immediate effect.
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      S.ws.send(JSON.stringify({
+        type: 'init',
+        sessionId: _clientSessionId,
+        preferredSurah: parseInt(S.settings.defaultSurah || '0'),
+        lang: (S.settings.lang || '').trim() || null,
+        pipelineVersion: S.settings.pipelineVersion || 'v4',
+        transcriptionProvider: p,
+        groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
+        openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
+      }));
+      log('Provider → ' + (p === 'openai' ? 'OpenAI' : 'Groq'), 'ok');
+    }
   };
 
   window.testOpenAIKey = async function () {
@@ -3307,14 +3212,10 @@ body {
 
   window.setGlassesBottom = function (mode) {
     var valid = { transliteration: 1, 'translation-only': 1 };
-    // 'arabic' was removed — Mushaf rendering on G2 is unreliable; force
-    // anyone on the old default to transliteration.
-    if (mode === 'arabic' || !valid[mode]) mode = 'transliteration';
+    if (!valid[mode]) mode = 'transliteration';
     S.settings.glassesBottom = mode;
     saveSettings();
-    // Main-view pills
     var mainBtns = {
-      arabic: 'btnGlassesArabic',
       transliteration: 'btnGlassesTranslit',
       'translation-only': 'btnGlassesEnOnly',
     };
@@ -3322,40 +3223,13 @@ body {
       var btn = document.getElementById(mainBtns[k]);
       if (btn) btn.classList.toggle('active', mode === k);
     });
-    // Settings-view pills (kept for parity)
-    var settingsBtns = { arabic: 'btnBottomArabic', transliteration: 'btnBottomTranslit' };
+    var settingsBtns = { transliteration: 'btnBottomTranslit' };
     Object.keys(settingsBtns).forEach(function (k) {
       var btn = document.getElementById(settingsBtns[k]);
       if (btn) btn.classList.toggle('active', mode === k);
     });
-
-    // When NOT in arabic mode, blank the Mushaf image so old verse doesn't persist.
-    if (mode !== 'arabic' && S.isG2 && S.startupPageCreated && S.bridge) {
-      _lastRenderedAyah = '';
-      try { _mushafClearImage(); } catch (_) {}
-    }
-    // If switching to arabic mid-session, re-render current ayah.
-    if (mode === 'arabic' && S.mode === 'LOCKED' && S.isG2) {
-      var lastState = _lastStateForMushaf || {};
-      if (lastState.surah && lastState.ayah) renderMushafAyah(lastState.surah, lastState.ayah);
-    }
-    // Force glasses text to rebuild so transliteration visibility changes take effect.
     S.displayRebuilt = false;
   };
-
-  // Remember last LOCKED state for toggling bottom-line mode mid-session
-  var _lastStateForMushaf = null;
-
-  // Push a blank 1x1 transparent PNG to each quad to clear the Mushaf image
-  function _mushafClearImage() {
-    if (!S.bridge) return;
-    // Tiny black 200x100 PNG — simpler than pushing actual transparent alpha
-    var pair = _mushafMakeCanvas(MUSHAF_QUAD_W, MUSHAF_QUAD_H);
-    var blankBytes = _mushafCanvasToPng(pair[0]);
-    ['tl','tr','bl','br'].forEach(function (q) {
-      S.bridge.updateImageRawData({ containerID: MUSHAF_Q_IDS[q], containerName: 'q_' + q, imageData: blankBytes });
-    });
-  }
 
   function updateEndpointLifecycleUI(lifecycle) {
     if (!lifecycle || lifecycle.component !== 'model') return;
@@ -3429,6 +3303,7 @@ body {
     var oaiInput = document.getElementById('settingOpenAIKey');
     if (oaiInput) oaiInput.value = S.settings.openaiApiKey || '';
     setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq');
+    setKeyMode(S.settings.keyMode === 'byok' ? 'byok' : 'shared');
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
@@ -3450,14 +3325,15 @@ body {
     setPill('sPillModel', 'ok', 'Ready');
     S.ws.send(JSON.stringify({
       type: 'init',
+      sessionId: _clientSessionId,
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       lang: (S.settings.lang || '').trim() || null,
       pipelineVersion: S.settings.pipelineVersion || 'v4',
       fastMode: _fastMode,
       slowMode: _slowMode,
       transcriptionProvider: provider,
-      groqApiKey: (S.settings.groqApiKey || '').trim() || null,
-      openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
+      groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
+      openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
     }));
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
     S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -3567,14 +3443,12 @@ body {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async function () {
-    // Restore saved theme
-    try {
-      var savedTheme = localStorage.getItem('qc_theme');
-      if (savedTheme === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        document.getElementById('themeBtn').textContent = '\u263E';
-      }
-    } catch (_) {}
+    // Restore saved theme (from cache; bridge may overwrite once it attaches)
+    var savedTheme = Storage.getItem('qc_theme');
+    if (savedTheme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      document.getElementById('themeBtn').textContent = '\u263E';
+    }
 
     S.settings = loadSettings();
     _fastMode = !!S.settings.fastMode;
