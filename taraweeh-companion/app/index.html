@@ -753,7 +753,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.1.13</span>
+      <span class="version" id="versionEl">v2.1.14</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -1032,7 +1032,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.1.13';
+  const APP_VERSION = 'v2.1.14';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1235,6 +1235,59 @@ body {
   const MAX_UPGRADE_CHARS = 2000;  // textContainerUpgrade limit
   const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
   const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+
+  // ─── Persistent storage ───────────────────────────────────────────────────
+  // Browser localStorage is wiped on Even Hub / glasses restart inside the
+  // .ehpk WebView. bridge.setLocalStorage / getLocalStorage is the only
+  // persistent storage on G2. Wrap both behind a sync API backed by an
+  // in-memory cache; bridge is authoritative when present.
+  var Storage = (function () {
+    var cache = new Map();
+    var bridge = null;
+    var KNOWN_KEYS = ['qlive_settings', 'qc_theme', 'taraweeh_session_id'];
+
+    function _readBrowser(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+    function _writeBrowser(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+
+    // Pre-seed cache from browser localStorage so synchronous reads have
+    // something during the brief window before bridge hydration finishes.
+    KNOWN_KEYS.forEach(function (k) {
+      var v = _readBrowser(k);
+      if (v != null && v !== '') cache.set(k, v);
+    });
+
+    return {
+      // Hydrate from the bridge once it is ready. Bridge values WIN over
+      // browser cache (browser is volatile, bridge is the source of truth).
+      // If the bridge has no value but the browser does, write the browser
+      // value back to the bridge — handles upgrades from pre-bridge versions.
+      attach: function (b) {
+        bridge = b;
+        if (!bridge || typeof bridge.getLocalStorage !== 'function') return Promise.resolve();
+        return Promise.all(KNOWN_KEYS.map(function (k) {
+          return bridge.getLocalStorage(k).then(function (v) {
+            if (v && v !== '') {
+              cache.set(k, v);
+              _writeBrowser(k, v);
+            } else if (cache.has(k)) {
+              try { bridge.setLocalStorage(k, cache.get(k)); } catch (_) {}
+            }
+          }, function () {});
+        }));
+      },
+      getItem: function (key) {
+        return cache.has(key) ? cache.get(key) : null;
+      },
+      setItem: function (key, value) {
+        var v = String(value);
+        cache.set(key, v);
+        _writeBrowser(key, v);
+        if (bridge && typeof bridge.setLocalStorage === 'function') {
+          try { bridge.setLocalStorage(key, v); } catch (_) {}
+        }
+      },
+    };
+  })();
   const DEFAULT_HOSTED_PROVIDER = 'hf-public';
   var _backendStatusInfo = {
     endpointOnDemandEnabled: false,
@@ -1284,17 +1337,13 @@ body {
   // breaking multi-user traffic on shared NAT/carrier IPs.
   var _clientSessionId = (function () {
     var KEY = 'taraweeh_session_id';
-    try {
-      var id = localStorage.getItem(KEY);
-      if (!id) {
-        id = (crypto.randomUUID ? crypto.randomUUID()
-          : ('sid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)));
-        localStorage.setItem(KEY, id);
-      }
-      return id;
-    } catch (_) {
-      return 'sid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    var id = Storage.getItem(KEY);
+    if (!id) {
+      id = (crypto.randomUUID ? crypto.randomUUID()
+        : ('sid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)));
+      Storage.setItem(KEY, id);
     }
+    return id;
   })();
 
   function sanitizeTranslationLang(lang) {
@@ -1304,7 +1353,7 @@ body {
 
   function loadSettings() {
     try {
-      const s = localStorage.getItem(SETTINGS_KEY);
+      const s = Storage.getItem(SETTINGS_KEY);
       const saved = s ? JSON.parse(s) : {};
       const merged = { ...DEFAULT_SETTINGS, ...saved };
       merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
@@ -1319,7 +1368,7 @@ body {
   }
 
   function saveSettings() {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(S.settings));
+    Storage.setItem(SETTINGS_KEY, JSON.stringify(S.settings));
   }
 
   function getWsUrl() {
@@ -2861,6 +2910,47 @@ body {
       }
     }
 
+    // Hydrate persistent storage from the bridge (browser localStorage gets
+    // wiped on .ehpk WebView restart). Then re-load settings so any values
+    // the user set on a prior session — API keys especially — come back.
+    if (S.bridge) {
+      try {
+        await Storage.attach(S.bridge);
+        var freshSettings = loadSettings();
+        S.settings = { ...S.settings, ...freshSettings };
+        // Refresh any settings inputs that were rendered with stale (empty)
+        // values before bridge hydration finished.
+        try {
+          var gKey = document.getElementById('settingGroqKey');
+          if (gKey && !gKey.value) gKey.value = S.settings.groqApiKey || '';
+          var oKey = document.getElementById('settingOpenAIKey');
+          if (oKey && !oKey.value) oKey.value = S.settings.openaiApiKey || '';
+          var lang = document.getElementById('settingLang');
+          if (lang) lang.value = sanitizeTranslationLang(S.settings.lang || '');
+          var surah = document.getElementById('settingSurah');
+          if (surah) surah.value = S.settings.defaultSurah || '0';
+          var pipe = document.getElementById('settingPipeline');
+          if (pipe) pipe.value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
+          if (typeof setProvider === 'function')
+            setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq');
+        } catch (_) {}
+        // Theme may have been overwritten by bridge value too.
+        var t = Storage.getItem('qc_theme');
+        if (t === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          var tb = document.getElementById('themeBtn');
+          if (tb) tb.textContent = '☾';
+        } else if (t === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+          var tb2 = document.getElementById('themeBtn');
+          if (tb2) tb2.textContent = '☽';
+        }
+        log('Bridge storage hydrated', 'ok');
+      } catch (e) {
+        log('Bridge storage hydrate failed: ' + (e && e.message || e), 'w');
+      }
+    }
+
     var g2Text = document.getElementById('g2Text');
     var btn = document.getElementById('recordBtn');
 
@@ -2898,7 +2988,7 @@ body {
     var isDark = html.getAttribute('data-theme') === 'dark';
     html.setAttribute('data-theme', isDark ? 'light' : 'dark');
     document.getElementById('themeBtn').textContent = isDark ? '\u25D1' : '\u263E';
-    try { localStorage.setItem('qc_theme', isDark ? 'light' : 'dark'); } catch (_) {}
+    Storage.setItem('qc_theme', isDark ? 'light' : 'dark');
   };
 
   // ─── Settings UI ──────────────────────────────────────────────────────────
@@ -3257,14 +3347,12 @@ body {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async function () {
-    // Restore saved theme
-    try {
-      var savedTheme = localStorage.getItem('qc_theme');
-      if (savedTheme === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        document.getElementById('themeBtn').textContent = '\u263E';
-      }
-    } catch (_) {}
+    // Restore saved theme (from cache; bridge may overwrite once it attaches)
+    var savedTheme = Storage.getItem('qc_theme');
+    if (savedTheme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      document.getElementById('themeBtn').textContent = '\u263E';
+    }
 
     S.settings = loadSettings();
     _fastMode = !!S.settings.fastMode;
