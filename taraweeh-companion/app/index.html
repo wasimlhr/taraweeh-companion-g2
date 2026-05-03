@@ -753,7 +753,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.2.0</span>
+      <span class="version" id="versionEl">v2.2.1</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -1032,7 +1032,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.2.0';
+  const APP_VERSION = 'v2.2.1';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1256,24 +1256,66 @@ body {
       if (v != null && v !== '') cache.set(k, v);
     });
 
+    // Defer setItem writes that arrive before the bridge attaches. On
+    // attach we flush them so any keys saved during the boot window
+    // actually persist. Without this, the session-ID IIFE (top-of-script)
+    // and any "save settings before bridge ready" path were lost on cold
+    // restart even though the bridge was healthy.
+    var pendingWrites = [];
+    function _trace(tag, detail) {
+      try { if (typeof trace === 'function') trace(tag, detail); } catch (_) {}
+      try { console.log('[Storage] ' + tag + (detail ? ' ' + detail : '')); } catch (_) {}
+    }
+
     return {
+      hasBridge: function () { return !!bridge; },
+
       // Hydrate from the bridge once it is ready. Bridge values WIN over
       // browser cache (browser is volatile, bridge is the source of truth).
       // If the bridge has no value but the browser does, write the browser
       // value back to the bridge — handles upgrades from pre-bridge versions.
       attach: function (b) {
         bridge = b;
-        if (!bridge || typeof bridge.getLocalStorage !== 'function') return Promise.resolve();
-        return Promise.all(KNOWN_KEYS.map(function (k) {
-          return bridge.getLocalStorage(k).then(function (v) {
-            if (v && v !== '') {
-              cache.set(k, v);
-              _writeBrowser(k, v);
-            } else if (cache.has(k)) {
-              try { bridge.setLocalStorage(k, cache.get(k)); } catch (_) {}
-            }
-          }, function () {});
-        }));
+        if (!bridge) {
+          _trace('storage.attach.no-bridge');
+          return Promise.resolve();
+        }
+        var hasGet = typeof bridge.getLocalStorage === 'function';
+        var hasSet = typeof bridge.setLocalStorage === 'function';
+        _trace('storage.attach', 'hasGet=' + hasGet + ' hasSet=' + hasSet);
+        if (!hasGet || !hasSet) return Promise.resolve();
+
+        // Flush any pending writes that happened before bridge attached
+        // (e.g. session-ID generated at module load, settings saved during
+        // the boot async window). These otherwise stay only in browser
+        // localStorage which is wiped on .ehpk WebView restart.
+        var flush = pendingWrites.splice(0).map(function (w) {
+          _trace('storage.flush', w.key);
+          return Promise.resolve(bridge.setLocalStorage(w.key, w.value)).then(
+            function (ok) { _trace('storage.flush.done', w.key + ' ok=' + ok); },
+            function (e) { _trace('storage.flush.err', w.key + ' ' + (e && e.message || e)); }
+          );
+        });
+
+        return Promise.all(flush).then(function () {
+          return Promise.all(KNOWN_KEYS.map(function (k) {
+            return Promise.resolve(bridge.getLocalStorage(k)).then(function (v) {
+              if (v && v !== '') {
+                _trace('storage.hydrate.has', k + ' len=' + v.length);
+                cache.set(k, v);
+                _writeBrowser(k, v);
+              } else if (cache.has(k)) {
+                _trace('storage.hydrate.migrate', k);
+                return Promise.resolve(bridge.setLocalStorage(k, cache.get(k))).then(
+                  function (ok) { _trace('storage.migrate.done', k + ' ok=' + ok); },
+                  function (e) { _trace('storage.migrate.err', k + ' ' + (e && e.message || e)); }
+                );
+              } else {
+                _trace('storage.hydrate.empty', k);
+              }
+            }, function (e) { _trace('storage.hydrate.err', k + ' ' + (e && e.message || e)); });
+          }));
+        });
       },
       getItem: function (key) {
         return cache.has(key) ? cache.get(key) : null;
@@ -1283,7 +1325,16 @@ body {
         cache.set(key, v);
         _writeBrowser(key, v);
         if (bridge && typeof bridge.setLocalStorage === 'function') {
-          try { bridge.setLocalStorage(key, v); } catch (_) {}
+          _trace('storage.set', key);
+          Promise.resolve(bridge.setLocalStorage(key, v)).then(
+            function (ok) { _trace('storage.set.done', key + ' ok=' + ok); },
+            function (e) { _trace('storage.set.err', key + ' ' + (e && e.message || e)); }
+          );
+        } else {
+          // Bridge not attached yet — queue for flush on attach so the
+          // write persists across restarts.
+          _trace('storage.queue', key);
+          pendingWrites.push({ key: key, value: v });
         }
       },
     };
