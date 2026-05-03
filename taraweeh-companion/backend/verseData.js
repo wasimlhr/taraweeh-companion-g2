@@ -37,9 +37,31 @@ const SURAH_NAMES = [
   'Al-Masad', 'Al-Ikhlas', 'Al-Falaq', 'An-Nas',
 ];
 
-const QURAN_JSON_LANGS = new Set(['en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
-/** Languages that don't render on G2 glasses (Arabic script, etc.) — glasses fallback to English */
-const GLASSES_UNSUPPORTED_LANGS = new Set(['ur', 'ar', 'fa', 'bn', 'hi']);
+const QURAN_JSON_LANGS = new Set([
+  'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv',
+  // v2.4: Tanzil-sourced via alquran.cloud
+  'fa', 'ms', 'ps', 'hi', 'ha', 'sw', 'sq', 'bs', 'so', 'ta',
+]);
+
+/**
+ * Languages we BELIEVE the G2 LVGL firmware font can render on the body
+ * line. SDK docs only say "Unicode is supported within the firmware font
+ * set" without enumerating coverage, so this is a conservative empirical
+ * list — Latin (basic + extended) is almost certainly in the font; Cyrillic
+ * usually is too. Anything not in this set falls back to English on glasses
+ * so users never see a screen of empty boxes (□□□).
+ *
+ * If a script you've tested renders correctly on G2, add it here.
+ * If a script renders as boxes/empty, leave it out.
+ */
+const GLASSES_RENDERABLE_LANGS = new Set([
+  '',                                                                   // built-in English
+  'en', 'fr', 'es', 'id', 'ms', 'tr', 'sq', 'bs', 'ha', 'sw', 'so', 'sv',  // Latin script
+  'ru',                                                                 // Cyrillic
+  // 'zh' — CJK glyphs rarely baked into embedded LVGL fonts; verify before enabling
+  // 'ur', 'fa', 'ps', 'ar' — Arabic-script + RTL, almost never in LVGL
+  // 'hi', 'bn', 'ta' — Indic complex shaping, almost never in LVGL
+]);
 
 let versesDisplay = null;
 const quranJsonCache = new Map(); // lang -> { translation: [...], transliteration: [...] }
@@ -146,8 +168,12 @@ export function getVerseData(surah, ayah, lang = '') {
     }
   }
 
+  // Glasses body line: if the selected language uses a script the LVGL
+  // firmware can render, send the actual translation. Otherwise fall back
+  // to English so users see real text instead of boxes.
   let translationGlasses = translation;
-  if (lang && GLASSES_UNSUPPORTED_LANGS.has(lang)) {
+  const langKey = lang || '';
+  if (!GLASSES_RENDERABLE_LANGS.has(langKey)) {
     const enVerse = getVerseData(surah, ayah, '');
     translationGlasses = enVerse?.translation || translation;
   }

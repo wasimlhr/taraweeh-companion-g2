@@ -816,7 +816,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.4.0</span>
+      <span class="version" id="versionEl">v2.4.1</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -1036,8 +1036,8 @@ body {
         </optgroup>
       </select>
       <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;font-style:normal;min-height:1.4em"></span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Translations are local app bundles (no cloud translation fetch). Phone display uses script-appropriate fonts (Nastaliq for Urdu, etc).</span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Glasses always show English on the body line — non-Latin scripts can't render in the LVGL font.</span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Translations are local app bundles (no cloud fetch). Phone display uses script-appropriate fonts (Nastaliq for Urdu, etc.).</span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Glasses show your selected translation when its script is supported (Latin / Cyrillic). Arabic-script (Urdu, Persian), Indic (Hindi, Bengali, Tamil), and CJK (Chinese) fall back to English on glasses — phone shows them properly.</span>
     </div>
   </div>
 
@@ -1072,8 +1072,12 @@ body {
         <button type="button" class="toggle-btn" id="btnModeBYOK" onclick="setKeyMode('byok')">Use my own key</button>
       </div>
       <div id="sharedHint" style="margin-top:8px;padding:10px 12px;background:var(--bc-2);border-radius:var(--r);font-size:12px;line-height:1.55;color:var(--tc-1)">
-        <b>Free mode</b> — the shared key is paid by the developer to make this accessible to everyone. Each session is capped at <b>~90 minutes</b> of audio to keep costs sustainable. If Groq is rate-limited, requests automatically fall over to OpenAI.<br><br>
-        For unlimited use, switch to <b>"Use my own key"</b> and paste a free Groq key.
+        <b>Free mode</b> — the shared key is paid by the developer to make this accessible to everyone. Each session is capped at <b>~90 minutes</b> of audio to keep costs sustainable. If the shared key gets rate-limited (busy hours), requests automatically fall over to a backup.<br><br>
+        <b>Want unlimited use with no shared-key delays?</b> Get your own free Groq API key — it takes 30 seconds, no credit card, and Groq's free tier is much higher than what we share across all users.
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="back-btn btn-arrow" style="font-size:13px;text-decoration:none">Get free Groq key</a>
+          <button type="button" class="back-btn" onclick="setKeyMode('byok')" style="font-size:13px">Then paste it here</button>
+        </div>
       </div>
 
       <div id="byokSection" style="display:none;margin-top:12px">
@@ -1129,7 +1133,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.4.0';
+  const APP_VERSION = 'v2.4.1';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
