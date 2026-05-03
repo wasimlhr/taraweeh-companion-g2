@@ -739,9 +739,22 @@ export function transition(state, event) {
         nonQuranType: event.speechType,
       };
 
+    // Explicit user/foreground pause — distinct from NON_QURAN which carries
+    // detected non-Quran speech metadata. PAUSE has no extra fields.
+    case 'PAUSE':
+      return { ...state, mode: 'PAUSED' };
+
     case 'AUDIO_RETURN':
-      if (state.mode === 'PAUSED') return { ...state, mode: 'RESUMING', missedChunks: 0 };
-      return state;
+      if (state.mode !== 'PAUSED') return state;
+      // Optional snap target — pipeline supplies last known display position
+      // so a brief background→foreground cycle restores LOCKED instantly
+      // instead of flashing through RESUMING.
+      if (event.snap && event.snap.surah && event.snap.ayah) {
+        return { ...state, mode: 'LOCKED', missedChunks: 0,
+                 surah: event.snap.surah, ayah: event.snap.ayah,
+                 lastLockedSurah: event.snap.surah, lastLockedAyah: event.snap.ayah };
+      }
+      return { ...state, mode: 'RESUMING', missedChunks: 0 };
 
     case 'MANUAL_ADVANCE': {
       if (state.mode !== 'LOCKED') return state;

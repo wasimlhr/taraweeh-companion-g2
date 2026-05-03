@@ -249,15 +249,18 @@ export class AudioPipeline {
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
-    // Groq mode flag — drives snap-back/snap-forward aggressiveness, pacer blend,
-    // and pace-learning override.
-    // BYOK API providers. Both share Groq-style tuning (no warmup, lower
-    // anchor thresholds) — `isGroqMode` stays the flag for that shared path.
-    // `isOpenAIMode` tracks OpenAI specifically for chunk-rate tuning (no RPM
-    // cap, so we can send as fast as the old HF defaults).
-    this.isGroqMode      = this.whisperOpts?.provider === 'groq' || this.whisperOpts?.provider === 'openai';
-    this.isOpenAIMode    = this.whisperOpts?.provider === 'openai';
-    console.log(`[Pipeline] Constructed — provider=${this.whisperOpts?.provider || 'default'}, byok=${this.isGroqMode}, openai=${this.isOpenAIMode}`);
+    // Provider flags — strict, one true at a time:
+    //   isGroqMode      → Groq-only behaviour (RPM throttle, 20% timer cushion)
+    //   isOpenAIMode    → OpenAI-only behaviour (no throttle, no cushion)
+    //   isFastProvider  → either BYOK provider (low-latency, word timestamps,
+    //                     reciter-hold, lower anchor thresholds, faster catch-up)
+    // The HF / public-fallback path is the implicit default for none-of-above.
+    const _provider = this.whisperOpts?.provider || '';
+    this.isGroqMode       = _provider === 'groq';
+    this.isOpenAIMode     = _provider === 'openai';
+    this.isFastProvider   = this.isGroqMode || this.isOpenAIMode;
+    this.isHFMode         = !this.isFastProvider;
+    console.log(`[Pipeline] Constructed — provider=${_provider || 'default(hf)'}, fast=${this.isFastProvider}, groq=${this.isGroqMode}, openai=${this.isOpenAIMode}`);
 
     this.state     = createState();
     this.active    = false;
@@ -359,10 +362,10 @@ export class AudioPipeline {
     this._preRukuSurah   = 0;
     this._preRukuAyah    = 0;
 
-    // Skip the HF warmup probe in Groq mode — the probe's 'dedicated' status
-    // events overwrite Groq's 'ready' signal and flash "Server warming up…"
-    // on the UI during transient 401/503s.
-    if (!this.isGroqMode) {
+    // Skip the HF warmup probe for any BYOK fast provider — the probe's
+    // 'dedicated' status events overwrite the provider's 'ready' signal and
+    // flash "Server warming up…" on the UI during transient 401/503s.
+    if (!this.isFastProvider) {
       probeWhisperEndpoint(this.whisperOpts, this.onStatus).catch(() => {});
     }
   }
@@ -599,37 +602,19 @@ export class AudioPipeline {
     const prev = this._measuredMsPerWord;
     this._measuredMsPerWord = median;
     console.log(`[Pipeline] Pace learned: ${wc}w in ${(elapsedMs/1000).toFixed(1)}s = ${sample}ms/w → median ${median}ms/w (${this._msPerWordSamples.length} samples)`);
-    // If pace changed significantly, adjust the CURRENT running timer too
+    // If pace changed significantly, adjust the CURRENT running timer too.
+    // Delegate to _scheduleReadAdvance via overrideDurationMs so the
+    // word-progress interval gets re-armed alongside the timer (a previous
+    // inline implementation cancelled but never restarted the interval,
+    // freezing UI word-progress ticks until the next state change).
     if (prev > 0 && this._displayAdvanceTimer && this._timerStartedAt && this._nextAdvanceMs > 0) {
       const ratio = median / prev;
-      if (Math.abs(ratio - 1.0) > 0.15) { // >15% change
+      if (Math.abs(ratio - 1.0) > 0.15) {
         const elapsed = Date.now() - this._timerStartedAt;
         const remaining = Math.max(0, this._nextAdvanceMs - elapsed);
         const adjusted = Math.max(2000, Math.round(remaining * ratio));
         this._cancelReadAdvance();
-        this._nextAdvanceMs = adjusted;
-        this._timerStartedAt = Date.now();
-        this._displayAdvanceTimer = setTimeout(() => {
-          this._displayAdvanceTimer = null;
-          this._nextAdvanceMs = 0;
-          this._timerStartedAt = 0;
-          if (!this._canDisplayAdvance()) return;
-          const nextData = getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
-          if (!nextData) {
-            // end of surah handled by _scheduleReadAdvance path
-            this._scheduleReadAdvance(this.state.confidence);
-          } else {
-            this._sameAyahStreak = 0;
-            this._bumpCountForAyah = 0;
-            this._displayAyah++;
-            this._ayahStartTime = Date.now();
-            this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
-              lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
-            console.log(`[Pipeline] Read-advance → ${this._displaySurah}:${this._displayAyah}`);
-            this._scheduleReadAdvance(this.state.confidence);
-          }
-          this._emitState(null, null);
-        }, adjusted);
+        this._scheduleReadAdvance(this.state.confidence, 0, 1.0, adjusted);
         console.log(`[Pipeline] Timer adjusted: ${Math.round(remaining/1000)}s → ${Math.round(adjusted/1000)}s (pace ${prev}→${median}ms/w)`);
       }
     }
@@ -684,7 +669,9 @@ export class AudioPipeline {
     this._pausedWhisperAyah  = this._whisperAyah;
     this._pausedDisplaySurah = this._displaySurah;
     this._pausedDisplayAyah  = this._displayAyah;
-    this.state = { ...this.state, mode: 'PAUSED' };
+    // Route through the state machine reducer — keeps mode transitions in
+    // one place and lets the state machine evolve without pipeline edits.
+    this.state = transition(this.state, { type: 'PAUSE' });
     console.log(`[Pipeline] Paused display at ${this._displaySurah}:${this._displayAyah} (timer remaining: ${this._pausedTimerRemainingMs}ms, Whisper still listening)`);
     this._emitState(null, null);
   }
@@ -707,9 +694,11 @@ export class AudioPipeline {
     this._ayahStartTime = Date.now();
     this._lockTime = this._ayahStartTime;
     this._currentWordIndex = 0;
-    this.state = { ...this.state, mode: 'LOCKED', missedChunks: 0,
-      surah: snapSurah, ayah: snapAyah,
-      lastLockedSurah: snapSurah, lastLockedAyah: snapAyah };
+    // Reducer handles the PAUSED → LOCKED restore using the snap target.
+    this.state = transition(this.state, {
+      type: 'AUDIO_RETURN',
+      snap: { surah: snapSurah, ayah: snapAyah },
+    });
 
     if (!moved && this._pausedTimerRemainingMs > 0) {
       // Same ayah — resume timer with leftover time instead of restarting
@@ -805,11 +794,9 @@ export class AudioPipeline {
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
     if (this._isRateLimited()) return false;
     // Groq free tier caps at 20 RPM → tighten (5s / 1 in-flight).
-    // OpenAI has no practical RPM cap → use the faster default (4s / 2 in-flight),
-    // which is what HF used.
-    const tightenForGroq = this.isGroqMode && !this.isOpenAIMode;
-    const maxInFlight = tightenForGroq ? 1 : LOCKED_MAX_INFLIGHT;
-    const minIntervalMs = tightenForGroq ? 5000 : LOCKED_MIN_MS;
+    // OpenAI has no practical RPM cap → use the faster default (4s / 2 in-flight).
+    const maxInFlight = this.isGroqMode ? 1 : LOCKED_MAX_INFLIGHT;
+    const minIntervalMs = this.isGroqMode ? 5000 : LOCKED_MIN_MS;
     if (this._lockedInFlight >= maxInFlight || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
     const timeSinceLastSend = this._lastLockedCall ? (now - this._lastLockedCall) : Infinity;
@@ -1178,10 +1165,10 @@ export class AudioPipeline {
         return;
       }
 
-      // Word-level activity tracking (Groq returns word timestamps):
+      // Word-level activity tracking — both Groq and OpenAI return word timestamps.
       // Record the wall-clock time of the last spoken word in this chunk.
       // If > 3s elapsed since then, reciter is in a pause — don't auto-advance.
-      if (this.isGroqMode && words.length > 0) {
+      if (this.isFastProvider && words.length > 0) {
         const lastWord = words[words.length - 1];
         if (lastWord && typeof lastWord.end === 'number') {
           // lastWord.end is seconds relative to chunk start; startedAt is chunk-start wall-clock.
@@ -1238,7 +1225,7 @@ export class AudioPipeline {
         fastMode: this.fastMode,
         missBeforeResuming: MISSED_BEFORE_RESUMING_V3,
         missBeforeLost: MISSED_BEFORE_LOST_V3,
-        isGroqMode: this.isGroqMode,
+        isGroqMode: this.isFastProvider,    // anchor uses this for BYOK score thresholds — applies to both Groq and OpenAI
       });
       const dropDecision = this._shouldDropLockedResult(anchorResult, resultAgeMs, seq);
       if (dropDecision.drop) {
@@ -1345,7 +1332,7 @@ export class AudioPipeline {
       }
       // lag≥3 still follows the repeat-count gate — real drift, not jitter.
       const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 2 : 3;
-      const REPEAT_BACK_CORRECT_MIN_CONF = this.isGroqMode ? 45 : 65;
+      const REPEAT_BACK_CORRECT_MIN_CONF = this.isFastProvider ? 45 : 65;
 
       // ── Repeat tracking (genuine reciter repeats, not mishear) ───────
       if (!refrainVerse && confirmedAyah === this._behindRepeatAyah && score >= REPEAT_BACK_CORRECT_MIN_CONF) {
@@ -1423,7 +1410,7 @@ export class AudioPipeline {
         // reset the timer so display doesn't race ahead. Groq's 300ms
         // latency makes this signal reliable; HF's 6s lag makes it risky,
         // so HF keeps old behaviour (let timer run).
-        if (this.isGroqMode && realMatch && this._sameAyahStreak >= 2 && remaining < 2500) {
+        if (this.isFastProvider && realMatch && this._sameAyahStreak >= 2 && remaining < 2500) {
           const holdMs = Math.max(3000, this._measuredMsPerWord > 0 ? this._measuredMsPerWord * 3 : 3000);
           this._cancelReadAdvance();
           this._scheduleReadAdvance(score, 0, 1.0, holdMs);
@@ -1469,7 +1456,7 @@ export class AudioPipeline {
       }
       // GROQ: snap immediately for gap ≥ 2 (user asked: only intervene when
       // we're "way off, like 2 or 3 ayahs"). Groq is authoritative.
-      if (this.isGroqMode && score >= 35) {
+      if (this.isFastProvider && score >= 35) {
         this._cancelReadAdvance();
         console.log(`[Pipeline] Groq catch-up snap: :${this._displayAyah} → :${confirmedAyah} (gap=${gap}, conf=${score}%)`);
         this._displaySurah = confirmedSurah;
@@ -1560,7 +1547,7 @@ export class AudioPipeline {
         // Blend: HF uses 0.7 old / 0.3 new (conservative — HF clock is noisy).
         // Groq uses 0.4 old / 0.6 new — Groq confirms are accurate, so the pacer
         // should follow reciter speed changes quickly (taraweeh tempo shifts).
-        const oldWeight = this.isGroqMode ? 0.4 : 0.7;
+        const oldWeight = this.isFastProvider ? 0.4 : 0.7;
         const newWeight = 1 - oldWeight;
         this._measuredWps = this._measuredWps * oldWeight + clampedWps * newWeight;
         // Sync _measuredMsPerWord from Whisper clock.
@@ -1570,7 +1557,7 @@ export class AudioPipeline {
         //  - Manual samples exist + HF mode: keep manual (historical behaviour —
         //    HF clock is noisier and user's manual taps are more trustworthy).
         const whisperMsPerWord = Math.round(1000 / this._measuredWps);
-        const shouldSync = this._msPerWordSamples.length === 0 || this.isGroqMode;
+        const shouldSync = this._msPerWordSamples.length === 0 || this.isFastProvider;
         if (shouldSync) {
           this._measuredMsPerWord = whisperMsPerWord;
           this._whisperClockSamples++;
@@ -1600,32 +1587,42 @@ export class AudioPipeline {
   // V4: Learn pace from word-level timestamps
   _learnWordPaceFromTimestamps() {
     if (this._wordTimestamps.length === 0) return;
-    
-    // Calculate actual pace from word durations
-    const durations = this._wordTimestamps.map(w => {
-      const start = typeof w.start === 'number' ? w.start : (Array.isArray(w.timestamp) ? w.timestamp[0] : 0);
-      const end = typeof w.end === 'number' ? w.end : (Array.isArray(w.timestamp) ? w.timestamp[1] : start + 0.5);
-      return (end - start) * 1000;  // Convert to ms
-    });
-    
+
+    // Calculate actual pace from word durations. Filter malformed entries
+    // (negative or zero durations, NaN, absurdly long >5s words) — a single
+    // bad Whisper frame would otherwise poison _measuredMsPerWord with NaN
+    // and break every subsequent timer calculation.
+    const durations = this._wordTimestamps
+      .map(w => {
+        const start = typeof w.start === 'number' ? w.start : (Array.isArray(w.timestamp) ? w.timestamp[0] : 0);
+        const end = typeof w.end === 'number' ? w.end : (Array.isArray(w.timestamp) ? w.timestamp[1] : start + 0.5);
+        return (end - start) * 1000;
+      })
+      .filter(d => Number.isFinite(d) && d > 0 && d < 5000);
+
+    if (durations.length === 0) {
+      console.log(`[Pipeline] Word pace skipped: no valid timestamps in ${this._wordTimestamps.length} words`);
+      return;
+    }
+
     const avgMs = durations.reduce((a, b) => a + b, 0) / durations.length;
+    if (!Number.isFinite(avgMs) || avgMs <= 0) return;
     const minMs = Math.min(...durations);
     const maxMs = Math.max(...durations);
-    
+
     // Weighted average with existing estimate (70% old, 30% new)
     if (this._measuredMsPerWord > 0) {
       this._measuredMsPerWord = Math.round(this._measuredMsPerWord * 0.7 + avgMs * 0.3);
     } else {
       this._measuredMsPerWord = Math.round(avgMs);
     }
-    
-    // Also update WPS for consistency
+
     this._measuredWps = 1000 / this._measuredMsPerWord;
-    
+
     console.log(
       `[Pipeline] Word pace from timestamps: ${avgMs.toFixed(0)}ms avg ` +
       `(${minMs.toFixed(0)}-${maxMs.toFixed(0)}ms range, ` +
-      `${this._wordTimestamps.length} words) → ${this._measuredMsPerWord}ms/w`
+      `${durations.length}/${this._wordTimestamps.length} valid words) → ${this._measuredMsPerWord}ms/w`
     );
   }
 
@@ -1729,7 +1726,7 @@ export class AudioPipeline {
     // Groq silence guard: word-level timestamps let us detect when the reciter
     // is paused (emotional, breath, end-of-ayah wait). If the last heard word
     // was >3s ago, don't let the timer fire — reciter hasn't moved.
-    if (this.isGroqMode && this._lastHeardWordMs > 0 && !onLastAyah) {
+    if (this.isFastProvider && this._lastHeardWordMs > 0 && !onLastAyah) {
       const silenceMs = Date.now() - this._lastHeardWordMs;
       if (silenceMs > 3000) {
         if (!this._lastSilenceLogMs || (Date.now() - this._lastSilenceLogMs) > 2000) {
@@ -2131,7 +2128,12 @@ export class AudioPipeline {
         this._whisperSurah = 0;
         this._whisperAyah  = 0;
         this._driftMult    = 1.0;
-        this.state = { ...createState(), lastLockedSurah: 0, lastLockedAyah: 0 };
+        // Preserve the anchor target so QIYAM-after-takbeer-cycle resumes
+        // from the correct surah instead of cold-searching. Prefer the
+        // explicitly saved pre-ruku position; fall back to state's last lock.
+        this.state = { ...createState(),
+          lastLockedSurah: this._preRukuSurah || this.state.lastLockedSurah || 0,
+          lastLockedAyah:  this._preRukuAyah  || this.state.lastLockedAyah  || 0 };
         this._resetSearchBuf();
       } else {
         // reciting or sajda2 or unknown → RUKU
@@ -2148,7 +2150,12 @@ export class AudioPipeline {
         this._whisperSurah = 0;
         this._whisperAyah  = 0;
         this._driftMult    = 1.0;
-        this.state = { ...createState(), lastLockedSurah: 0, lastLockedAyah: 0 };
+        // Preserve the anchor target so QIYAM-after-takbeer-cycle resumes
+        // from the correct surah instead of cold-searching. Prefer the
+        // explicitly saved pre-ruku position; fall back to state's last lock.
+        this.state = { ...createState(),
+          lastLockedSurah: this._preRukuSurah || this.state.lastLockedSurah || 0,
+          lastLockedAyah:  this._preRukuAyah  || this.state.lastLockedAyah  || 0 };
         this._resetSearchBuf();
       }
     }
