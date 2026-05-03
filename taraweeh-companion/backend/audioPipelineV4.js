@@ -362,6 +362,15 @@ export class AudioPipeline {
     this._preRukuSurah   = 0;
     this._preRukuAyah    = 0;
 
+    // Per-session usage cap. Only enforced in shared-key mode (the host's
+    // budget needs protecting). BYOK users are uncapped — they pay for it.
+    this._sessionAudioMs = 0;
+    this._sessionWarned80 = false;
+    this._sessionCapReached = false;
+    const sharedMode = !!(this.whisperOpts && this.whisperOpts.sharedMode);
+    const envCapMin = parseInt(process.env.MAX_MIN_PER_SESSION || '90', 10);
+    this._sessionCapMs = sharedMode && envCapMin > 0 ? envCapMin * 60 * 1000 : 0;  // 0 = uncapped
+
     // Skip the HF warmup probe for any BYOK fast provider — the probe's
     // 'dedicated' status events overwrite the provider's 'ready' signal and
     // flash "Server warming up…" on the UI during transient 401/503s.
@@ -809,6 +818,29 @@ export class AudioPipeline {
       : this._lockedBuf;
     const chunk = Buffer.from(sendSlice);
     const bufMs = Math.round(chunk.length / BYTES_PER_MS);
+    // Per-session budget cap (shared mode only). Hard-stop at 100% so a single
+    // session can't drain the host's monthly transcription budget. Warn at 80%
+    // so the user sees it coming and can stop / switch to BYOK.
+    if (this._sessionCapMs > 0) {
+      this._sessionAudioMs += bufMs;
+      const pct = this._sessionAudioMs / this._sessionCapMs;
+      if (pct >= 0.8 && !this._sessionWarned80) {
+        this._sessionWarned80 = true;
+        const minLeft = Math.max(0, Math.round((this._sessionCapMs - this._sessionAudioMs) / 60000));
+        console.log(`[Pipeline] Session at ${Math.round(pct * 100)}% of shared-mode cap (~${minLeft}min left)`);
+        this.onStatus({ type: 'session_quota', component: 'quota', status: 'warn',
+          usedMs: this._sessionAudioMs, capMs: this._sessionCapMs, minLeft,
+          message: `Approaching free-session limit (~${minLeft} min left). Add your own Groq key in Settings for unlimited use.` });
+      }
+      if (pct >= 1.0 && !this._sessionCapReached) {
+        this._sessionCapReached = true;
+        console.log(`[Pipeline] Session shared-mode cap reached — refusing further chunks`);
+        this.onStatus({ type: 'session_quota', component: 'quota', status: 'error',
+          usedMs: this._sessionAudioMs, capMs: this._sessionCapMs,
+          message: 'Free-session limit reached. Add your own Groq key in Settings to continue.' });
+      }
+      if (this._sessionCapReached) return false;
+    }
     const seq = ++this._lockedSeq;
     this._lastLockedCall = now;
     this._lockedInFlight++;

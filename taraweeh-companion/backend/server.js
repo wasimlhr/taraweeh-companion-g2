@@ -219,22 +219,31 @@ wss.on('connection', (ws, req) => {
     const groqKey   = (typeof opts?.groqApiKey   === 'string') ? opts.groqApiKey.trim()   : '';
     const wantOpenAI = clientProvider === 'openai' && openaiKey;
     const wantGroq   = clientProvider === 'groq' && groqKey;
-    // Back-compat: if no explicit provider, use whichever key is present (prefer openai).
     const fallbackOpenAI = !clientProvider && openaiKey;
     const fallbackGroq   = !clientProvider && groqKey;
+    // Server-held shared keys (sadaka jariya). Default to shared mode when
+    // neither key is supplied AND at least one shared key is configured.
+    const hasSharedGroq   = !!(process.env.SHARED_GROQ_KEY   || '').trim();
+    const hasSharedOpenAI = !!(process.env.SHARED_OPENAI_KEY || '').trim();
+    const useSharedMode = !openaiKey && !groqKey && (hasSharedGroq || hasSharedOpenAI);
 
     if (wantOpenAI || fallbackOpenAI) {
       whisperOpts = { ...whisperOpts, provider: 'openai', apiKey: openaiKey };
-      console.log('[Init] Client provided OpenAI API key — using OpenAI Whisper for this session');
-      send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'openai' });
+      console.log('[Init] BYOK: OpenAI key — no usage limit');
+      send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'openai', byok: true });
     } else if (wantGroq || fallbackGroq) {
       whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: groqKey };
-      console.log('[Init] Client provided Groq API key — using Groq provider for this session');
-      send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'groq' });
+      console.log('[Init] BYOK: Groq key — no usage limit');
+      send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'groq', byok: true });
+    } else if (useSharedMode) {
+      // Shared mode: pipeline picks Groq for tuning (low-latency family), router
+      // does the actual call + transparent OpenAI failover on 429.
+      whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: '', sharedMode: true };
+      console.log(`[Init] SHARED mode — Groq=${hasSharedGroq ? 'on' : 'off'}, OpenAI failover=${hasSharedOpenAI ? 'on' : 'off'}`);
+      send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'shared', byok: false });
     } else {
-      // No key in init. Surface a clear error instead of routing to HF.
       whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: '' };
-      console.log('[Init] No transcription API key — transcribe will error until one is provided');
+      console.log('[Init] No API key and no shared keys configured — transcribe will fail');
       send({ type: 'sys_status', component: 'model', status: 'error', provider: 'groq', message: 'API key required (Groq or OpenAI)' });
     }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';

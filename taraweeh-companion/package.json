@@ -1,7 +1,7 @@
 {
   "name": "taraweeh-companion",
-  "version": "2.2.1",
-  "description": "Taraweeh Companion \u2014 real-time Quran recitation on Even G2 smart glasses",
+  "version": "2.3.0",
+  "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {
     "postinstall": "cd backend && npm install",
@@ -29,6 +29,6 @@
   },
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.1.12",
-    "@evenrealities/evenhub-simulator": "^0.5.0"
+    "@evenrealities/evenhub-simulator": "^0.7.3"
   }
 }

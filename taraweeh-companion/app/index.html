@@ -753,7 +753,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.2.1</span>
+      <span class="version" id="versionEl">v2.3.0</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -977,41 +977,52 @@ body {
     </div>
   </div>
 
-  <div class="s-section">Transcription engine</div>
+  <div class="s-section">Transcription</div>
   <div class="s-card">
     <div class="s-row">
-      <span class="s-label">Provider</span>
+      <span class="s-label">Mode</span>
       <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
-        <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
-        <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
+        <button type="button" class="toggle-btn active" id="btnModeShared" onclick="setKeyMode('shared')">Free (shared)</button>
+        <button type="button" class="toggle-btn" id="btnModeBYOK" onclick="setKeyMode('byok')">Use my own key</button>
       </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">
-        <b>Groq:</b> <code>whisper-large-v3-turbo</code> — fast (~300ms), free tier has 20 RPM cap.<br>
-        <b>OpenAI:</b> <code>whisper-1</code> — slower (~500ms), no RPM cap, $0.006/min audio.
-      </span>
-      <div id="groqKeyRow" style="margin-top:10px">
-        <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-          <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
-          <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+      <div id="sharedHint" style="margin-top:8px;padding:10px 12px;background:var(--bc-2);border-radius:var(--r);font-size:12px;line-height:1.55;color:var(--tc-1)">
+        <b>Free mode</b> uses a shared key paid for by the developer as <i>sadaka jariya</i>. Each session is capped at <b>~90 minutes</b> of audio to protect the budget. If the shared Groq key is rate-limited, requests automatically fail over to OpenAI.<br><br>
+        For unlimited use, switch to <b>"Use my own key"</b> and paste a free Groq key.
+      </div>
+
+      <div id="byokSection" style="display:none;margin-top:12px">
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
+          <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
         </div>
-        <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a Groq key →</a>
+        <span class="s-hint" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
+          <b>Groq</b> <code>whisper-large-v3-turbo</code> — fast (~300ms), free tier 20 RPM.<br>
+          <b>OpenAI</b> <code>whisper-1</code> — slower (~500ms), no RPM cap, $0.006/min.
+        </span>
+        <div id="groqKeyRow">
+          <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+            <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
+            <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+          </div>
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
+            <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a free Groq key →</a>
+          </span>
+        </div>
+        <div id="openaiKeyRow" style="margin-top:10px;display:none">
+          <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false" />
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+            <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testOpenAIKey()" style="font-size:13px">Test key</button>
+            <span id="openaiTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
+          </div>
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
+            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get an OpenAI key →</a>
+          </span>
+        </div>
+        <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
+          Key stays on your device. Sent to server only when listening starts.
         </span>
       </div>
-      <div id="openaiKeyRow" style="margin-top:10px;display:none">
-        <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false" />
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-          <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testOpenAIKey()" style="font-size:13px">Test key</button>
-          <span id="openaiTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
-        </div>
-        <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-          <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get an OpenAI key →</a>
-        </span>
-      </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
-        Key stays on your phone (localStorage). Sent to server only when you start listening.
-      </span>
     </div>
   </div>
 
@@ -1032,7 +1043,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.2.1';
+  const APP_VERSION = 'v2.3.0';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1372,9 +1383,10 @@ body {
     forcePhoneMic: false,
     fastMode: true,
     slowMode: false,
-    groqApiKey: '',         // Groq API key
-    openaiApiKey: '',       // OpenAI API key
-    transcriptionProvider: 'groq',  // 'groq' or 'openai' — explicitly selected, no fallback
+    keyMode: 'shared',      // 'shared' = use server-held free key; 'byok' = user key
+    groqApiKey: '',         // Groq API key (only used when keyMode='byok')
+    openaiApiKey: '',       // OpenAI API key (only used when keyMode='byok')
+    transcriptionProvider: 'groq',  // BYOK provider: 'groq' or 'openai'
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
   };
 
@@ -1572,6 +1584,15 @@ body {
       var tb = document.getElementById('taraweehBtn');
       tb.textContent = '\uD83C\uDF19 Taraweeh: ' + (_taraweehMode ? 'On' : 'Off');
       tb.classList.toggle('active', _taraweehMode);
+    } else if (s.type === 'session_quota') {
+      // Shared-mode per-session usage cap: warn at 80%, hard-stop at 100%.
+      // Surface as the main status banner so user can switch to BYOK.
+      if (s.status === 'error') {
+        setStatus(s.message || 'Free-session limit reached. Add your own Groq key in Settings.', 'err');
+        if (typeof log === 'function') log('Quota exceeded \u2014 recording will pause until BYOK is configured', 'err');
+      } else if (s.status === 'warn') {
+        setStatus(s.message || 'Approaching free-session limit', 'warn');
+      }
     } else if (s.component === 'audio') {
       // Audio heartbeat — keep pill alive but don't show RMS
       clearTimeout(_audioTimer);
@@ -2237,8 +2258,8 @@ body {
         fastMode: _fastMode,
         slowMode: _slowMode,
         transcriptionProvider: S.settings.transcriptionProvider || 'groq',
-        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
-        openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
+        groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
+        openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
       }));
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -2800,17 +2821,21 @@ body {
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {
-    // Block start if no API key for the selected provider.
-    var provSel = S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq';
-    var keyForProv = provSel === 'openai'
-      ? (S.settings.openaiApiKey || '').trim()
-      : (S.settings.groqApiKey || '').trim();
-    if (!keyForProv) {
-      var pLabel = provSel === 'openai' ? 'OpenAI' : 'Groq';
-      setStatus(pLabel + ' API key required — opening settings', 'warn');
-      if (typeof log === 'function') log('No ' + pLabel + ' key set — open Settings and enter one', 'warn');
-      setTimeout(function () { try { showSettings(); } catch (_) {} }, 400);
-      return;
+    // BYOK only: block start if no API key for the selected provider. Shared
+    // mode uses server-held keys — no precheck needed (backend will tell us
+    // via sys_status if neither shared key is configured).
+    if (S.settings.keyMode === 'byok') {
+      var provSel = S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq';
+      var keyForProv = provSel === 'openai'
+        ? (S.settings.openaiApiKey || '').trim()
+        : (S.settings.groqApiKey || '').trim();
+      if (!keyForProv) {
+        var pLabel = provSel === 'openai' ? 'OpenAI' : 'Groq';
+        setStatus(pLabel + ' API key required — opening settings', 'warn');
+        if (typeof log === 'function') log('No ' + pLabel + ' key set — open Settings and enter one', 'warn');
+        setTimeout(function () { try { showSettings(); } catch (_) {} }, 400);
+        return;
+      }
     }
     S.isRecording = true;
     S.displayRebuilt = false;
@@ -2838,8 +2863,8 @@ body {
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         transcriptionProvider: S.settings.transcriptionProvider || 'groq',
-        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
-        openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
+        groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
+        openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
       }));
       S.ws.send(JSON.stringify({ type: 'start' }));
       log('Reused existing WS, sent start', 'ok');
@@ -3050,6 +3075,25 @@ body {
     document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
   };
 
+  // Free vs BYOK key mode. Shared mode = no client key sent → backend uses
+  // SHARED_GROQ_KEY/SHARED_OPENAI_KEY env vars and enforces the per-session
+  // minute cap. BYOK = user's own key, no cap, no failover.
+  window.setKeyMode = function (m) {
+    m = (m === 'byok') ? 'byok' : 'shared';
+    S.settings.keyMode = m;
+    try { saveSettings(); } catch (_) {}
+    var sBtn = document.getElementById('btnModeShared');
+    var bBtn = document.getElementById('btnModeBYOK');
+    if (sBtn) sBtn.classList.toggle('active', m === 'shared');
+    if (bBtn) bBtn.classList.toggle('active', m === 'byok');
+    var sHint = document.getElementById('sharedHint');
+    var byokSec = document.getElementById('byokSection');
+    if (sHint) sHint.style.display = (m === 'shared') ? '' : 'none';
+    if (byokSec) byokSec.style.display = (m === 'byok') ? '' : 'none';
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
+    log('Key mode: ' + (m === 'shared' ? 'Free (shared)' : 'My own key'), 'ok');
+  };
+
   window.setProvider = function (p) {
     p = (p === 'openai') ? 'openai' : 'groq';
     S.settings.transcriptionProvider = p;
@@ -3077,8 +3121,8 @@ body {
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         transcriptionProvider: p,
-        groqApiKey: (S.settings.groqApiKey || '').trim() || null,
-        openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
+        groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
+        openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
       }));
       log('Provider → ' + (p === 'openai' ? 'OpenAI' : 'Groq'), 'ok');
     }
@@ -3259,6 +3303,7 @@ body {
     var oaiInput = document.getElementById('settingOpenAIKey');
     if (oaiInput) oaiInput.value = S.settings.openaiApiKey || '';
     setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq');
+    setKeyMode(S.settings.keyMode === 'byok' ? 'byok' : 'shared');
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
@@ -3287,8 +3332,8 @@ body {
       fastMode: _fastMode,
       slowMode: _slowMode,
       transcriptionProvider: provider,
-      groqApiKey: (S.settings.groqApiKey || '').trim() || null,
-      openaiApiKey: (S.settings.openaiApiKey || '').trim() || null,
+      groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
+      openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
     }));
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
     S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
