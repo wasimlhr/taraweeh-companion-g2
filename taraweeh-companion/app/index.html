@@ -753,7 +753,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.3.0</span>
+      <span class="version" id="versionEl">v2.3.1</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -887,8 +887,11 @@ body {
 
   <div class="btn-group" style="margin-top:8px">
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
-    <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Fast mode — shortens per-ayah timer (use for fast reciters)">🐇 Fast: Off</button>
-    <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Slow mode — lengthens per-ayah timer (use for slow reciters)">🐢 Slow: Off</button>
+    <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Use for fast reciters — display advances ~50% faster">🐇 Fast Reciter: Off</button>
+    <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Use for slow reciters — display lingers ~50% longer per ayah">🐢 Slow Reciter: Off</button>
+    <div class="s-hint" style="font-size:11px;margin-top:6px;line-height:1.5;color:var(--tc-2)">
+      Pick the pace that matches your imam's recitation speed. Default fits most reciters; switch only if the display races ahead or lags behind.
+    </div>
   </div>
 
 </div>
@@ -986,7 +989,7 @@ body {
         <button type="button" class="toggle-btn" id="btnModeBYOK" onclick="setKeyMode('byok')">Use my own key</button>
       </div>
       <div id="sharedHint" style="margin-top:8px;padding:10px 12px;background:var(--bc-2);border-radius:var(--r);font-size:12px;line-height:1.55;color:var(--tc-1)">
-        <b>Free mode</b> uses a shared key paid for by the developer as <i>sadaka jariya</i>. Each session is capped at <b>~90 minutes</b> of audio to protect the budget. If the shared Groq key is rate-limited, requests automatically fail over to OpenAI.<br><br>
+        <b>Free mode</b> — the shared key is paid by the developer to make this accessible to everyone. Each session is capped at <b>~90 minutes</b> of audio to keep costs sustainable. If Groq is rate-limited, requests automatically fall over to OpenAI.<br><br>
         For unlimited use, switch to <b>"Use my own key"</b> and paste a free Groq key.
       </div>
 
@@ -1043,7 +1046,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.3.0';
+  const APP_VERSION = 'v2.3.1';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1171,12 +1174,12 @@ body {
     });
     var slowBtn = document.getElementById('slowModeBtn');
     if (slowBtn) {
-      slowBtn.textContent = '\uD83D\uDC22 Slow: ' + (_slowMode ? 'On' : 'Off');
+      slowBtn.textContent = '\uD83D\uDC22 Slow Reciter: ' + (_slowMode ? 'On' : 'Off');
       slowBtn.classList.toggle('active', _slowMode);
     }
     var fastBtn = document.getElementById('fastModeBtn');
     if (fastBtn) {
-      fastBtn.textContent = '\uD83D\uDC07 Fast: ' + (_fastMode ? 'On' : 'Off');
+      fastBtn.textContent = '\uD83D\uDC07 Fast Reciter: ' + (_fastMode ? 'On' : 'Off');
       fastBtn.classList.toggle('active', _fastMode);
     }
   }
