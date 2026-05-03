@@ -6,6 +6,11 @@
   <title>Quran Companion</title>
   <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <!-- Script-specific fonts for non-Latin translations on the phone display.
+       Glasses still render English-only for these scripts (LVGL limitation). -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500&display=swap" rel="stylesheet" />
   <style>
 /* Even Realities design tokens. FK Grotesk is the brand face (commercial);
    Inter is the closest free substitute with the same geometric grotesk feel. */
@@ -240,6 +245,48 @@ body {
   font-size: 14px;
   color: var(--tc-2);
   line-height: 1.55;
+}
+
+/* Script-specific overrides for non-Latin translations.
+   Latin font sits at 14px. Nastaliq/Bengali need larger sizes for legibility
+   because Arabic-script and Bengali consonant clusters are visually denser. */
+.verse-translation[lang="ur"] {
+  font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", serif;
+  font-size: 22px;
+  line-height: 2.2;            /* Nastaliq stacks vertically — needs breathing room */
+  direction: rtl;
+  text-align: right;
+  color: var(--tc-1);
+}
+.verse-translation[lang="ar"],
+.verse-translation[lang="fa"] {
+  font-family: "Amiri", "Noto Naskh Arabic", serif;
+  font-size: 20px;
+  line-height: 1.9;
+  direction: rtl;
+  text-align: right;
+  color: var(--tc-1);
+}
+.verse-translation[lang="bn"] {
+  font-family: "Noto Sans Bengali", "SolaimanLipi", sans-serif;
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--tc-1);
+}
+.verse-translation[lang="zh"] {
+  font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--tc-1);
+}
+.verse-translation[lang="ru"] {
+  font-size: 15px;             /* Cyrillic renders fine in default font, just bump size slightly */
+}
+.verse-translation[lang="hi"],
+.verse-translation[lang="ps"] {
+  font-family: "Noto Sans Devanagari", "Noto Naskh Arabic", serif;
+  font-size: 17px;
+  line-height: 1.7;
 }
 /* ── Matching Panel (SEARCHING state) ──────────────────────────────────── */
 .verse-searching {
@@ -753,7 +800,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.3.1</span>
+      <span class="version" id="versionEl">v2.3.2</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -953,8 +1000,8 @@ body {
         </optgroup>
       </select>
       <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;font-style:normal;min-height:1.4em"></span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Translations are local app bundles only (no cloud translation fetch).</span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">No Urdu, Farsi, Hindi, Bengali, or Arabic on glasses — those show English instead.</span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Translations are local app bundles (no cloud translation fetch). Phone display uses script-appropriate fonts (Nastaliq for Urdu, etc).</span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Glasses always show English on the body line — non-Latin scripts can't render in the LVGL font.</span>
     </div>
   </div>
 
@@ -1046,7 +1093,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.3.1';
+  const APP_VERSION = 'v2.3.2';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2124,7 +2171,11 @@ body {
 
       document.getElementById('verseArabic').textContent = state.arabic || '';
       document.getElementById('verseTranslit').textContent = state.transliteration || '';
-      document.getElementById('verseTrans').textContent = state.translation || '';
+      var transEl = document.getElementById('verseTrans');
+      transEl.textContent = state.translation || '';
+      // Set lang attribute so per-script CSS (Nastaliq for Urdu, Bengali, etc.)
+      // applies the correct font and direction. Empty lang = English (default).
+      transEl.setAttribute('lang', (S.settings && S.settings.lang) || 'en');
 
       // Dim the verse slightly while it's a candidate or user searching (still confirming)
       var verseCard = locked.querySelector ? locked.querySelector('.verse-card') : null;
