@@ -27,7 +27,11 @@ const SAMPLE_RATE = 16000;
 const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
 const ENDPOINT_ON_DEMAND_ENABLED = process.env.ENDPOINT_ON_DEMAND_ENABLED === 'true';
 const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
-const LOCAL_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+const LOCAL_TRANSLATION_LANGS = new Set([
+  '', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv',
+  // v2.4 — Tanzil-sourced via alquran.cloud
+  'fa', 'ms', 'ps', 'hi', 'ha', 'sw', 'sq', 'bs', 'so', 'ta',
+]);
 
 let lastEndpointLifecycle = {
   component: 'model',

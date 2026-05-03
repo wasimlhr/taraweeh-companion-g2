@@ -1,6 +1,6 @@
 {
   "name": "taraweeh-companion",
-  "version": "2.3.2",
+  "version": "2.4.0",
   "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {
@@ -15,6 +15,7 @@
     "simulator": "npm run sim",
     "live-monitor": "powershell -ExecutionPolicy Bypass -File scripts/live-monitor.ps1",
     "download-quran-db": "node scripts/download-quran-db.js",
+    "download-extra-translations": "node scripts/download-extra-translations.js",
     "build:evenhub": "node scripts/build-evenhub-dist.js",
     "pack:evenhub": "npm run build:evenhub && npx @evenrealities/evenhub-cli@0.1.12 pack app.json dist -o taraweeh-companion.ehpk",
     "pack:evenhub:check": "npm run build:evenhub && npx @evenrealities/evenhub-cli@0.1.12 pack app.json dist -o taraweeh-companion.ehpk --check"
