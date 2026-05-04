@@ -816,7 +816,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.4.1</span>
+      <span class="version" id="versionEl">v2.4.2</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -940,8 +940,9 @@ body {
     </div>
   </div>
 
-  <!-- Transcription provider switch (main screen) -->
-  <div style="margin-top:8px">
+  <!-- Transcription provider switch (BYOK only — in shared mode the backend
+       picks Groq with auto OpenAI failover, this toggle would be misleading). -->
+  <div id="providerSwitchRow" style="margin-top:8px;display:none">
     <div class="mv-toggle-group" role="group" aria-label="Transcription provider">
       <button type="button" class="mv-toggle-btn active" id="btnProviderGroqMain" onclick="setProvider('groq')">Groq</button>
       <button type="button" class="mv-toggle-btn" id="btnProviderOpenAIMain" onclick="setProvider('openai')">OpenAI</button>
@@ -1133,7 +1134,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.4.1';
+  const APP_VERSION = 'v2.4.2';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1640,17 +1641,37 @@ body {
           // pill only while S.isRecording, which made a dead session look healthy.
           var provLbl = (s.provider || _modelProvider || 'provider').toUpperCase();
           var detail = s.message ? (' — ' + s.message) : '';
+          // In shared mode, the user didn't choose Groq — the backend did, with
+          // automatic OpenAI failover. Use neutral wording that doesn't surface
+          // implementation detail. In BYOK mode they picked the provider, so
+          // naming it is appropriate.
+          var inSharedMode = S.settings && S.settings.keyMode !== 'byok';
           if (s.provider === 'groq' || _modelProvider === 'groq') {
             if (s.httpStatus === 429 && s.retryAfterMs > 0) {
               var waitS = Math.ceil(s.retryAfterMs / 1000);
-              setPill('sPillModel', 'warn', 'Groq: rate limit — ' + waitS + 's');
-              setStatus('Groq rate-limited, retry in ' + waitS + 's', 'result');
+              if (inSharedMode) {
+                setPill('sPillModel', 'warn', 'Busy — ' + waitS + 's');
+                setStatus('Server busy, falling over to backup provider…', 'result');
+              } else {
+                setPill('sPillModel', 'warn', 'Groq: rate limit — ' + waitS + 's');
+                setStatus('Groq rate-limited, retry in ' + waitS + 's', 'result');
+              }
             } else if (s.httpStatus === 401 || /invalid.*key|unauthoriz/i.test(s.message || '')) {
-              setPill('sPillModel', 'err', 'Groq: bad API key');
-              setStatus('Groq API key invalid — open Settings to fix', 'err');
+              if (inSharedMode) {
+                setPill('sPillModel', 'err', 'Server config error');
+                setStatus('Shared key not accepted by provider. Switch to "Use my own key" in Settings.', 'err');
+              } else {
+                setPill('sPillModel', 'err', 'Groq: bad API key');
+                setStatus('Groq API key invalid — open Settings to fix', 'err');
+              }
             } else {
-              setPill('sPillModel', 'err', 'Groq: error');
-              setStatus('Groq error' + detail + ' — check key/network', 'err');
+              if (inSharedMode) {
+                setPill('sPillModel', 'err', 'Server error');
+                setStatus('Transcription error' + detail, 'err');
+              } else {
+                setPill('sPillModel', 'err', 'Groq: error');
+                setStatus('Groq error' + detail + ' — check key/network', 'err');
+              }
             }
           } else if (s.provider === 'openai' || _modelProvider === 'openai') {
             if (s.httpStatus === 401 || /invalid.*key|unauthoriz/i.test(s.message || '')) {
@@ -2470,6 +2491,14 @@ body {
       } else {
         setPill('sPillModel', 'warn', 'Server waking\u2026');
       }
+      // In shared mode, override the above to a clean "Ready" \u2014 backend handles
+      // provider routing + failover, no warm-up to wait for.
+      if (S.settings && S.settings.keyMode !== 'byok') {
+        _modelProvider = 'shared';
+        setPill('sPillModel', 'ok', 'Ready');
+        var feP = document.getElementById('sPillEndpoint');
+        if (feP) feP.style.display = 'none';
+      }
       setPill('sPillConf', '', 'Match: --');
       // Send start if recording button was already active (reconnect case)
       if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN)
@@ -3187,6 +3216,11 @@ body {
     var byokSec = document.getElementById('byokSection');
     if (sHint) sHint.style.display = (m === 'shared') ? '' : 'none';
     if (byokSec) byokSec.style.display = (m === 'byok') ? '' : 'none';
+    // Main-screen provider toggle only matters in BYOK mode. In shared mode
+    // the backend picks Groq with automatic OpenAI failover regardless of
+    // what the toggle shows — hide it to avoid misleading users.
+    var provRow = document.getElementById('providerSwitchRow');
+    if (provRow) provRow.style.display = (m === 'byok') ? '' : 'none';
     if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
     log('Key mode: ' + (m === 'shared' ? 'Free (shared)' : 'My own key'), 'ok');
   };
