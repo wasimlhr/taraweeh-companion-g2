@@ -816,7 +816,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.4.5</span>
+      <span class="version" id="versionEl">v2.4.6</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -1082,13 +1082,15 @@ body {
       </div>
 
       <div id="byokSection" style="display:none;margin-top:12px">
-        <div style="display:flex;gap:6px;margin-bottom:8px">
-          <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
-          <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
+        <div class="toggle-group" role="group" aria-label="BYOK provider" style="margin-bottom:8px">
+          <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq (free)</button>
+          <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI (paid)</button>
         </div>
-        <span class="s-hint" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
-          <b>Groq</b> <code>whisper-large-v3-turbo</code> — fast (~300ms), free tier 20 RPM.<br>
-          <b>OpenAI</b> <code>whisper-1</code> — slower (~500ms), no RPM cap, $0.006/min.
+        <span class="s-hint" id="hintGroq" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
+          <b>Groq</b> <code>whisper-large-v3-turbo</code> — fast (~300ms), free tier 20 RPM.
+        </span>
+        <span class="s-hint" id="hintOpenAI" style="font-size:11px;display:none;margin-bottom:8px;line-height:1.5">
+          <b>OpenAI</b> <code>whisper-1</code> — slower (~500ms), no RPM cap, $0.006/min audio.
         </span>
         <div id="groqKeyRow">
           <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false"
@@ -1136,7 +1138,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.4.5';
+  const APP_VERSION = 'v2.4.6';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -3312,6 +3314,11 @@ body {
     var oRow = document.getElementById('openaiKeyRow');
     if (gRow) gRow.style.display = (p === 'groq') ? '' : 'none';
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
+    // Show only the active provider's blurb so it's obvious which one is selected.
+    var gHint = document.getElementById('hintGroq');
+    var oHint = document.getElementById('hintOpenAI');
+    if (gHint) gHint.style.display = (p === 'groq') ? '' : 'none';
+    if (oHint) oHint.style.display = (p === 'openai') ? '' : 'none';
     // Re-init pipeline live if recording so the switch takes immediate effect.
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({
