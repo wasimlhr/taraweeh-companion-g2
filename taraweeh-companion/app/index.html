@@ -816,7 +816,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.4.6</span>
+      <span class="version" id="versionEl">v2.4.7</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -1117,6 +1117,13 @@ body {
         <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
           Key stays on your device. Sent to server only when listening starts.
         </span>
+        <div style="margin-top:10px;padding:10px 12px;background:#fef9e7;border-left:3px solid #f59e0b;border-radius:6px;font-size:11px;line-height:1.55;color:#7a4f00">
+          <b>Heads up:</b> in current beta builds the Even Hub WebView doesn't always
+          persist API keys across full app restarts (we've verified the bridge
+          accepts the write but the data isn't there on next launch). You may
+          need to paste your key again after each cold start. This should
+          resolve once the app is fully published to the hub store.
+        </div>
       </div>
     </div>
   </div>
@@ -1138,7 +1145,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.4.6';
+  const APP_VERSION = 'v2.4.7';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
