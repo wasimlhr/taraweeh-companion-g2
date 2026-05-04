@@ -816,7 +816,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.4.2</span>
+      <span class="version" id="versionEl">v2.4.3</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -1134,7 +1134,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.4.2';
+  const APP_VERSION = 'v2.4.3';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1807,7 +1807,7 @@ body {
         xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
         isEventCapture: 1,
         borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: 2,
-        content: 'Ready. Recite any verse to begin.' },
+        content: 'Double-tap ring or temple to start, then recite to begin tracking.' },
     ];
   }
 
@@ -3095,7 +3095,19 @@ body {
     log('Loading SDK from CDN...');
 
     try {
-      var sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.10/dist/index.js');
+      // Bundled SDK at ./sdk/even_hub_sdk.js (copied by build-evenhub-dist.js).
+      // Loading from a same-origin path keeps the SDK module instance in the
+      // same realm the host expects — fixes sideload persistence in v2.4.x
+      // where the dynamic CDN import created a separate module realm and
+      // bridge.setLocalStorage writes weren't reaching the host's persistent
+      // backing store on real devices (worked in sim, failed on phone).
+      var sdk;
+      try {
+        sdk = await import('./sdk/even_hub_sdk.js');
+      } catch (localErr) {
+        log('Local SDK import failed (' + localErr.message + ') — falling back to CDN', 'w');
+        sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.10/dist/index.js');
+      }
       S.sdk = sdk;
       S.bridge = await new Promise(function (resolve, reject) {
         var t = setTimeout(function () { reject(new Error('timeout 2s')); }, 2000);
