@@ -816,7 +816,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.4.3</span>
+      <span class="version" id="versionEl">v2.4.4</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -990,7 +990,7 @@ body {
   <div class="s-card">
     <div class="s-row">
       <span class="s-label">Tracking style</span>
-      <select id="settingPipeline">
+      <select id="settingPipeline" onchange="saveSettingImmediate('pipelineVersion', this.value)">
         <option value="v4">V4 (Recommended)</option>
         <option value="v3">V3 (Compatibility)</option>
       </select>
@@ -998,11 +998,11 @@ body {
     </div>
     <div class="s-row">
       <span class="s-label">Default Surah</span>
-      <select id="settingSurah"><option value="0">Any Surah</option></select>
+      <select id="settingSurah" onchange="saveSettingImmediate('defaultSurah', this.value)"><option value="0">Any Surah</option></select>
     </div>
     <div class="s-row">
       <span class="s-label">Translation</span>
-      <select id="settingLang" onchange="updateTranslationDesc()">
+      <select id="settingLang" onchange="updateTranslationDesc(); saveSettingImmediate('lang', this.value);">
         <option value="">English (built-in)</option>
         <optgroup label="South Asia">
           <option value="ur">Urdu (اردو)</option>
@@ -1091,7 +1091,8 @@ body {
           <b>OpenAI</b> <code>whisper-1</code> — slower (~500ms), no RPM cap, $0.006/min.
         </span>
         <div id="groqKeyRow">
-          <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
+          <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false"
+                 oninput="saveKeyImmediate('groq', this.value)" onchange="saveKeyImmediate('groq', this.value)" />
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
             <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testGroqKey()" style="font-size:13px">Test key</button>
             <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
@@ -1101,7 +1102,8 @@ body {
           </span>
         </div>
         <div id="openaiKeyRow" style="margin-top:10px;display:none">
-          <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false" />
+          <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false"
+                 oninput="saveKeyImmediate('openai', this.value)" onchange="saveKeyImmediate('openai', this.value)" />
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
             <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testOpenAIKey()" style="font-size:13px">Test key</button>
             <span id="openaiTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
@@ -1134,7 +1136,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.4.3';
+  const APP_VERSION = 'v2.4.4';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -3235,6 +3237,27 @@ body {
     if (provRow) provRow.style.display = (m === 'byok') ? '' : 'none';
     if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
     log('Key mode: ' + (m === 'shared' ? 'Free (shared)' : 'My own key'), 'ok');
+  };
+
+  // Save settings field the moment the user changes it. Previously these
+  // were only copied from the input → S.settings → bridge inside hideSettings()
+  // (Back button). If the user closed the app via swipe / system menu / ring
+  // exit, hideSettings never ran, and the value was lost on next launch even
+  // though theme + other immediate-save settings persisted fine.
+  window.saveKeyImmediate = function (which, value) {
+    var v = (value || '').trim();
+    if (which === 'openai') {
+      S.settings.openaiApiKey = v;
+    } else {
+      S.settings.groqApiKey = v;
+    }
+    try { saveSettings(); } catch (_) {}
+  };
+  window.saveSettingImmediate = function (key, value) {
+    if (key === 'pipelineVersion') value = sanitizePipelineVersion(value);
+    if (key === 'lang')            value = sanitizeTranslationLang(value);
+    S.settings[key] = value;
+    try { saveSettings(); } catch (_) {}
   };
 
   window.setProvider = function (p) {
