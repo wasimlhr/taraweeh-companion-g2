@@ -816,7 +816,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.4.4</span>
+      <span class="version" id="versionEl">v2.4.5</span>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -1136,7 +1136,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.4.4';
+  const APP_VERSION = 'v2.4.5';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1521,6 +1521,13 @@ body {
       if (merged.transcriptionProvider !== 'groq' && merged.transcriptionProvider !== 'openai') {
         merged.transcriptionProvider = 'groq';
       }
+      // Derive keyMode from key presence. If user has any saved key they
+      // want it used — never silently fall back to the shared budget when
+      // a personal key exists. They can still explicitly pick "Free
+      // (shared)" via the UI toggle to clear keyMode back to 'shared'.
+      const hasUserKey = !!(merged.groqApiKey || merged.openaiApiKey);
+      if (hasUserKey && merged.keyMode !== 'byok') merged.keyMode = 'byok';
+      if (!hasUserKey && merged.keyMode === 'byok') merged.keyMode = 'shared';
       delete merged.whisperUnlocked;
       return merged;
     } catch { return { ...DEFAULT_SETTINGS, pipelineVersion: 'v4', lang: '' }; }
@@ -3251,7 +3258,34 @@ body {
     } else {
       S.settings.groqApiKey = v;
     }
+    // Auto-flip keyMode based on whether ANY key is now set. User typing a
+    // key implies they want it used — without this, init payloads stayed
+    // gated on keyMode='shared' and the backend kept using its own key.
+    var hasUserKey = !!(S.settings.groqApiKey || S.settings.openaiApiKey);
+    var newMode = hasUserKey ? 'byok' : 'shared';
+    if (S.settings.keyMode !== newMode) {
+      S.settings.keyMode = newMode;
+      // Update toggle UI without re-firing setKeyMode's reinit (we'll do that once below).
+      try {
+        var sBtn = document.getElementById('btnModeShared');
+        var bBtn = document.getElementById('btnModeBYOK');
+        if (sBtn) sBtn.classList.toggle('active', newMode === 'shared');
+        if (bBtn) bBtn.classList.toggle('active', newMode === 'byok');
+        var sHint = document.getElementById('sharedHint');
+        var byokSec = document.getElementById('byokSection');
+        if (sHint) sHint.style.display = (newMode === 'shared') ? '' : 'none';
+        if (byokSec) byokSec.style.display = (newMode === 'byok') ? '' : 'none';
+        var provRow = document.getElementById('providerSwitchRow');
+        if (provRow) provRow.style.display = (newMode === 'byok') ? '' : 'none';
+      } catch (_) {}
+    }
     try { saveSettings(); } catch (_) {}
+    // Push the new key (or its absence) to backend immediately so the next
+    // chunk uses the right credentials without waiting for the user to
+    // restart listening or close Settings.
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      try { reinitPipeline(); } catch (_) {}
+    }
   };
   window.saveSettingImmediate = function (key, value) {
     if (key === 'pipelineVersion') value = sanitizePipelineVersion(value);
