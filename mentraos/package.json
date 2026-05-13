@@ -1,0 +1,24 @@
+{
+  "name": "quran-companion-mentraos",
+  "version": "1.0.0",
+  "description": "Quran Companion — Taraweeh real-time verse tracking for MentraOS smart glasses",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "postinstall": "cd ../taraweeh-companion/backend && npm install"
+  },
+  "dependencies": {
+    "@mentra/sdk": "latest",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
