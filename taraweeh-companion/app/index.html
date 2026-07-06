@@ -384,6 +384,10 @@ body {
 .s-pill.warn { background: #fef9e7; color: #92400e; }
 .s-pill.err  { background: #fef2f2; color: #b91c1c; }
 .s-pill.info { background: #eff6ff; color: #1e40af; }
+[data-theme="dark"] .s-pill.warn { background: #3d3010; color: #fbbf24; }
+[data-theme="dark"] .s-pill.err  { background: #3d1515; color: #f87171; }
+[data-theme="dark"] .s-pill.info { background: #152538; color: #93c5fd; }
+[data-theme="dark"] .s-pill.ok   { color: #e8e8e8; }
 @keyframes s-blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 /* Soundwave */
@@ -450,10 +454,21 @@ body {
 }
 #fastModeBtn.active,
 #slowModeBtn.active,
-#taraweehBtn.active {
+#taraweehBtn.active,
+#practiceBtn.active {
   background: var(--bc-accent);
   border-color: var(--bc-accent);
   color: var(--tc-highlight);
+}
+[data-theme="dark"] .mode-btn.active,
+[data-theme="dark"] #fastModeBtn.active,
+[data-theme="dark"] #slowModeBtn.active,
+[data-theme="dark"] #taraweehBtn.active,
+[data-theme="dark"] #practiceBtn.active {
+  color: #232323;
+}
+[data-theme="dark"] .match-cand.top {
+  color: #232323;
 }
 
 /* Taraweeh overlay — shown over verse content during ruku */
@@ -887,6 +902,7 @@ body {
 
   <div class="btn-group" style="margin-top:8px">
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
+    <button id="practiceBtn" class="mode-btn" onclick="togglePractice()" title="Practice mode — lock on one verse, no auto-advance (tap Next when ready)">📖 Practice: Off</button>
     <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Fast mode — shortens per-ayah timer (use for fast reciters)">🐇 Fast: Off</button>
     <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Slow mode — lengthens per-ayah timer (use for slow reciters)">🐢 Slow: Off</button>
   </div>
@@ -1195,6 +1211,7 @@ body {
 
   window.toggleTaraweeh = function () {
     _taraweehMode = !_taraweehMode;
+    if (_taraweehMode && _practiceMode) togglePractice();
     var btn = document.getElementById('taraweehBtn');
     btn.textContent = '\uD83C\uDF19 Taraweeh: ' + (_taraweehMode ? 'On' : 'Off');
     btn.classList.toggle('active', _taraweehMode);
@@ -1202,6 +1219,31 @@ body {
       S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: _taraweehMode }));
     }
     _updateTaraweehOverlay(_taraweehPos, _rakatCount);
+  };
+
+  // ── Practice Mode (verse hold — no auto-advance) ─────────────────────────
+  var _practiceMode = false;
+
+  window.togglePractice = function () {
+    _practiceMode = !_practiceMode;
+    if (_practiceMode && _taraweehMode) {
+      _taraweehMode = false;
+      var tb = document.getElementById('taraweehBtn');
+      if (tb) {
+        tb.textContent = '\uD83C\uDF19 Taraweeh: Off';
+        tb.classList.remove('active');
+      }
+      if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+        S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: false }));
+      }
+      _updateTaraweehOverlay('QIYAM', _rakatCount);
+    }
+    var btn = document.getElementById('practiceBtn');
+    btn.textContent = '\uD83D\uDCD6 Practice: ' + (_practiceMode ? 'On' : 'Off');
+    btn.classList.toggle('active', _practiceMode);
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      S.ws.send(JSON.stringify({ type: 'set_verse_hold_mode', enabled: _practiceMode }));
+    }
   };
 
   window.resetRakat = function () {
@@ -1584,6 +1626,13 @@ body {
       var tb = document.getElementById('taraweehBtn');
       tb.textContent = '\uD83C\uDF19 Taraweeh: ' + (_taraweehMode ? 'On' : 'Off');
       tb.classList.toggle('active', _taraweehMode);
+    } else if (s.type === 'verse_hold_mode') {
+      _practiceMode = !!s.enabled;
+      var pb = document.getElementById('practiceBtn');
+      if (pb) {
+        pb.textContent = '\uD83D\uDCD6 Practice: ' + (_practiceMode ? 'On' : 'Off');
+        pb.classList.toggle('active', _practiceMode);
+      }
     } else if (s.type === 'session_quota') {
       // Shared-mode per-session usage cap: warn at 80%, hard-stop at 100%.
       // Surface as the main status banner so user can switch to BYOK.
@@ -2264,6 +2313,7 @@ body {
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
       if (_taraweehMode) S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: true }));
+      if (_practiceMode) S.ws.send(JSON.stringify({ type: 'set_verse_hold_mode', enabled: true }));
       // If recording was already active (reconnect mid-session), re-send start
       if (S.isRecording) {
         S.ws.send(JSON.stringify({ type: 'start' }));
@@ -3338,6 +3388,7 @@ body {
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
     S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
     if (_taraweehMode) S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: true }));
+    if (_practiceMode) S.ws.send(JSON.stringify({ type: 'set_verse_hold_mode', enabled: true }));
     if (S.isRecording) S.ws.send(JSON.stringify({ type: 'start' }));
   }
 

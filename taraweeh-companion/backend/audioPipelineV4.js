@@ -346,6 +346,7 @@ export class AudioPipeline {
     this._lastPaceEmitMs = 0;
 
     this.taraweehMode    = false;
+    this.verseHoldMode   = false;  // Practice: lock on one verse, no timer/auto-advance
     this._taraweehPos    = 'QIYAM';
     this._expectFatiha   = false;    // set after ruku/sajda cycle — next recitation is Fatiha
     this._taraweehPosEnteredAt = 0;  // timestamp when current taraweeh position was entered
@@ -405,6 +406,10 @@ export class AudioPipeline {
 
   setTaraweehMode(enabled) {
     this.taraweehMode = !!enabled;
+    if (this.taraweehMode) {
+      this.verseHoldMode = false;
+      this.onStatus({ type: 'verse_hold_mode', enabled: false });
+    }
     if (!this.taraweehMode) {
       this._taraweehPos = 'QIYAM';
       this._taraweehLastFrom = 'reciting';
@@ -418,6 +423,19 @@ export class AudioPipeline {
     console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}${this._expectFatiha ? ' (expectFatiha=true)' : ''}`);
     this.onStatus({ type: 'taraweeh_mode', enabled: this.taraweehMode,
       position: this._taraweehPos, rakat: this._rakatCount });
+  }
+
+  setVerseHoldMode(enabled) {
+    this.verseHoldMode = !!enabled;
+    if (this.verseHoldMode) {
+      this.taraweehMode = false;
+      this._taraweehPos = 'QIYAM';
+      this.onStatus({ type: 'taraweeh_mode', enabled: false,
+        position: this._taraweehPos, rakat: this._rakatCount });
+    }
+    if (this.verseHoldMode) this._cancelReadAdvance();
+    console.log(`[Pipeline] Practice (verse hold) mode ${this.verseHoldMode ? 'ON' : 'OFF'}`);
+    this.onStatus({ type: 'verse_hold_mode', enabled: this.verseHoldMode });
   }
 
   _handleTranscriptionError(err) {
@@ -1109,7 +1127,7 @@ export class AudioPipeline {
 
         // Only start first-lock timer if no timer is already running for this ayah
         // (timer may already be set from read-advance into this ayah)
-        if (!this._displayAdvanceTimer) {
+        if (!this._displayAdvanceTimer && !this.verseHoldMode) {
           this._scheduleReadAdvance(this.state.confidence, 0, FIRST_LOCK_DURATION_FACTOR);
         }
         this._emitState(text, rms);
@@ -1327,6 +1345,26 @@ export class AudioPipeline {
       this._updateWpsClock(confirmedSurah, confirmedAyah);
       this._whisperSurah = confirmedSurah;
       this._whisperAyah  = confirmedAyah;
+    }
+
+    // Practice mode: keep display on the locked verse — no timer, catch-up, or snap.
+    if (this.verseHoldMode) {
+      this._cancelReadAdvance();
+      if (sameSurah && confirmedAyah === this._displayAyah && realMatch) {
+        this._sameAyahStreak++;
+      }
+      if (words.length > 0 && realMatch && confirmedSurah === this._displaySurah && confirmedAyah === this._displayAyah) {
+        this._wordTimestamps = words;
+        this._learnWordPaceFromTimestamps();
+        const ayah = getAyah(this._displaySurah, this._displayAyah);
+        const totalWords = ayah?.words?.length ?? 0;
+        if (totalWords > 0) {
+          const whisperWordIndex = Math.min(words.length, totalWords) - 1;
+          this._currentWordIndex = Math.max(this._currentWordIndex, Math.min(whisperWordIndex, totalWords - 1));
+        }
+      }
+      this._emitState(text, rms);
+      return;
     }
 
     // ── Rule 1: Whisper behind display ─────────────────────────────────
@@ -1748,6 +1786,8 @@ export class AudioPipeline {
   // ── Timer: reading-pace advance (uncapped — Whisper corrects, never blocks) ─
 
   _canDisplayAdvance() {
+    if (this.verseHoldMode) return false;
+
     // End-of-surah exception: if we're on the last ayah, let the timer run even
     // during silence. Firing it is the trigger that resets state to SEARCHING;
     // blocking it would leave us frozen on the final ayah waiting for words
@@ -2055,6 +2095,7 @@ export class AudioPipeline {
   // ── Smooth catch-up: step display forward one ayah at a time ───────────────
 
   _smoothAdvanceTo(targetSurah, targetAyah, stepMs) {
+    if (this.verseHoldMode) return;
     const interval = stepMs || SMOOTH_ADVANCE_STEP_MS;
     this._smoothAdvanceTimer = null;
     if (!this._canDisplayAdvance()) return;
