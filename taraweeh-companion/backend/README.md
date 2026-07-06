@@ -1,6 +1,6 @@
 # Taraweeh Companion Backend
 
-WebSocket server for prayer-aware tracking. Receives PCM audio, runs Whisper ASR, fuzzy match, state machine.
+WebSocket server for prayer-aware tracking. Receives PCM audio, runs Whisper ASR via **Groq** or **OpenAI**, fuzzy match, state machine.
 
 ## Setup
 
@@ -10,35 +10,35 @@ npm install
 
 ## API Keys
 
-See **[docs/SETUP.md](../docs/SETUP.md)** for full instructions. Quick start:
+Transcription uses **Groq** (`whisper-large-v3-turbo`) and/or **OpenAI** (`whisper-1`). Users can bring their own key in the app, or you can host shared keys:
 
 | Variable | Required | Where to get |
 |----------|----------|--------------|
-| `HUGGINGFACE_TOKEN` | Yes | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
+| `SHARED_GROQ_KEY` | For free/shared mode | [console.groq.com/keys](https://console.groq.com/keys) |
+| `SHARED_OPENAI_KEY` | Failover when Groq 429s | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | `GEMINI_API_KEY` | No (Pro) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-| `ENDPOINT_ON_DEMAND_ENABLED` | No | `true` enables `/api/endpoint/warmup` and the "Wake endpoint" button in Settings |
-| `MOBILE_ONLY_MODE` | No | `true` enforces phone mic in UI and exposes mobile-only status in Settings |
-| `WHISPER_PROBE_ON_INIT` | No | `false` disables automatic endpoint probing on init (manual warmup still works when enabled) |
-| `G2_SPLASH_IMAGE_DATA_URL` | No | Optional `data:image/...;base64,...` startup splash for glasses; auto center-cropped to 180x96 and sent via `updateImageRawData` |
-| `G2_SPLASH_ENABLED` | No | `false` disables splash image path and uses plain text startup containers only (recommended while debugging display issues) |
+| `MAX_MIN_PER_SESSION` | No | Cap shared-key sessions (default `90` min) |
+| `MOBILE_ONLY_MODE` | No | `true` enforces phone mic in UI |
 | `PORT` | No | Default 3001 |
 
 ```bash
-# With your keys (PowerShell)
-$env:HUGGINGFACE_TOKEN = "hf_your_token"
-$env:GEMINI_API_KEY = "your_gemini_key"
+# With shared keys (PowerShell)
+$env:SHARED_GROQ_KEY = "gsk_your_key"
+$env:SHARED_OPENAI_KEY = "sk_your_key"
 npm run start
 
 # Or one-liner
-HUGGINGFACE_TOKEN=hf_xxx GEMINI_API_KEY=xxx npm run start
+SHARED_GROQ_KEY=gsk_xxx SHARED_OPENAI_KEY=sk_xxx npm run start
 ```
+
+Without shared keys, users must enter their own Groq or OpenAI key in **Settings → Use my own key**.
 
 ## Data
 
-Expects `../public/data/quran-full.json` (full Quran from quran-json). Ensure it exists.
+Expects `data/quran-full.json` and `data/verses-display.json` (full Quran from quran-json). Bundled in repo.
 
 ## WebSocket
 
 - **URL**: `ws://localhost:3001/ws`
-- **Send**: Raw PCM bytes (16kHz, 16-bit mono, 3s chunks = 96000 bytes)
+- **Send**: Raw PCM bytes (16kHz, 16-bit mono)
 - **Receive**: `{ type: "state", state: { mode, surah, ayah, confidence, nonQuranText } }`

@@ -1,16 +1,15 @@
 /**
- * Transcription router — switches between Whisper, Gemini, and Groq.
+ * Transcription router — Groq / OpenAI Whisper (primary), optional Gemini or legacy HF.
  *
- * Default provider is env-configured: TRANSCRIPTION_PROVIDER=whisper (default), gemini, or groq.
- * Per-session override: caller can pass whisperOpts.provider='groq' with whisperOpts.apiKey
- * to use their own Groq API key without touching server env.
+ * Default provider is env-configured: TRANSCRIPTION_PROVIDER=groq (default), openai, gemini, or whisper.
+ * Per-session override: caller passes whisperOpts with provider + apiKey (BYOK) or sharedMode.
  */
 import { transcribeWithWhisper } from './whisperProvider.js';
 import { transcribeWithGemini, closeGeminiSession } from './geminiProvider.js';
 import { transcribeWithGroq } from './groqProvider.js';
 import { transcribeWithOpenAI } from './openaiProvider.js';
 
-export const PROVIDER = process.env.TRANSCRIPTION_PROVIDER || 'whisper';
+export const PROVIDER = process.env.TRANSCRIPTION_PROVIDER || 'groq';
 
 console.log(`[Transcription] Default provider: ${PROVIDER}`);
 
@@ -64,11 +63,14 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
   switch (PROVIDER) {
     case 'gemini':
       return transcribeWithGemini(pcmBuffer);
+    case 'openai':
+      return transcribeWithOpenAI(pcmBuffer, process.env.OPENAI_API_KEY || process.env.SHARED_OPENAI_KEY, emit);
     case 'groq':
-      return transcribeWithGroq(pcmBuffer, process.env.GROQ_API_KEY, emit);
+      return transcribeWithGroq(pcmBuffer, process.env.GROQ_API_KEY || process.env.SHARED_GROQ_KEY, emit);
     case 'whisper':
-    default:
       return transcribeWithWhisper(pcmBuffer, whisperOpts, emit);
+    default:
+      return transcribeWithGroq(pcmBuffer, process.env.GROQ_API_KEY || process.env.SHARED_GROQ_KEY, emit);
   }
 }
 

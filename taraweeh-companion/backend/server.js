@@ -23,6 +23,8 @@ const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const SHARED_GROQ_KEY = (process.env.SHARED_GROQ_KEY || '').trim();
+const SHARED_OPENAI_KEY = (process.env.SHARED_OPENAI_KEY || '').trim();
 const SAMPLE_RATE = 16000;
 const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
 const ENDPOINT_ON_DEMAND_ENABLED = process.env.ENDPOINT_ON_DEMAND_ENABLED === 'true';
@@ -84,15 +86,19 @@ app.get('/', (req, res) => {
 });
 app.get('/api/status', (req, res) => {
   const ep = process.env.WHISPER_ENDPOINT_URL || '';
-  const isModal = /modal\.run|modal\.com/i.test(ep);
-  const isHF = /huggingface\.cloud|endpoints\.huggingface/i.test(ep);
-  const modelName = ep ? (isModal ? 'whisper-quran (Modal)' : isHF ? 'whisper-quran-v1 (HF)' : 'whisper-quran') : 'whisper-quran-v1 (HF Public)';
+  const usesLegacyWhisper = PROVIDER === 'whisper' && !!(ep || HF_TOKEN);
+  const modelName = usesLegacyWhisper
+    ? (ep ? 'whisper-quran (dedicated)' : 'whisper-quran-v1 (legacy HF)')
+    : 'whisper-large-v3-turbo / whisper-1 (Groq / OpenAI)';
   res.json({
-    hfConfigured: !!HF_TOKEN,
+    groqConfigured: !!SHARED_GROQ_KEY,
+    openaiConfigured: !!SHARED_OPENAI_KEY,
+    sharedKeysConfigured: !!(SHARED_GROQ_KEY || SHARED_OPENAI_KEY),
     geminiConfigured: !!GEMINI_KEY,
     provider: PROVIDER,
     model: modelName,
-    endpoint: ep ? 'dedicated' : 'public-api',
+    transcription: SHARED_GROQ_KEY || SHARED_OPENAI_KEY ? 'shared-keys' : 'byok',
+    legacyWhisperConfigured: usesLegacyWhisper,
     endpointOnDemandEnabled: ENDPOINT_ON_DEMAND_ENABLED,
     mobileOnlyMode: MOBILE_ONLY_MODE,
     probeOnInit: process.env.WHISPER_PROBE_ON_INIT !== 'false',
@@ -223,8 +229,8 @@ wss.on('connection', (ws, req) => {
     const fallbackGroq   = !clientProvider && groqKey;
     // Server-held shared keys (sadaka jariya). Default to shared mode when
     // neither key is supplied AND at least one shared key is configured.
-    const hasSharedGroq   = !!(process.env.SHARED_GROQ_KEY   || '').trim();
-    const hasSharedOpenAI = !!(process.env.SHARED_OPENAI_KEY || '').trim();
+    const hasSharedGroq   = !!SHARED_GROQ_KEY;
+    const hasSharedOpenAI = !!SHARED_OPENAI_KEY;
     const useSharedMode = !openaiKey && !groqKey && (hasSharedGroq || hasSharedOpenAI);
 
     if (wantOpenAI || fallbackOpenAI) {
@@ -366,8 +372,11 @@ const LAN_IP = getLanIp();
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`HTTP  → http://localhost:${PORT}`);
   if (LAN_IP !== 'localhost') console.log(`HTTP  → http://${LAN_IP}:${PORT}`);
-  const hasModalDedicated = /modal\.run|modal\.com/i.test(process.env.WHISPER_ENDPOINT_URL || '');
-  if (PROVIDER === 'whisper' && !HF_TOKEN && !hasModalDedicated) console.warn('HUGGINGFACE_TOKEN not set (required for HF fallback)');
+  if (!SHARED_GROQ_KEY && !SHARED_OPENAI_KEY) {
+    console.log('No SHARED_GROQ_KEY / SHARED_OPENAI_KEY — users must supply a Groq or OpenAI key in app settings');
+  } else {
+    console.log(`Transcription: shared Groq=${SHARED_GROQ_KEY ? 'on' : 'off'}, OpenAI failover=${SHARED_OPENAI_KEY ? 'on' : 'off'}`);
+  }
 });
 if (httpsServer) {
   httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {

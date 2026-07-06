@@ -19,8 +19,7 @@ Taraweeh Companion listens to a reciter, identifies which ayah is being recited 
                                       │                                     ▼
                                                                    ┌─────────────────────┐
                                                                    │  Whisper ASR         │
-                                                                   │  (HuggingFace API    │
-                                                                   │   or local endpoint) │
+                                                                   │  (Groq / OpenAI API) │
                                                                    └─────────────────────┘
 ```
 
@@ -89,8 +88,10 @@ taraweeh-companion-g2/
 │   ├── anchorStateMachine.js   ← SEARCHING/LOCKED/RESUMING state machine
 │   ├── keywordMatcher.js       ← IDF-weighted Quran text matcher
 │   ├── verseData.js            ← Verse lookup (Arabic, transliteration, translation)
-│   ├── whisperProvider.js      ← Whisper API client (HuggingFace or local)
-│   ├── transcriptionRouter.js  ← Provider routing (Whisper / Gemini)
+│   ├── whisperProvider.js      ← Legacy HF/local Whisper (optional)
+│   ├── groqProvider.js         ← Groq whisper-large-v3-turbo
+│   ├── openaiProvider.js       ← OpenAI whisper-1
+│   ├── transcriptionRouter.js  ← Provider routing (Groq / OpenAI / Gemini)
 │   ├── data/
 │   │   ├── quran-full.json     ← Full Quran text (1.7 MB, local)
 │   │   └── verses-display.json ← Transliterations + translations (1.7 MB, local)
@@ -108,7 +109,7 @@ taraweeh-companion-g2/
 ### Prerequisites
 
 - **Node.js 18+**
-- **HuggingFace API token** — for Whisper transcription ([get one here](https://huggingface.co/settings/tokens))
+- **Groq and/or OpenAI API key** — for Whisper transcription ([Groq](https://console.groq.com/keys), [OpenAI](https://platform.openai.com/api-keys))
 
 ### Installation
 
@@ -121,18 +122,17 @@ cd backend && npm install && cd ..
 
 ### Configuration
 
-Create a `.env` file in the `backend/` directory:
+Create a `.env` file in `backend/`:
 
 ```env
-HUGGINGFACE_TOKEN=hf_your_token_here
+SHARED_GROQ_KEY=gsk_your_groq_key_here
+SHARED_OPENAI_KEY=sk_your_openai_key_here
 
-# Optional: use a dedicated Whisper endpoint for lower latency
-# WHISPER_ENDPOINT_URL=https://your-endpoint.endpoints.huggingface.cloud
-
-# Optional: Gemini as an alternative transcription provider
+# Optional: Gemini for non-Quran detection
 # GEMINI_API_KEY=your_gemini_key
-# TRANSCRIPTION_PROVIDER=gemini
 ```
+
+Users can also bring their own Groq or OpenAI key in **Settings → Use my own key**.
 
 ### Run
 
@@ -161,7 +161,7 @@ Open `https://<your-lan-ip>:3443` in your phone browser (accept the self-signed 
 
 ## Deployment
 
-Users need to **host the app** (backend + frontend). Whisper transcription runs via HuggingFace — no separate model hosting required unless you want lower latency.
+Users need to **host the app** (backend + frontend). Transcription runs via **Groq** and **OpenAI** Whisper APIs — no GPU hosting required.
 
 ### 1. Host the app
 
@@ -169,35 +169,31 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 | Platform | Notes |
 |----------|-------|
-| **Railway** | One-click from GitHub. Add `HUGGINGFACE_TOKEN` in Variables. Uses `railway.json` for build/start. |
+| **Railway** | One-click from GitHub. Add `SHARED_GROQ_KEY` and/or `SHARED_OPENAI_KEY` in Variables. |
 | **Render** | Web Service, set env vars in dashboard |
-| **Fly.io** | `fly launch` then `fly secrets set HUGGINGFACE_TOKEN=...` |
+| **Fly.io** | `fly launch` then `fly secrets set SHARED_GROQ_KEY=... SHARED_OPENAI_KEY=...` |
 
 **Same-origin:** When the app is served by the backend, it connects automatically. No extra config.
 
 **Custom backend URL:** If users connect to a different backend, they enter the WebSocket URL in **Settings → Backend URL** (e.g. `wss://your-app.railway.app/ws`).
 
-### 2. Whisper transcription (custom endpoint only)
+### 2. Transcription providers
 
-The app is designed to use a **custom Whisper endpoint**. Choose one:
+| Provider | Model | Notes |
+|----------|-------|-------|
+| **Groq** (primary) | `whisper-large-v3-turbo` | Fast; shared key tried first |
+| **OpenAI** (failover) | `whisper-1` | Automatic failover when Groq rate-limits |
+| **BYOK** | Either | User key in app settings — uncapped |
 
-| Option | Setup | Latency | Cost |
-|--------|-------|---------|------|
-| **HF Inference Endpoint** | Deploy [whisper-quran-v1](https://huggingface.co/wasimlhr/whisper-quran-v1) → set `WHISPER_ENDPOINT_URL` | ~2–3 s/chunk | ~$0.60/hr GPU |
-| **Modal** | Deploy Whisper on [Modal](https://modal.com) → set `WHISPER_ENDPOINT_URL` to `*.modal.run` | ~2–4 s/chunk | Pay-per-use GPU |
-| **Local Python server** | Run `whisper_server.py` → set `USE_LOCAL_WHISPER=true` | ~1–2 s/chunk | Hardware only |
-
-**HF token:** Required when using an **HF Inference Endpoint** — set `HUGGINGFACE_TOKEN` for authentication. Not needed for Modal or local server.
-
-**Recommended model:** [wasimlhr/whisper-quran-v1](https://huggingface.co/wasimlhr/whisper-quran-v1) — fine-tuned on Quran recitation (5.35% WER). Your endpoint must accept `POST` with raw `audio/wav` body and return JSON with `text` or `transcription` (or `[{text: "..."}]`).
+Set `SHARED_GROQ_KEY` and `SHARED_OPENAI_KEY` for free/shared mode (`MAX_MIN_PER_SESSION` caps sessions, default 90 min).
 
 ### 3. Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `HUGGINGFACE_TOKEN` | Yes (HF endpoint) | [Get token](https://huggingface.co/settings/tokens) — required for HF Inference Endpoint. Not needed for Modal or local. |
-| `WHISPER_ENDPOINT_URL` | No | Dedicated endpoint URL — HF (`*.endpoints.huggingface.cloud`) or Modal (`*.modal.run`) |
-| `MODAL_KEY` / `MODAL_SECRET` | No | Modal proxy auth (only if your endpoint uses `requires_proxy_auth`) |
+| `SHARED_GROQ_KEY` | For shared mode | [Groq API key](https://console.groq.com/keys) |
+| `SHARED_OPENAI_KEY` | Recommended | [OpenAI API key](https://platform.openai.com/api-keys) — failover on Groq 429 |
+| `MAX_MIN_PER_SESSION` | No | Shared-mode session cap in minutes (default `90`) |
 | `G2_SPLASH_IMAGE_DATA_URL` | No | Optional base64 image (`data:image/jpeg;base64,...`) for glasses startup splash; ignored unless `G2_STARTUP_SPLASH_ENABLED=true` |
 | `G2_STARTUP_SPLASH_ENABLED` | `false` | Enables image-container startup splash path on glasses; keep `false` for text-only startup stability |
 | `PORT` | No | Default 3001 |
@@ -258,11 +254,14 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 
 | Variable | Default | Description |
 |---|---|---|
-| `HUGGINGFACE_TOKEN` | — | HuggingFace API token (required for HF fallback) |
-| `WHISPER_ENDPOINT_URL` | — | Dedicated Whisper endpoint (HF or Modal URL) |
-| `MODAL_KEY` / `MODAL_SECRET` | — | Modal proxy auth (optional) |
-| `GEMINI_API_KEY` | — | Google Gemini API key (alternative provider) |
-| `TRANSCRIPTION_PROVIDER` | `whisper` | `whisper` or `gemini` |
+| `HUGGINGFACE_TOKEN` | — | Legacy HF Whisper only (`TRANSCRIPTION_PROVIDER=whisper`) |
+| `WHISPER_ENDPOINT_URL` | — | Legacy dedicated Whisper endpoint |
+| `MODAL_KEY` / `MODAL_SECRET` | — | Legacy Modal proxy auth |
+| `SHARED_GROQ_KEY` | — | Server-held Groq key for free/shared mode |
+| `SHARED_OPENAI_KEY` | — | Server-held OpenAI key; failover when Groq 429s |
+| `MAX_MIN_PER_SESSION` | `90` | Shared-mode session cap (minutes) |
+| `GEMINI_API_KEY` | — | Google Gemini API key (optional non-Quran detection) |
+| `TRANSCRIPTION_PROVIDER` | `groq` | `groq`, `openai`, `gemini`, or legacy `whisper` |
 | `PORT` | `3001` | HTTP server port |
 | `HTTPS_PORT` | `3443` | HTTPS server port |
 | `READ_ADVANCE_CONFIDENCE` | `40` | Minimum confidence (%) for timer-based advance |
@@ -285,7 +284,7 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 |---|---|
 | **Frontend** | Vanilla HTML/CSS/JS (single file), Amiri Arabic font, Even Hub SDK |
 | **Backend** | Node.js, Express, WebSocket (`ws`), ES Modules |
-| **ASR** | OpenAI Whisper (via HuggingFace Inference API or dedicated endpoint) |
+| **ASR** | OpenAI Whisper via Groq (`whisper-large-v3-turbo`) and OpenAI (`whisper-1`) |
 | **Quran Data** | Local JSON (quran-json format), 6,236 ayahs with Arabic text |
 | **Display Data** | Local JSON with transliterations (Sahih International) and translations |
 | **Glasses** | Even Realities G2 via `@evenrealities/even_hub_sdk` |
@@ -293,9 +292,9 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 
 ---
 
-## Whisper model
+## Transcription
 
-The app uses [**wasimlhr/whisper-quran-v1**](https://huggingface.co/wasimlhr/whisper-quran-v1) — a Whisper Large-v3 model fine-tuned on Quran recitation (5.35% WER). It is served via the HuggingFace public API by default; for lower latency, deploy a dedicated [Inference Endpoint](https://huggingface.co/inference-endpoints) and set `WHISPER_ENDPOINT_URL`.
+The app uses standard **OpenAI Whisper** via **Groq** (`whisper-large-v3-turbo`) and **OpenAI** (`whisper-1`). No HuggingFace token is required.
 
 ---
 
