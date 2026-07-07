@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.3</span>
+      <span class="version" id="versionEl">v2.6.4</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1125,7 +1125,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.3';
+  const APP_VERSION = 'v2.6.4';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2136,6 +2136,17 @@ body {
           var sName = state.completedSurahName || ('Surah ' + state.completedSurah);
           return { hdr: '\u2713 ' + clip(sName, 24) + ' complete', pages: ['Listening for next surah\u2026'] };
         }
+        // Practice: keep current verse on glasses while listening for next (fresh surah jump).
+        if (state.userSearching && (state.translation || state.translationGlasses)) {
+          var uName = state.surahName ? clip(state.surahName, 14) : 'Quran';
+          var uRef  = uName + ' ' + state.surah + ':' + state.ayah;
+          var uPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
+          var uPad  = Math.max(1, G2_CHARS - uRef.length - uPct.length - 3);
+          var uHdr  = '\u25CF ' + uRef + ' '.repeat(uPad) + uPct;
+          var uPages = buildPages(transForGlasses, state.transliteration);
+          uPages[uPages.length - 1] += '\nListening for next verse\u2026';
+          return { hdr: uHdr, pages: uPages };
+        }
         return { hdr: 'Listening', pages: ['\nSearching\u2026'] };
 
       case 'LOCKED': {
@@ -2638,6 +2649,7 @@ body {
         var sessionStart = prev._glassesSession !== _glassesSessionId;
         S._lastGlassesState = Object.assign({}, msg.state, { _glassesSession: _glassesSessionId });
         if (msg.state.isCandidate || msg.state.mode === 'LOCKED') stopSearchingDots();
+        if (_practiceMode && msg.state.userSearching && msg.state.arabic) stopSearchingDots();
         if (msg.state.isCandidate) startLockingDots();
         else stopLockingDots();
         // Force full rebuild when leaving LOCKED or when candidate verse changes so G2 reliably gets updates (textContainerUpgrade can fail over BLE)
@@ -2700,6 +2712,17 @@ body {
           }
         } else {
           stopPageFlip(); stopCountdown();
+          var practiceHolding = _practiceMode && msg.state.userSearching && msg.state.arabic;
+          if (practiceHolding || msg.state.mode === 'LOCKED' || msg.state.isCandidate) {
+            stopSearchingDots();
+          } else if (msg.state.mode === 'SEARCHING' && S.isRecording) {
+            startSearchingDots();
+          }
+          if (practiceHolding || sessionStart ||
+              prev.mode !== msg.state.mode ||
+              prev.surah !== msg.state.surah || prev.ayah !== msg.state.ayah) {
+            S.displayRebuilt = false;
+          }
           showGlassesPage(gDisplay, 0);
         }
       }

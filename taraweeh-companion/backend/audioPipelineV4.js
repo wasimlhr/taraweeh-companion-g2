@@ -648,6 +648,7 @@ export class AudioPipeline {
     }
     this._practiceLastMatchMs = Date.now();
     this._practiceFreshRun = false;
+    this._lastHeardWordMs = Date.now(); // silence clock starts at match — not pre-lock audio
     this._userSearchingDisplay = false;
   }
 
@@ -686,7 +687,9 @@ export class AudioPipeline {
     if (!this.practiceMode || this.state.mode !== 'LOCKED' || !this._practiceLastMatchMs) return;
     const heldMs = Date.now() - this._practiceLastMatchMs;
     if (heldMs < PRACTICE_FRESH_MIN_HOLD_MS) return;
-    const wordSilence = this._lastHeardWordMs ? Date.now() - this._lastHeardWordMs : heldMs;
+    // Silence since this verse was matched — ignore stale timestamps from pre-lock audio.
+    const silenceAnchor = Math.max(this._practiceLastMatchMs, this._lastHeardWordMs || 0);
+    const wordSilence = Date.now() - silenceAnchor;
     if (wordSilence >= PRACTICE_FRESH_SILENCE_MS) {
       this._enterPracticeFreshSearch();
     }
@@ -1321,6 +1324,7 @@ export class AudioPipeline {
         if (this.practiceMode) {
           this._practiceFreshRun = false;
           this._practiceLastMatchMs = Date.now();
+          this._lastHeardWordMs = Date.now();
         }
 
         // Only start first-lock timer if no timer is already running for this ayah
