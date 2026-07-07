@@ -554,8 +554,60 @@ export class AudioPipeline {
     console.log('[Pipeline] Stopped');
   }
 
+  // Practice: browse verses without breaking heard-match tracking.
+  _practiceManualNav(delta) {
+    this._cancelReadAdvance();
+    this._sameAyahStreak = 0;
+    this._bumpCountForAyah = 0;
+    this._lastManualAdjustMs = 0;
+    this._lockedLastAppliedSeq = 0;
+    this._lastTexts = [];
+
+    let s = this._displaySurah || this.state.surah || this.state.lastLockedSurah || this.preferredSurah || 1;
+    let a = this._displayAyah || this.state.ayah || this.state.lastLockedAyah || 1;
+
+    if (delta > 0) {
+      const next = getNextAyah(s, a);
+      if (!next) {
+        this.state = { ...createState(), mode: 'SEARCHING', lastLockedSurah: s, lastLockedAyah: a };
+        this._resetSearchBuf();
+        this._emitState(null, null);
+        return;
+      }
+      s = next.surah;
+      a = next.ayah;
+    } else if (a > 1) {
+      a--;
+    } else {
+      return;
+    }
+
+    this._displaySurah = s;
+    this._displayAyah = a;
+    this._userSearchingDisplay = true;
+    // Keep _whisperSurah/_whisperAyah on what was actually heard — display catches up on match.
+    this._ayahStartTime = Date.now();
+    this._lockTime = this._ayahStartTime;
+    this._currentWordIndex = 0;
+    this.state = {
+      ...this.state,
+      mode: 'LOCKED',
+      surah: s,
+      ayah: a,
+      missedChunks: 0,
+      lastLockedSurah: s,
+      lastLockedAyah: a,
+    };
+    console.log(`[Pipeline] Practice manual ${delta > 0 ? 'next' : 'prev'}: display → ${s}:${a} (heard ${this._whisperSurah || '?'}:${this._whisperAyah || '?'})`);
+    this._emitState(null, null);
+  }
+
   manualAdvance() {
     this._cancelReadAdvance();
+    if (this.practiceMode) {
+      this._practiceManualNav(1);
+      return;
+    }
     // When in SEARCHING: user browsing to find ayah — update display, show "Auto locking…", don't lock
     if (this.state.mode === 'SEARCHING') {
       const s = this._displaySurah || this.state.lastLockedSurah || this._restoredSurah || this.preferredSurah || 1;
@@ -668,6 +720,10 @@ export class AudioPipeline {
 
   manualPrev() {
     this._cancelReadAdvance();
+    if (this.practiceMode) {
+      this._practiceManualNav(-1);
+      return;
+    }
     this._sameAyahStreak = 0;
     this._bumpCountForAyah = 0;
     // When in SEARCHING: user browsing to find ayah — stay in same surah
@@ -887,15 +943,18 @@ export class AudioPipeline {
   }
 
   _shouldDropLockedResult(anchorResult, resultAgeMs, seq) {
-    const staleLockedResult = resultAgeMs > LOCKED_RESULT_STALE_MS;
-    if (staleLockedResult) {
-      // Slow/queued endpoint responses represent old audio; applying behind/same
-      // confirmations causes visible snap-back. Keep only forward-moving updates.
-      const isBehindOrSame =
-        anchorResult.surah === this._displaySurah &&
-        anchorResult.ayah <= this._displayAyah;
-      if (anchorResult.mode !== 'LOCKED' || isBehindOrSame) {
-        return { drop: true, reason: 'stale-behind-or-unlocked' };
+    // Practice: never drop heard matches because display was browsed ahead/behind.
+    if (!this.practiceMode) {
+      const staleLockedResult = resultAgeMs > LOCKED_RESULT_STALE_MS;
+      if (staleLockedResult) {
+        // Slow/queued endpoint responses represent old audio; applying behind/same
+        // confirmations causes visible snap-back. Keep only forward-moving updates.
+        const isBehindOrSame =
+          anchorResult.surah === this._displaySurah &&
+          anchorResult.ayah <= this._displayAyah;
+        if (anchorResult.mode !== 'LOCKED' || isBehindOrSame) {
+          return { drop: true, reason: 'stale-behind-or-unlocked' };
+        }
       }
     }
 
@@ -1312,7 +1371,7 @@ export class AudioPipeline {
 
       if (anchorResult.mode !== 'LOCKED') {
         if (this.practiceMode) {
-          this.state = { ...anchorResult, mode: 'LOCKED', surah: this._displaySurah, ayah: this._displayAyah };
+          // Weak/no match while browsing — keep display, wait for clearer audio.
           this._emitState(text, rms);
           return;
         }
@@ -1339,9 +1398,11 @@ export class AudioPipeline {
         // anchor to a position the display already passed — clamp it so the
         // next spotCheck scans near the display, not way behind.
         let finalResult = anchorResult;
-        const minAnchorAyah = Math.max(1, this._displayAyah - 2);
-        if (anchorResult.surah === this._displaySurah && anchorResult.ayah < minAnchorAyah) {
-          finalResult = { ...anchorResult, ayah: minAnchorAyah };
+        if (!this.practiceMode) {
+          const minAnchorAyah = Math.max(1, this._displayAyah - 2);
+          if (anchorResult.surah === this._displaySurah && anchorResult.ayah < minAnchorAyah) {
+            finalResult = { ...anchorResult, ayah: minAnchorAyah };
+          }
         }
         this.state = finalResult;
         const realMatch = !!finalResult._locked;
@@ -1386,6 +1447,8 @@ export class AudioPipeline {
     if (this.practiceMode) {
       this._cancelReadAdvance();
       if (realMatch && score >= 30) {
+        this._whisperSurah = confirmedSurah;
+        this._whisperAyah  = confirmedAyah;
         const changed = confirmedSurah !== this._displaySurah || confirmedAyah !== this._displayAyah;
         if (changed) {
           this._displaySurah = confirmedSurah;
