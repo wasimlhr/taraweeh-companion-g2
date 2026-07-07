@@ -346,7 +346,10 @@ export class AudioPipeline {
     this._lastPaceEmitMs = 0;
 
     this.taraweehMode    = false;
-    this.verseHoldMode   = false;  // Practice: lock on one verse, no timer/auto-advance
+    this.verseHoldMode   = false;  // Follow mode: speech-gated advance, no timers
+    this._verseHoldPendingSurah = 0;
+    this._verseHoldPendingAyah  = 0;
+    this._verseHoldPendingWins   = 0;
     this._taraweehPos    = 'QIYAM';
     this._expectFatiha   = false;    // set after ruku/sajda cycle — next recitation is Fatiha
     this._taraweehPosEnteredAt = 0;  // timestamp when current taraweeh position was entered
@@ -434,7 +437,10 @@ export class AudioPipeline {
         position: this._taraweehPos, rakat: this._rakatCount });
     }
     if (this.verseHoldMode) this._cancelReadAdvance();
-    console.log(`[Pipeline] Practice (verse hold) mode ${this.verseHoldMode ? 'ON' : 'OFF'}`);
+    this._verseHoldPendingSurah = 0;
+    this._verseHoldPendingAyah  = 0;
+    this._verseHoldPendingWins   = 0;
+    console.log(`[Pipeline] Follow recitation mode ${this.verseHoldMode ? 'ON' : 'OFF'}`);
     this.onStatus({ type: 'verse_hold_mode', enabled: this.verseHoldMode });
   }
 
@@ -1347,20 +1353,59 @@ export class AudioPipeline {
       this._whisperAyah  = confirmedAyah;
     }
 
-    // Practice mode: keep display on the locked verse — no timer, catch-up, or snap.
+    // Follow mode: show what is being recited; advance only when speech confirms
+    // the next (or different) ayah — never on a display timer.
     if (this.verseHoldMode) {
       this._cancelReadAdvance();
-      if (sameSurah && confirmedAyah === this._displayAyah && realMatch) {
-        this._sameAyahStreak++;
+      if (!realMatch || score < 35) {
+        this._emitState(text, rms);
+        return;
       }
-      if (words.length > 0 && realMatch && confirmedSurah === this._displaySurah && confirmedAyah === this._displayAyah) {
-        this._wordTimestamps = words;
-        this._learnWordPaceFromTimestamps();
-        const ayah = getAyah(this._displaySurah, this._displayAyah);
-        const totalWords = ayah?.words?.length ?? 0;
-        if (totalWords > 0) {
-          const whisperWordIndex = Math.min(words.length, totalWords) - 1;
-          this._currentWordIndex = Math.max(this._currentWordIndex, Math.min(whisperWordIndex, totalWords - 1));
+
+      const ayahChanged = confirmedSurah !== this._displaySurah || confirmedAyah !== this._displayAyah;
+
+      if (ayahChanged) {
+        if (confirmedSurah === this._verseHoldPendingSurah && confirmedAyah === this._verseHoldPendingAyah) {
+          this._verseHoldPendingWins++;
+        } else {
+          this._verseHoldPendingSurah = confirmedSurah;
+          this._verseHoldPendingAyah  = confirmedAyah;
+          this._verseHoldPendingWins  = 1;
+        }
+        const winsNeeded = score >= 65 ? 1 : 2;
+        if (this._verseHoldPendingWins >= winsNeeded) {
+          this._displaySurah = confirmedSurah;
+          this._displayAyah  = confirmedAyah;
+          this._ayahStartTime = Date.now();
+          this._lockTime = this._ayahStartTime;
+          this._currentWordIndex = 0;
+          this._sameAyahStreak = 0;
+          this._verseHoldPendingWins = 0;
+          this.state = {
+            ...this.state,
+            mode: 'LOCKED',
+            surah: confirmedSurah,
+            ayah: confirmedAyah,
+            confidence: score / 100,
+            lastLockedSurah: confirmedSurah,
+            lastLockedAyah: confirmedAyah,
+          };
+          console.log(`[Pipeline] Follow sync → ${confirmedSurah}:${confirmedAyah} (conf=${score}%)`);
+        }
+      } else {
+        this._verseHoldPendingSurah = 0;
+        this._verseHoldPendingAyah  = 0;
+        this._verseHoldPendingWins  = 0;
+        this._sameAyahStreak++;
+        if (words.length > 0) {
+          this._wordTimestamps = words;
+          this._learnWordPaceFromTimestamps();
+          const ayah = getAyah(this._displaySurah, this._displayAyah);
+          const totalWords = ayah?.words?.length ?? 0;
+          if (totalWords > 0) {
+            const whisperWordIndex = Math.min(words.length, totalWords) - 1;
+            this._currentWordIndex = Math.max(this._currentWordIndex, Math.min(whisperWordIndex, totalWords - 1));
+          }
         }
       }
       this._emitState(text, rms);

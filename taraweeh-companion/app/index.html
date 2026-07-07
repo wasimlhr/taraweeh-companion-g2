@@ -902,7 +902,7 @@ body {
 
   <div class="btn-group" style="margin-top:8px">
     <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
-    <button id="practiceBtn" class="mode-btn" onclick="togglePractice()" title="Practice mode — lock on one verse, no auto-advance (tap Next when ready)">📖 Practice: Off</button>
+    <button id="practiceBtn" class="mode-btn" onclick="togglePractice()" title="Follow mode — shows the verse you recite and waits until the next verse is heard (no auto timer)">🎙️ Follow: Off</button>
     <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Fast mode — shortens per-ayah timer (use for fast reciters)">🐇 Fast: Off</button>
     <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Slow mode — lengthens per-ayah timer (use for slow reciters)">🐢 Slow: Off</button>
   </div>
@@ -1221,7 +1221,7 @@ body {
     _updateTaraweehOverlay(_taraweehPos, _rakatCount);
   };
 
-  // ── Practice Mode (verse hold — no auto-advance) ─────────────────────────
+  // ── Follow mode (speech-gated — no timer auto-advance) ───────────────────
   var _practiceMode = false;
 
   window.togglePractice = function () {
@@ -1239,7 +1239,7 @@ body {
       _updateTaraweehOverlay('QIYAM', _rakatCount);
     }
     var btn = document.getElementById('practiceBtn');
-    btn.textContent = '\uD83D\uDCD6 Practice: ' + (_practiceMode ? 'On' : 'Off');
+    btn.textContent = '\uD83C\uDFA4 Follow: ' + (_practiceMode ? 'On' : 'Off');
     btn.classList.toggle('active', _practiceMode);
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'set_verse_hold_mode', enabled: _practiceMode }));
@@ -1630,7 +1630,7 @@ body {
       _practiceMode = !!s.enabled;
       var pb = document.getElementById('practiceBtn');
       if (pb) {
-        pb.textContent = '\uD83D\uDCD6 Practice: ' + (_practiceMode ? 'On' : 'Off');
+        pb.textContent = '\uD83C\uDFA4 Follow: ' + (_practiceMode ? 'On' : 'Off');
         pb.classList.toggle('active', _practiceMode);
       }
     } else if (s.type === 'session_quota') {
