@@ -116,11 +116,11 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     const pt = matches[0];
     const mc = pt.matchedWords?.length ?? 0;
     // Groq is fast — accept slightly weaker hits; one strong word can lock adjacent ayah.
-    const near = state.surah > 0 && pt.surah === state.surah && Math.abs(pt.ayah - state.ayah) <= 2;
+    const near = !opts.freshRun && state.surah > 0 && pt.surah === state.surah && Math.abs(pt.ayah - state.ayah) <= 2;
     const minScore = near ? 0.18 : 0.22;
     const minWords = (near && pt.score >= 0.26) ? 1 : 2;
     if (pt.score >= minScore && mc >= minWords) {
-      console.log(`[Anchor] Practice lock [${pt.surah}:${pt.ayah}] score=${pt.score.toFixed(2)} words=${mc}`);
+      console.log(`[Anchor] Practice lock [${pt.surah}:${pt.ayah}] score=${pt.score.toFixed(2)} words=${mc}${opts.freshRun ? ' (fresh)' : ''}`);
       return {
         ...state,
         mode: 'LOCKED',
@@ -498,7 +498,7 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
       return { ...state, missedChunks: 0, _matches: [], _locked: false, lastKeywords: keywords };
     }
     const mc = top.matchedWords?.length ?? 0;
-    const near = top.surah === state.surah && Math.abs(top.ayah - state.ayah) <= 2;
+    const near = !opts.freshRun && top.surah === state.surah && Math.abs(top.ayah - state.ayah) <= 2;
     const minScore = near ? 0.18 : 0.22;
     const minWords = (near && top.score >= 0.26) ? 1 : 2;
     if (top.score < minScore || mc < minWords) {
@@ -506,7 +506,7 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
     }
     const jumped = top.surah !== state.surah || top.ayah !== state.ayah;
     if (jumped) {
-      console.log(`[Anchor] Practice → [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)} (was ${state.surah}:${state.ayah})`);
+      console.log(`[Anchor] Practice → [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)} (was ${state.surah}:${state.ayah})${opts.freshRun ? ' (fresh)' : ''}`);
     }
     return {
       ...state,

@@ -54,6 +54,10 @@ const BYTES_PER_MS     = (SAMPLE_RATE * BYTES_PER_SAMPLE) / 1000;
 // Start at 3s for fast first lock; same logic continues in locked (3s chunks).
 const SEARCH_WINDOWS_MS = [3000, 5000, 8000, 12000, 20000];
 const MAX_SEARCH_BUF_MS = 35000;
+// Practice: pause after a shown verse → next recitation is a fresh global search (surah jumps).
+const PRACTICE_FRESH_SILENCE_MS = parseInt(process.env.PRACTICE_FRESH_SILENCE_MS || '2500', 10);
+const PRACTICE_FRESH_MIN_HOLD_MS = parseInt(process.env.PRACTICE_FRESH_MIN_HOLD_MS || '1200', 10);
+const PRACTICE_FRESH_SEARCH_MS = parseInt(process.env.PRACTICE_FRESH_SEARCH_MS || '2000', 10);
 
 // Use 3s chunks continuously (same as search start) — faster feedback, consistent logic
 const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '4000', 10);
@@ -347,6 +351,8 @@ export class AudioPipeline {
 
     this.taraweehMode    = false;
     this.practiceMode    = false;  // Match what is heard — no timers, instant global lock
+    this._practiceLastMatchMs = 0; // when a verse was last shown in Practice
+    this._practiceFreshRun    = false; // true → global search, no sequential bias
     this._taraweehPos    = 'QIYAM';
     this._expectFatiha   = false;    // set after ruku/sajda cycle — next recitation is Fatiha
     this._taraweehPosEnteredAt = 0;  // timestamp when current taraweeh position was entered
@@ -640,6 +646,50 @@ export class AudioPipeline {
         this._currentWordIndex = Math.max(this._currentWordIndex, Math.min(whisperWordIndex, totalWords - 1));
       }
     }
+    this._practiceLastMatchMs = Date.now();
+    this._practiceFreshRun = false;
+    this._userSearchingDisplay = false;
+  }
+
+  // After a matched verse + pause, re-enter global search for surah-to-surah jumps.
+  _enterPracticeFreshSearch() {
+    if (!this.practiceMode || this.state.mode !== 'LOCKED') return;
+    console.log(`[Pipeline] Practice fresh run — listening for next verse (was ${this._displaySurah}:${this._displayAyah})`);
+    this._cancelReadAdvance();
+    this._practiceFreshRun = true;
+    this._practiceLastMatchMs = 0;
+    this._userSearchingDisplay = true;
+    this.state = { ...createState(), mode: 'SEARCHING', lastLockedSurah: 0, lastLockedAyah: 0 };
+    this._whisperSurah = 0;
+    this._whisperAyah  = 0;
+    this._lastHeardWordMs = 0;
+    this._lastTexts = [];
+    this._lockedInFlight = 0;
+    this._lockedLastAppliedSeq = 0;
+    this._searchWinIdx = 0;
+    if (this._lockedBuf.length > 0) {
+      this._searchBuf = Buffer.concat([this._searchBuf, this._lockedBuf]);
+      this._lockedBuf = Buffer.alloc(0);
+    }
+    this._emitState(null, null);
+    const bufMs = this._searchBuf.length / BYTES_PER_MS;
+    if (bufMs >= PRACTICE_FRESH_SEARCH_MS && !this.processing) {
+      setTimeout(() => {
+        if (this.active && this.state.mode === 'SEARCHING' && !this.processing) {
+          this._processSearchChunk();
+        }
+      }, 0);
+    }
+  }
+
+  _maybePracticeFreshRun() {
+    if (!this.practiceMode || this.state.mode !== 'LOCKED' || !this._practiceLastMatchMs) return;
+    const heldMs = Date.now() - this._practiceLastMatchMs;
+    if (heldMs < PRACTICE_FRESH_MIN_HOLD_MS) return;
+    const wordSilence = this._lastHeardWordMs ? Date.now() - this._lastHeardWordMs : heldMs;
+    if (wordSilence >= PRACTICE_FRESH_SILENCE_MS) {
+      this._enterPracticeFreshSearch();
+    }
   }
 
   _tryPracticeSnapFromMatches(anchorResult, words = []) {
@@ -881,6 +931,8 @@ export class AudioPipeline {
     this._whisperAyah  = 0;
     this._displaySurah = 0;
     this._displayAyah  = 0;
+    this._practiceLastMatchMs = 0;
+    this._practiceFreshRun = false;
     this._lockedInFlight = 0;
     this._lockedSeq = 0;
     this._lockedLastAppliedSeq = 0;
@@ -907,6 +959,8 @@ export class AudioPipeline {
 
   ingest(pcmData) {
     if (!this.active) return;
+
+    this._maybePracticeFreshRun();
 
     const now = Date.now();
     if (now - this._lastAudioStatusMs >= 3000) {
@@ -1193,6 +1247,7 @@ export class AudioPipeline {
       const opts = { preferredSurah, fastMode: this.fastMode, missBeforeResuming: MISSED_BEFORE_RESUMING_V3, missBeforeLost: MISSED_BEFORE_LOST_V3, practiceMode: this.practiceMode };
       if (this.practiceMode) {
         opts.preferredSurah = 0;
+        opts.freshRun = this._practiceFreshRun;
       } else if (expectFatiha) opts.taraweehExpectFatiha = true;
       if (this.state.mode === 'RESUMING' && this._displaySurah > 0 && this._displayAyah > 0) {
         opts.displaySurah = this._displaySurah;
@@ -1262,6 +1317,11 @@ export class AudioPipeline {
         }
         // Locked on verse = reciting (next takbeer goes to RUKU)
         if (this.taraweehMode) this._taraweehLastFrom = 'reciting';
+
+        if (this.practiceMode) {
+          this._practiceFreshRun = false;
+          this._practiceLastMatchMs = Date.now();
+        }
 
         // Only start first-lock timer if no timer is already running for this ayah
         // (timer may already be set from read-advance into this ayah)
@@ -1415,6 +1475,7 @@ export class AudioPipeline {
         missBeforeLost: MISSED_BEFORE_LOST_V3,
         isGroqMode: this.isFastProvider,
         practiceMode: this.practiceMode,
+        freshRun: this._practiceFreshRun,
       });
       const dropDecision = this._shouldDropLockedResult(anchorResult, resultAgeMs, seq);
       if (dropDecision.drop) {
