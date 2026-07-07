@@ -1749,7 +1749,7 @@ body {
         xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
         isEventCapture: 1,
         borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: 2,
-        content: 'Ready. Recite any verse to begin.' },
+        content: 'Ready.\nDouble-tap to exit.\nRecite to begin.' },
     ];
   }
 
@@ -2762,9 +2762,10 @@ body {
   // ─── G2 event handler ─────────────────────────────────────────────────────
   // G2 input mapping:
   //   Tap (Click)        → next ayah (right-side tap on temple)
-  //   Double tap         → pause / resume
+  //   Double tap         → pause while listening; exit on idle root; resume if stopped on verse
   //   Scroll up  (swipe) → previous ayah
   //   Scroll down(swipe) → next ayah
+  // Long-press exit is native EvenHub — unchanged.
   // SDK event types:
   //   0 (or undefined) = CLICK_EVENT, 1 = SCROLL_TOP, 2 = SCROLL_BOTTOM,
   //   3 = DOUBLE_CLICK, 4 = FOREGROUND_ENTER, 5 = FOREGROUND_EXIT
@@ -2772,6 +2773,17 @@ body {
   var _scrollBurstCount = 0;    // absorb burst-queued events
   var _scrollBurstTimer = null;
   var _lastDoubleTapTime = 0;   // debounce double-tap (G2 sometimes fires twice)
+
+  // Idle root: startup / searching with no verse locked — double-tap opens system exit.
+  function isG2RootIdle() {
+    if (S.isRecording) return false;
+    var st = S._lastGlassesState;
+    if (!st) return true;
+    if (st.isCandidate) return false;
+    if (st.mode === 'LOCKED' && st.surah > 0 && st.ayah > 0) return false;
+    return true;
+  }
+
   function onG2Event(event) {
     if (event.audioEvent && event.audioEvent.audioPcm) {
       sendPcm(event.audioEvent.audioPcm);
@@ -2821,6 +2833,7 @@ body {
       var nowDt = Date.now();
       if (nowDt - (_lastDoubleTapTime || 0) < 700) return;
       _lastDoubleTapTime = nowDt;
+      // Multi-page ayah: double-tap advances pages (not exit/pause).
       if (_pageDisplay && _pageDisplay.pages && _pageDisplay.pages.length > 1 && _pageIdx < _pageDisplay.pages.length - 1) {
         // Multi-page ayah, not on last page — advance to next page
         _pageIdx++;
@@ -2840,14 +2853,18 @@ body {
         }
         return;
       }
-      // Single page or last page — double-tap is a simple START/STOP toggle.
-      // No pause/resume, no system-exit prompt. If user wants to exit the plugin
-      // they use the glasses main-menu — double-tap shouldn't hijack that.
-      if (!S.isRecording) {
-        startListening();
-      } else {
+      // Listening: double-tap pauses/stops (core workflow — do not change).
+      if (S.isRecording) {
         stopListening();
+        return;
       }
+      // Idle root page: platform exit dialog (EvenHub requirement).
+      if (isG2RootIdle()) {
+        requestSystemExit();
+        return;
+      }
+      // Stopped mid-session on a verse: double-tap resumes listening.
+      startListening();
       return;
     }
 
