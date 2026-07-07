@@ -115,7 +115,11 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     }
     const pt = matches[0];
     const mc = pt.matchedWords?.length ?? 0;
-    if (pt.score >= 0.32 && mc >= 2) {
+    // Groq is fast — accept slightly weaker hits; one strong word can lock adjacent ayah.
+    const near = state.surah > 0 && pt.surah === state.surah && Math.abs(pt.ayah - state.ayah) <= 2;
+    const minScore = near ? 0.18 : 0.22;
+    const minWords = (near && pt.score >= 0.26) ? 1 : 2;
+    if (pt.score >= minScore && mc >= minWords) {
       console.log(`[Anchor] Practice lock [${pt.surah}:${pt.ayah}] score=${pt.score.toFixed(2)} words=${mc}`);
       return {
         ...state,
@@ -490,11 +494,14 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
   if (opts.practiceMode) {
     const { matches, keywords } = findAnchor(whisperText, 0);
     const top = matches[0];
-    if (!top || top.score < 0.30) {
-      return { ...state, missedChunks: 0, _matches: matches.slice(0, 3), _locked: false, lastKeywords: keywords };
+    if (!top) {
+      return { ...state, missedChunks: 0, _matches: [], _locked: false, lastKeywords: keywords };
     }
     const mc = top.matchedWords?.length ?? 0;
-    if (mc < 2) {
+    const near = top.surah === state.surah && Math.abs(top.ayah - state.ayah) <= 2;
+    const minScore = near ? 0.18 : 0.22;
+    const minWords = (near && top.score >= 0.26) ? 1 : 2;
+    if (top.score < minScore || mc < minWords) {
       return { ...state, missedChunks: 0, _matches: matches.slice(0, 3), _locked: false, lastKeywords: keywords };
     }
     const jumped = top.surah !== state.surah || top.ayah !== state.ayah;

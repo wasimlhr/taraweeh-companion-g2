@@ -602,6 +602,64 @@ export class AudioPipeline {
     this._emitState(null, null);
   }
 
+  _practiceConfPct(score) {
+    if (score == null || Number.isNaN(score)) return 0;
+    return score <= 1 ? score * 100 : score;
+  }
+
+  // Instant snap — Practice follows Groq identifications, no timers.
+  _snapPracticeVerse(surah, ayah, score, words = []) {
+    const confPct = this._practiceConfPct(score);
+    this._whisperSurah = surah;
+    this._whisperAyah  = ayah;
+    const changed = surah !== this._displaySurah || ayah !== this._displayAyah;
+    if (changed) {
+      this._displaySurah = surah;
+      this._displayAyah  = ayah;
+      this._ayahStartTime = Date.now();
+      this._lockTime = this._ayahStartTime;
+      this._currentWordIndex = 0;
+      console.log(`[Pipeline] Practice snap → ${surah}:${ayah} (${Math.round(confPct)}%)`);
+    }
+    this.state = {
+      ...this.state,
+      mode: 'LOCKED',
+      surah,
+      ayah,
+      confidence: confPct / 100,
+      missedChunks: 0,
+      lastLockedSurah: surah,
+      lastLockedAyah: ayah,
+    };
+    if (words.length > 0) {
+      this._wordTimestamps = words;
+      const ayahData = getAyah(surah, ayah);
+      const totalWords = ayahData?.words?.length ?? 0;
+      if (totalWords > 0) {
+        const whisperWordIndex = Math.min(words.length, totalWords) - 1;
+        this._currentWordIndex = Math.max(this._currentWordIndex, Math.min(whisperWordIndex, totalWords - 1));
+      }
+    }
+  }
+
+  _tryPracticeSnapFromMatches(anchorResult, words = []) {
+    if (anchorResult._locked) {
+      this._snapPracticeVerse(anchorResult.surah, anchorResult.ayah, anchorResult.confidence, words);
+      return true;
+    }
+    const top = anchorResult._matches?.[0];
+    if (!top) return false;
+    const mc = top.matchedWords?.length ?? 0;
+    const near = top.surah === this._displaySurah && Math.abs(top.ayah - this._displayAyah) <= 2;
+    const minScore = near ? 0.18 : 0.22;
+    const minWords = (near && top.score >= 0.26) ? 1 : 2;
+    if (top.score >= minScore && mc >= minWords) {
+      this._snapPracticeVerse(top.surah, top.ayah, top.score, words);
+      return true;
+    }
+    return false;
+  }
+
   manualAdvance() {
     this._cancelReadAdvance();
     if (this.practiceMode) {
@@ -1371,7 +1429,7 @@ export class AudioPipeline {
 
       if (anchorResult.mode !== 'LOCKED') {
         if (this.practiceMode) {
-          // Weak/no match while browsing — keep display, wait for clearer audio.
+          this._tryPracticeSnapFromMatches(anchorResult, words);
           this._emitState(text, rms);
           return;
         }
@@ -1393,6 +1451,11 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       } else {
+        if (this.practiceMode) {
+          this._tryPracticeSnapFromMatches(anchorResult, words);
+          this._emitState(text, rms);
+          return;
+        }
         // Let anchor track the reciter independently, but don't let it drift
         // too far behind the display. Stale Whisper audio can back-correct the
         // anchor to a position the display already passed — clamp it so the
@@ -1406,16 +1469,6 @@ export class AudioPipeline {
         }
         this.state = finalResult;
         const realMatch = !!finalResult._locked;
-        if (this.practiceMode && finalResult.mode === 'LOCKED') {
-          this._displaySurah = finalResult.surah;
-          this._displayAyah  = finalResult.ayah;
-          this._whisperSurah = finalResult.surah;
-          this._whisperAyah  = finalResult.ayah;
-          this._cancelReadAdvance();
-          this._ayahStartTime = Date.now();
-          this._lockTime = this._ayahStartTime;
-          this._currentWordIndex = 0;
-        }
         this._onWhisperConfirm(finalResult.surah, finalResult.ayah, finalResult.confidence, text, rms, realMatch, words);  // V4: Pass words
       }
     } catch (err) {
@@ -1446,35 +1499,9 @@ export class AudioPipeline {
     // Practice mode: sync display to heard verse only — no timers or catch-up.
     if (this.practiceMode) {
       this._cancelReadAdvance();
-      if (realMatch && score >= 30) {
-        this._whisperSurah = confirmedSurah;
-        this._whisperAyah  = confirmedAyah;
-        const changed = confirmedSurah !== this._displaySurah || confirmedAyah !== this._displayAyah;
-        if (changed) {
-          this._displaySurah = confirmedSurah;
-          this._displayAyah  = confirmedAyah;
-          this._ayahStartTime = Date.now();
-          this._lockTime = this._ayahStartTime;
-          this._currentWordIndex = 0;
-          this.state = {
-            ...this.state,
-            mode: 'LOCKED',
-            surah: confirmedSurah,
-            ayah: confirmedAyah,
-            confidence: score / 100,
-            lastLockedSurah: confirmedSurah,
-            lastLockedAyah: confirmedAyah,
-          };
-        }
-        if (words.length > 0 && confirmedSurah === this._displaySurah && confirmedAyah === this._displayAyah) {
-          this._wordTimestamps = words;
-          const ayah = getAyah(this._displaySurah, this._displayAyah);
-          const totalWords = ayah?.words?.length ?? 0;
-          if (totalWords > 0) {
-            const whisperWordIndex = Math.min(words.length, totalWords) - 1;
-            this._currentWordIndex = Math.max(this._currentWordIndex, Math.min(whisperWordIndex, totalWords - 1));
-          }
-        }
+      const confPct = this._practiceConfPct(score);
+      if (realMatch && confPct >= 18) {
+        this._snapPracticeVerse(confirmedSurah, confirmedAyah, score, words);
       }
       this._emitState(text, rms);
       return;
