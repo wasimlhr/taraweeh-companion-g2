@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.0</span>
+      <span class="version" id="versionEl">v2.6.1</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1091,8 +1091,8 @@ body {
     <ul class="help-list">
       <li><strong>Single tap</strong> — next ayah</li>
       <li><strong>Swipe up / down</strong> — previous / next ayah</li>
-      <li><strong>Double tap (ready screen)</strong> — exit plugin
-        <span class="help-sub">On the idle “Ready” screen — opens the system exit confirmation.</span>
+      <li><strong>Double tap (ready screen)</strong> — start listening
+        <span class="help-sub">Double-tap the ring or temple when you see the ready screen.</span>
       </li>
       <li><strong>Double tap (while listening)</strong> — stop listening
         <span class="help-sub">Pauses transcription so you can rest; core workflow for recitation.</span>
@@ -1125,7 +1125,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.0';
+  const APP_VERSION = 'v2.6.1';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1269,9 +1269,9 @@ body {
   _updatePaceButton();
 
   // ── Recitation mode: Taraweeh (timer follow) vs Practice (match what you hear) ─
-  var _reciteMode = 'practice';
-  var _taraweehMode = false;
-  var _practiceMode = true;
+  var _reciteMode = 'taraweeh';
+  var _taraweehMode = true;
+  var _practiceMode = false;
   var _taraweehPos  = 'QIYAM';
   var _rakatCount   = 0;
 
@@ -1810,7 +1810,7 @@ body {
         xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
         isEventCapture: 1,
         borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: 2,
-        content: 'Ready.\nDouble-tap to exit.\nRecite to begin.' },
+        content: 'Ring connected.\nDouble-tap ring or temple to start.\nRecite to begin.' },
     ];
   }
 
@@ -2587,6 +2587,11 @@ body {
           } else {
             stopPageFlip();
             stopCountdown();
+            // Practice still mirrors every ayah snap to glasses (timer path is off).
+            if (ayahChanged) {
+              S.displayRebuilt = false;
+              showGlassesPage(gDisplay, 0);
+            }
           }
         } else {
           stopPageFlip(); stopCountdown();
@@ -2914,18 +2919,12 @@ body {
         }
         return;
       }
-      // Listening: double-tap pauses/stops (core workflow — do not change).
-      if (S.isRecording) {
+      // Single page or last page — double-tap is a simple START/STOP toggle.
+      if (!S.isRecording) {
+        startListening();
+      } else {
         stopListening();
-        return;
       }
-      // Idle root page: platform exit dialog (EvenHub requirement).
-      if (isG2RootIdle()) {
-        requestSystemExit();
-        return;
-      }
-      // Stopped mid-session on a verse: double-tap resumes listening.
-      startListening();
       return;
     }
 
@@ -3114,10 +3113,17 @@ body {
   // ─── G2 bridge detection ──────────────────────────────────────────────────
   // Copied exactly from invendor/even-bridge (the proven working pattern)
   async function detectBridge() {
-    log('Loading SDK from CDN...');
+    log('Loading Even Hub SDK...');
 
     try {
-      var sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.10/dist/index.js');
+      var sdk;
+      try {
+        sdk = await import('./sdk/even_hub_sdk.js');
+        log('Loaded bundled SDK', 'ok');
+      } catch (_) {
+        sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.10/dist/index.js');
+        log('Loaded SDK from CDN', 'ok');
+      }
       S.sdk = sdk;
       S.bridge = await new Promise(function (resolve, reject) {
         var t = setTimeout(function () { reject(new Error('timeout 2s')); }, 2000);
@@ -3179,7 +3185,7 @@ body {
     var btn = document.getElementById('recordBtn');
 
     if (S.isG2) {
-      setPill('sPillG2', 'ok', 'G2 connected');
+      setPill('sPillG2', 'ok', 'G2 + Ring ready');
       btn.textContent = '\u25CF Start Listening (G2 mic)';
       btn.disabled = false;
 
