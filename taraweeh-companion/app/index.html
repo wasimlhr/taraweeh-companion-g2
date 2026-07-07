@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.1</span>
+      <span class="version" id="versionEl">v2.6.2</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1087,7 +1087,7 @@ body {
 
   <div class="s-section" id="helpSection">Help — G2 &amp; modes</div>
   <div class="s-card" id="helpCard">
-    <p class="s-hint" style="margin:0 0 12px">Temple controls on the glasses. Long-press anywhere in the Even app menu still opens the native exit.</p>
+    <p class="s-hint" style="margin:0 0 12px">Temple and R1 ring share the same gestures (Device APIs). Long-press in the Even app menu opens native exit.</p>
     <ul class="help-list">
       <li><strong>Single tap</strong> — next ayah</li>
       <li><strong>Swipe up / down</strong> — previous / next ayah</li>
@@ -1125,7 +1125,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.1';
+  const APP_VERSION = 'v2.6.2';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1154,6 +1154,8 @@ body {
     g2MicPermissionState: 'unknown',
     unsubs: {
       evenHubEvent: null,
+      deviceStatus: null,
+      launchSource: null,
     },
   };
 
@@ -1794,6 +1796,100 @@ body {
   var G2_VER_X   = G2_HDR_W;  // version flush to right edge
   var G2_BODY_Y  = G2_HDR_H;
   var G2_BODY_H  = 288 - G2_HDR_H;
+
+  // Even Device APIs — EventSourceType (ring vs temple), DeviceConnectType
+  var EVENT_SRC_RING = 2;       // TOUCH_EVENT_FROM_RING
+  var EVENT_SRC_GLASSES_R = 1;  // TOUCH_EVENT_FROM_GLASSES_R
+  var EVENT_SRC_GLASSES_L = 3;  // TOUCH_EVENT_FROM_GLASSES_L
+  var _ringConnected = false;
+
+  function _startupBodyText() {
+    if (_ringConnected) {
+      return 'Ring connected.\nDouble-tap ring or temple to start.\nRecite to begin.';
+    }
+    return 'G2 ready.\nDouble-tap temple to start.\nRecite to begin.';
+  }
+
+  function _updateG2StatusPill() {
+    if (!S.isG2) return;
+    setPill('sPillG2', 'ok', _ringConnected ? 'G2 + Ring ready' : 'G2 ready');
+  }
+
+  function refreshGlassesWelcomeText() {
+    if (!S.bridge || !S.startupPageCreated) return;
+    var body = _startupBodyText();
+    queueBridgeCall('refresh-welcome', function () {
+      return S.bridge.textContainerUpgrade({ containerID: 3, containerName: 'body', content: body });
+    });
+  }
+
+  function _readEventSource(event, ev) {
+    if (ev && ev.eventSource != null) return ev.eventSource;
+    if (event.textEvent && event.textEvent.eventSource != null) return event.textEvent.eventSource;
+    if (event.sysEvent && event.sysEvent.eventSource != null) return event.sysEvent.eventSource;
+    return null;
+  }
+
+  function noteRingInput(event, ev) {
+    var src = _readEventSource(event, ev);
+    if (src !== EVENT_SRC_RING && src !== 2) return;
+    if (_ringConnected) return;
+    _ringConnected = true;
+    _updateG2StatusPill();
+    refreshGlassesWelcomeText();
+    log('Ring input detected (eventSource)', 'ok');
+  }
+
+  function applyDeviceInfo(info) {
+    if (!info) return;
+    var model = (info.model || '').toString().toLowerCase();
+    var connected = info.status && (
+      (typeof info.status.isConnected === 'function' && info.status.isConnected()) ||
+      info.status.connectType === 'connected'
+    );
+    if ((model === 'ring1' || model === 'ring') && connected) {
+      _ringConnected = true;
+    }
+  }
+
+  async function refreshDeviceConnectionFromBridge() {
+    if (!S.bridge) return;
+    try {
+      var info = await S.bridge.getDeviceInfo();
+      var wasRing = _ringConnected;
+      applyDeviceInfo(info);
+      if (wasRing !== _ringConnected) {
+        _updateG2StatusPill();
+        refreshGlassesWelcomeText();
+      }
+    } catch (_) {}
+  }
+
+  function setupDeviceApiMonitors() {
+    if (!S.bridge) return;
+    refreshDeviceConnectionFromBridge().then(function () {
+      _updateG2StatusPill();
+      refreshGlassesWelcomeText();
+    });
+    if (S.unsubs.deviceStatus) {
+      try { S.unsubs.deviceStatus(); } catch (_) {}
+      S.unsubs.deviceStatus = null;
+    }
+    S.unsubs.deviceStatus = S.bridge.onDeviceStatusChanged(function (status) {
+      trace('device.status', (status.connectType || '') + ' sn=' + (status.sn || '').slice(0, 8));
+      if (status.connectType === 'connected') refreshDeviceConnectionFromBridge();
+    });
+    if (S.unsubs.launchSource) {
+      try { S.unsubs.launchSource(); } catch (_) {}
+      S.unsubs.launchSource = null;
+    }
+    S.unsubs.launchSource = S.bridge.onLaunchSource(function (source) {
+      log('Launch source: ' + source, 'ok');
+      // Per Device APIs: glasses-menu launch should (re)initialize glasses UI.
+      if (source === 'glassesMenu' && S.isG2) glassesStartup();
+    });
+  }
+
   function _startupTextContainers() {
     return [
       { containerID: 1, containerName: 'hdr',
@@ -1810,7 +1906,7 @@ body {
         xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
         isEventCapture: 1,
         borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: 2,
-        content: 'Ring connected.\nDouble-tap ring or temple to start.\nRecite to begin.' },
+        content: _startupBodyText() },
     ];
   }
 
@@ -1832,6 +1928,7 @@ body {
           S.startupPageCreated = true;
           S.displayRebuilt = false;
           log('G2: startup page created', 'ok');
+          refreshGlassesWelcomeText();
           return;
         }
         log('G2: startup container already exists (code=' + code + ') — rebuilding', 'w');
@@ -1842,6 +1939,7 @@ body {
           S.startupPageCreated = true;
           S.displayRebuilt = true;   // just rebuilt — ready for text upgrades
           log('G2: startup page rebuilt', 'ok');
+          refreshGlassesWelcomeText();
         });
       });
     });
@@ -1859,6 +1957,7 @@ body {
         S.startupPageCreated = true;
         S.displayRebuilt = true;
         log('G2: startup recovery rebuild applied', 'ok');
+        refreshGlassesWelcomeText();
       });
     });
   }
@@ -2826,15 +2925,11 @@ body {
   }
 
   // ─── G2 event handler ─────────────────────────────────────────────────────
-  // G2 input mapping:
-  //   Tap (Click)        → next ayah (right-side tap on temple)
-  //   Double tap         → pause while listening; exit on idle root; resume if stopped on verse
-  //   Scroll up  (swipe) → previous ayah
-  //   Scroll down(swipe) → next ayah
-  // Long-press exit is native EvenHub — unchanged.
-  // SDK event types:
-  //   0 (or undefined) = CLICK_EVENT, 1 = SCROLL_TOP, 2 = SCROLL_BOTTOM,
-  //   3 = DOUBLE_CLICK, 4 = FOREGROUND_ENTER, 5 = FOREGROUND_EXIT
+  // Per Device APIs (hub.evenrealities.com/docs/build/device-apis):
+  //   CLICK_EVENT (0) = single press, DOUBLE_CLICK_EVENT (3) = double press,
+  //   SCROLL_TOP_EVENT (1) / SCROLL_BOTTOM_EVENT (2) = swipe up/down.
+  // G2 temple and R1 ring share event types; distinguish via eventSource when present.
+  // Text container with isEventCapture=1 receives events as textEvent.
   var _lastScrollTime = 0;
   var _scrollBurstCount = 0;    // absorb burst-queued events
   var _scrollBurstTimer = null;
@@ -2859,8 +2954,8 @@ body {
     var _evKind = event.sysEvent ? 'sys' : event.textEvent ? 'text' : event.listEvent ? 'list' : 'other';
     var _evType = (event[_evKind + 'Event'] && event[_evKind + 'Event'].eventType);
     if (_evType == null) _evType = 0;
-    var _evSrc = (event.sysEvent && event.sysEvent.eventSource != null) ? event.sysEvent.eventSource : '-';
-    trace('g2.event', _evKind + ':' + _evType + ' src=' + _evSrc);
+    var _evSrc = _readEventSource(event, event.textEvent || event.sysEvent || event.listEvent);
+    trace('g2.event', _evKind + ':' + _evType + ' src=' + (_evSrc != null ? _evSrc : '-'));
     if (event.sysEvent) {
       var st = (event.sysEvent.eventType == null ? 0 : event.sysEvent.eventType);
       if (st === 4) {
@@ -2881,6 +2976,8 @@ body {
 
     var ev = event.textEvent || event.sysEvent || event.listEvent;
     if (!ev) return;
+
+    noteRingInput(event, ev);
 
     var t = (ev.eventType == null ? 0 : ev.eventType);
 
@@ -3096,6 +3193,14 @@ body {
       try { S.unsubs.evenHubEvent(); } catch (_) {}
       S.unsubs.evenHubEvent = null;
     }
+    if (S.unsubs.deviceStatus) {
+      try { S.unsubs.deviceStatus(); } catch (_) {}
+      S.unsubs.deviceStatus = null;
+    }
+    if (S.unsubs.launchSource) {
+      try { S.unsubs.launchSource(); } catch (_) {}
+      S.unsubs.launchSource = null;
+    }
     try { stopG2Mic(); } catch (_) {}
     try { stopBrowserMic(); } catch (_) {}
     _flushSessionState();
@@ -3185,7 +3290,7 @@ body {
     var btn = document.getElementById('recordBtn');
 
     if (S.isG2) {
-      setPill('sPillG2', 'ok', 'G2 + Ring ready');
+      _updateG2StatusPill();
       btn.textContent = '\u25CF Start Listening (G2 mic)';
       btn.disabled = false;
 
@@ -3199,7 +3304,10 @@ body {
         log('G2 event handler set', 'ok');
       } catch (e) { log('onEvenHubEvent failed: ' + e.message, 'err'); }
 
-      // Show startup screen on glasses
+      // Device APIs: getDeviceInfo + onDeviceStatusChanged + onLaunchSource
+      setupDeviceApiMonitors();
+
+      // createStartUpPageContainer MUST run before audioControl (Device APIs § Audio).
       glassesStartup();
       // Safety-net: if startup container call is rejected, force text rebuild shortly after.
       setTimeout(recoverStartupIfBlank, 700);
