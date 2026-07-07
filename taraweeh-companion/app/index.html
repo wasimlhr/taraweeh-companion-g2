@@ -100,7 +100,7 @@ body {
   font-family: var(--font);
   letter-spacing: 0;
 }
-#settingsBtn, #themeBtn {
+#settingsBtn, #themeBtn, #helpBtn {
   background: var(--bc-1);
   border: 1px solid var(--bc-4);
   border-radius: var(--r);
@@ -110,7 +110,13 @@ body {
   color: var(--tc-2);
   transition: background 0.2s, border-color 0.2s;
 }
-#settingsBtn:hover, #themeBtn:hover {
+#helpBtn {
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font);
+  padding: 6px 11px;
+}
+#settingsBtn:hover, #themeBtn:hover, #helpBtn:hover {
   background: var(--bc-3);
 }
 
@@ -623,6 +629,36 @@ body {
   font-style: normal;           /* spec doesn't use italic for hints */
   letter-spacing: var(--track-tight);
 }
+.help-list {
+  margin: 0;
+  padding: 0 0 0 1.1em;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--tc-1);
+  letter-spacing: var(--track-tight);
+}
+.help-list li { margin-bottom: 10px; }
+.help-list li:last-child { margin-bottom: 0; }
+.help-list strong { color: var(--tc-highlight); font-weight: 500; }
+.help-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--tc-2);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+.help-link {
+  margin-top: 10px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--tc-gold);
+  text-decoration: underline;
+  cursor: pointer;
+  letter-spacing: var(--track-tight);
+}
 .s-card input, .s-card select {
   width: 100%;
   padding: 9px 12px;
@@ -773,6 +809,7 @@ body {
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
       <span class="version" id="versionEl">v2.3.0</span>
+      <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
     </div>
@@ -817,6 +854,7 @@ body {
       <div class="match-idle" id="matchIdle">
         <div class="anim">◌</div>
         <p>Press Start to begin</p>
+        <button type="button" class="help-link" onclick="showHelp()">G2 controls &amp; modes</button>
       </div>
       <!-- Live matching panel (shown once audio is flowing) -->
       <div id="matchPanel" style="display:none">
@@ -1045,6 +1083,29 @@ body {
         </span>
       </div>
     </div>
+  </div>
+
+  <div class="s-section" id="helpSection">Help — G2 &amp; modes</div>
+  <div class="s-card" id="helpCard">
+    <p class="s-hint" style="margin:0 0 12px">Temple controls on the glasses. Long-press anywhere in the Even app menu still opens the native exit.</p>
+    <ul class="help-list">
+      <li><strong>Single tap</strong> — next ayah</li>
+      <li><strong>Swipe up / down</strong> — previous / next ayah</li>
+      <li><strong>Double tap (ready screen)</strong> — exit plugin
+        <span class="help-sub">On the idle “Ready” screen — opens the system exit confirmation.</span>
+      </li>
+      <li><strong>Double tap (while listening)</strong> — stop listening
+        <span class="help-sub">Pauses transcription so you can rest; core workflow for recitation.</span>
+      </li>
+      <li><strong>Double tap (stopped on a verse)</strong> — resume listening</li>
+      <li><strong>Double tap (long ayah)</strong> — next page on glasses when the translation spans multiple screens</li>
+    </ul>
+    <p class="s-hint" style="margin:14px 0 8px">Recitation modes (bottom of main screen):</p>
+    <ul class="help-list">
+      <li><strong>Practice</strong> — shows what you recite; jump any surah. Pause ~2–3s between surahs for a fresh match.</li>
+      <li><strong>Taraweeh</strong> — follows the imam with an auto-advance timer. Use the pace button for fast/slow reciters.</li>
+    </ul>
+    <p class="s-hint" style="margin:14px 0 0">On phone: <strong>Start Listening</strong> begins capture; <strong>Prev / Next</strong> browse ayahs while practicing.</p>
   </div>
 
   <div class="s-section">Diagnostics</div>
@@ -3382,6 +3443,12 @@ body {
     var opt = sel.options[sel.selectedIndex];
     var title = opt ? opt.getAttribute('title') : '';
     descEl.textContent = title || '';
+  };
+
+  window.showHelp = function () {
+    showSettings();
+    var help = document.getElementById('helpSection');
+    if (help) help.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   window.showSettings = function () {
