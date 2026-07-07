@@ -452,6 +452,7 @@ body {
   border-color: var(--bc-accent);
   color: var(--tc-highlight);
 }
+#paceModeBtn.active,
 #fastModeBtn.active,
 #taraweehBtn.active,
 #practiceBtn.active,
@@ -462,6 +463,7 @@ body {
   color: var(--tc-highlight);
 }
 [data-theme="dark"] .mode-btn.active,
+[data-theme="dark"] #paceModeBtn.active,
 [data-theme="dark"] #fastModeBtn.active,
 [data-theme="dark"] #taraweehBtn.active,
 [data-theme="dark"] #practiceBtn.active,
@@ -907,7 +909,7 @@ body {
       <button type="button" class="mv-toggle-btn" id="btnModeTaraweeh" onclick="setReciteMode('taraweeh')">🌙 Taraweeh</button>
       <button type="button" class="mv-toggle-btn active" id="btnModePractice" onclick="setReciteMode('practice')">📖 Practice</button>
     </div>
-    <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Fast mode — shorter per-ayah timer for quick reciters (Taraweeh only)">🐇 Fast: Off</button>
+    <button id="paceModeBtn" class="mode-btn" onclick="cyclePaceMode()" title="Tap to cycle: Follow mode → Fast recitor → Slow recitor (Taraweeh only)">👣 Follow mode</button>
   </div>
 
 </div>
@@ -1160,28 +1162,48 @@ body {
     }
   });
 
-  // ── Fast mode toggle (Taraweeh only) ─────────────────────────────────────
+  // ── Pace cycle: Follow → Fast recitor → Slow recitor (Taraweeh only) ─────
+  var _paceMode = 'follow';  // 'follow' | 'fast' | 'slow'
   var _fastMode = false;
+  var _slowMode = false;
 
-  window.toggleFastMode = function () {
-    _fastMode = !_fastMode;
+  var PACE_LABELS = {
+    follow: '\uD83D\uDC63 Follow mode',
+    fast:   '\uD83D\uDC07 Fast recitor',
+    slow:   '\uD83D\uDC22 Slow recitor',
+  };
+
+  function _syncPaceFlags() {
+    _fastMode = _paceMode === 'fast';
+    _slowMode = _paceMode === 'slow';
+  }
+
+  function _applyPaceMode() {
+    _syncPaceFlags();
+    S.settings.paceMode = _paceMode;
     S.settings.fastMode = _fastMode;
-    S.settings.slowMode = false;
+    S.settings.slowMode = _slowMode;
     saveSettings();
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
-      S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: false }));
+      S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
     }
+  }
+
+  window.cyclePaceMode = function () {
+    _paceMode = _paceMode === 'follow' ? 'fast' : _paceMode === 'fast' ? 'slow' : 'follow';
+    _applyPaceMode();
     _updatePaceButton();
-    log('Fast: ' + (_fastMode ? 'On' : 'Off'), 'ok');
+    log(PACE_LABELS[_paceMode], 'ok');
   };
 
+  window.toggleFastMode = function () { cyclePaceMode(); };
+
   function _updatePaceButton() {
-    var fastBtn = document.getElementById('fastModeBtn');
-    if (fastBtn) {
-      fastBtn.textContent = '\uD83D\uDC07 Fast: ' + (_fastMode ? 'On' : 'Off');
-      fastBtn.classList.toggle('active', _fastMode);
-    }
+    var btn = document.getElementById('paceModeBtn');
+    if (!btn) return;
+    btn.textContent = PACE_LABELS[_paceMode] || PACE_LABELS.follow;
+    btn.classList.toggle('active', _paceMode !== 'follow');
   }
   _updatePaceButton();
 
@@ -1204,8 +1226,8 @@ body {
     if (tw) tw.classList.toggle('active', _reciteMode === 'taraweeh');
     if (pr) pr.classList.toggle('active', _reciteMode === 'practice');
     var paceOn = _reciteMode === 'taraweeh';
-    var fastBtn = document.getElementById('fastModeBtn');
-    if (fastBtn) fastBtn.style.display = paceOn ? '' : 'none';
+    var paceBtn = document.getElementById('paceModeBtn');
+    if (paceBtn) paceBtn.style.display = paceOn ? '' : 'none';
   }
 
   window.setReciteMode = function (mode) {
@@ -1402,8 +1424,9 @@ body {
     defaultSurah: '0',
     pipelineVersion: 'v4',  // V4: Word-level tracking
     forcePhoneMic: false,
-    fastMode: true,
+    fastMode: false,
     slowMode: false,
+    paceMode: 'follow',
     keyMode: 'shared',      // 'shared' = use server-held free key; 'byok' = user key
     groqApiKey: '',         // Groq API key (only used when keyMode='byok')
     openaiApiKey: '',       // OpenAI API key (only used when keyMode='byok')
@@ -1595,7 +1618,14 @@ body {
           break;
       }
     } else if (s.type === 'fast_mode') {
-      _fastMode = !!s.enabled;
+      if (s.enabled) _paceMode = 'fast';
+      else if (_paceMode === 'fast') _paceMode = 'follow';
+      _syncPaceFlags();
+      _updatePaceButton();
+    } else if (s.type === 'slow_mode') {
+      if (s.enabled) _paceMode = 'slow';
+      else if (_paceMode === 'slow') _paceMode = 'follow';
+      _syncPaceFlags();
       _updatePaceButton();
     } else if (s.type === 'taraweeh_mode') {
       _taraweehMode = !!s.enabled;
@@ -2277,13 +2307,13 @@ body {
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         fastMode: _fastMode,
-        slowMode: false,
+        slowMode: _slowMode,
         transcriptionProvider: S.settings.transcriptionProvider || 'groq',
         groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
         openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
       }));
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
-      S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: false }));
+      S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
       setReciteMode(_reciteMode);
       // If recording was already active (reconnect mid-session), re-send start
       if (S.isRecording) {
@@ -3472,8 +3502,16 @@ body {
     }
 
     S.settings = loadSettings();
-    _fastMode = !!S.settings.fastMode;
-    S.settings.slowMode = false;
+    if (S.settings.paceMode === 'fast' || S.settings.paceMode === 'slow' || S.settings.paceMode === 'follow') {
+      _paceMode = S.settings.paceMode;
+    } else if (S.settings.slowMode) {
+      _paceMode = 'slow';
+    } else if (S.settings.fastMode) {
+      _paceMode = 'fast';
+    } else {
+      _paceMode = 'follow';
+    }
+    _syncPaceFlags();
     _updatePaceButton();
     document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v4').toUpperCase();
     // Splash: show version, fade out after 1.2s
