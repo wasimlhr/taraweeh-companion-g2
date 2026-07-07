@@ -455,7 +455,9 @@ body {
 #fastModeBtn.active,
 #slowModeBtn.active,
 #taraweehBtn.active,
-#practiceBtn.active {
+#practiceBtn.active,
+#btnModeTaraweeh.active,
+#btnModePractice.active {
   background: var(--bc-accent);
   border-color: var(--bc-accent);
   color: var(--tc-highlight);
@@ -464,7 +466,9 @@ body {
 [data-theme="dark"] #fastModeBtn.active,
 [data-theme="dark"] #slowModeBtn.active,
 [data-theme="dark"] #taraweehBtn.active,
-[data-theme="dark"] #practiceBtn.active {
+[data-theme="dark"] #practiceBtn.active,
+[data-theme="dark"] #btnModeTaraweeh.active,
+[data-theme="dark"] #btnModePractice.active {
   color: #232323;
 }
 [data-theme="dark"] .match-cand.top {
@@ -901,10 +905,12 @@ body {
   </div>
 
   <div class="btn-group" style="margin-top:8px">
-    <button id="taraweehBtn" class="mode-btn" onclick="toggleTaraweeh()" title="Taraweeh mode — detects Allahu Akbar, shows Ruku, counts Rakat">🌙 Taraweeh: Off</button>
-    <button id="practiceBtn" class="mode-btn" onclick="togglePractice()" title="Follow mode — shows the verse you recite and waits until the next verse is heard (no auto timer)">🎙️ Follow: Off</button>
-    <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Fast mode — shortens per-ayah timer (use for fast reciters)">🐇 Fast: Off</button>
-    <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Slow mode — lengthens per-ayah timer (use for slow reciters)">🐢 Slow: Off</button>
+    <div class="mv-toggle-group" role="group" aria-label="Recitation mode" style="margin-bottom:8px">
+      <button type="button" class="mv-toggle-btn" id="btnModeTaraweeh" onclick="setReciteMode('taraweeh')">🌙 Taraweeh</button>
+      <button type="button" class="mv-toggle-btn active" id="btnModePractice" onclick="setReciteMode('practice')">📖 Practice</button>
+    </div>
+    <button id="fastModeBtn" class="mode-btn" onclick="toggleFastMode()" title="Fast mode — shortens per-ayah timer (Taraweeh only)">🐇 Fast: Off</button>
+    <button id="slowModeBtn" class="mode-btn" onclick="toggleSlowMode()" title="Slow mode — lengthens per-ayah timer (Taraweeh only)">🐢 Slow: Off</button>
   </div>
 
 </div>
@@ -1198,8 +1204,10 @@ body {
   }
   _updatePaceButtons();
 
-  // ── Taraweeh Mode ──────────────────────────────────────────────────────────
+  // ── Recitation mode: Taraweeh (timer follow) vs Practice (match what you hear) ─
+  var _reciteMode = 'practice';
   var _taraweehMode = false;
+  var _practiceMode = true;
   var _taraweehPos  = 'QIYAM';
   var _rakatCount   = 0;
 
@@ -1209,42 +1217,34 @@ body {
     SAJDA: { ar: 'SAJDA',  latin: 'Prostration' },
   };
 
-  window.toggleTaraweeh = function () {
-    _taraweehMode = !_taraweehMode;
-    if (_taraweehMode && _practiceMode) togglePractice();
-    var btn = document.getElementById('taraweehBtn');
-    btn.textContent = '\uD83C\uDF19 Taraweeh: ' + (_taraweehMode ? 'On' : 'Off');
-    btn.classList.toggle('active', _taraweehMode);
+  function _updateReciteModeUI() {
+    var tw = document.getElementById('btnModeTaraweeh');
+    var pr = document.getElementById('btnModePractice');
+    if (tw) tw.classList.toggle('active', _reciteMode === 'taraweeh');
+    if (pr) pr.classList.toggle('active', _reciteMode === 'practice');
+    var paceOn = _reciteMode === 'taraweeh';
+    var fastBtn = document.getElementById('fastModeBtn');
+    var slowBtn = document.getElementById('slowModeBtn');
+    if (fastBtn) fastBtn.style.display = paceOn ? '' : 'none';
+    if (slowBtn) slowBtn.style.display = paceOn ? '' : 'none';
+  }
+
+  window.setReciteMode = function (mode) {
+    if (mode !== 'taraweeh' && mode !== 'practice') return;
+    _reciteMode = mode;
+    _taraweehMode = mode === 'taraweeh';
+    _practiceMode = mode === 'practice';
+    _updateReciteModeUI();
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: _taraweehMode }));
+      S.ws.send(JSON.stringify({ type: 'set_practice_mode', enabled: _practiceMode }));
     }
-    _updateTaraweehOverlay(_taraweehPos, _rakatCount);
+    if (_taraweehMode) _updateTaraweehOverlay(_taraweehPos, _rakatCount);
   };
 
-  // ── Follow mode (speech-gated — no timer auto-advance) ───────────────────
-  var _practiceMode = false;
-
-  window.togglePractice = function () {
-    _practiceMode = !_practiceMode;
-    if (_practiceMode && _taraweehMode) {
-      _taraweehMode = false;
-      var tb = document.getElementById('taraweehBtn');
-      if (tb) {
-        tb.textContent = '\uD83C\uDF19 Taraweeh: Off';
-        tb.classList.remove('active');
-      }
-      if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-        S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: false }));
-      }
-      _updateTaraweehOverlay('QIYAM', _rakatCount);
-    }
-    var btn = document.getElementById('practiceBtn');
-    btn.textContent = '\uD83C\uDFA4 Follow: ' + (_practiceMode ? 'On' : 'Off');
-    btn.classList.toggle('active', _practiceMode);
-    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      S.ws.send(JSON.stringify({ type: 'set_verse_hold_mode', enabled: _practiceMode }));
-    }
-  };
+  window.toggleTaraweeh = function () { setReciteMode(_reciteMode === 'taraweeh' ? 'practice' : 'taraweeh'); };
+  window.togglePractice = function () { setReciteMode('practice'); };
+  _updateReciteModeUI();
 
   window.resetRakat = function () {
     _rakatCount = 0; _taraweehPos = 'QIYAM';
@@ -1623,16 +1623,12 @@ body {
       _updatePaceButtons();
     } else if (s.type === 'taraweeh_mode') {
       _taraweehMode = !!s.enabled;
-      var tb = document.getElementById('taraweehBtn');
-      tb.textContent = '\uD83C\uDF19 Taraweeh: ' + (_taraweehMode ? 'On' : 'Off');
-      tb.classList.toggle('active', _taraweehMode);
-    } else if (s.type === 'verse_hold_mode') {
+      if (_taraweehMode) { _reciteMode = 'taraweeh'; _practiceMode = false; }
+      _updateReciteModeUI();
+    } else if (s.type === 'practice_mode' || s.type === 'verse_hold_mode') {
       _practiceMode = !!s.enabled;
-      var pb = document.getElementById('practiceBtn');
-      if (pb) {
-        pb.textContent = '\uD83C\uDFA4 Follow: ' + (_practiceMode ? 'On' : 'Off');
-        pb.classList.toggle('active', _practiceMode);
-      }
+      if (_practiceMode) { _reciteMode = 'practice'; _taraweehMode = false; }
+      _updateReciteModeUI();
     } else if (s.type === 'session_quota') {
       // Shared-mode per-session usage cap: warn at 80%, hard-stop at 100%.
       // Surface as the main status banner so user can switch to BYOK.
@@ -2312,8 +2308,7 @@ body {
       }));
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
-      if (_taraweehMode) S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: true }));
-      if (_practiceMode) S.ws.send(JSON.stringify({ type: 'set_verse_hold_mode', enabled: true }));
+      setReciteMode(_reciteMode);
       // If recording was already active (reconnect mid-session), re-send start
       if (S.isRecording) {
         S.ws.send(JSON.stringify({ type: 'start' }));
@@ -3387,8 +3382,7 @@ body {
     }));
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
     S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
-    if (_taraweehMode) S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: true }));
-    if (_practiceMode) S.ws.send(JSON.stringify({ type: 'set_verse_hold_mode', enabled: true }));
+    setReciteMode(_reciteMode);
     if (S.isRecording) S.ws.send(JSON.stringify({ type: 'start' }));
   }
 

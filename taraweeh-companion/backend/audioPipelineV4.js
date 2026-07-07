@@ -346,10 +346,7 @@ export class AudioPipeline {
     this._lastPaceEmitMs = 0;
 
     this.taraweehMode    = false;
-    this.verseHoldMode   = false;  // Follow mode: speech-gated advance, no timers
-    this._verseHoldPendingSurah = 0;
-    this._verseHoldPendingAyah  = 0;
-    this._verseHoldPendingWins   = 0;
+    this.practiceMode    = false;  // Match what is heard — no timers, instant global lock
     this._taraweehPos    = 'QIYAM';
     this._expectFatiha   = false;    // set after ruku/sajda cycle — next recitation is Fatiha
     this._taraweehPosEnteredAt = 0;  // timestamp when current taraweeh position was entered
@@ -410,8 +407,9 @@ export class AudioPipeline {
   setTaraweehMode(enabled) {
     this.taraweehMode = !!enabled;
     if (this.taraweehMode) {
-      this.verseHoldMode = false;
+      this.practiceMode = false;
       this.onStatus({ type: 'verse_hold_mode', enabled: false });
+      this.onStatus({ type: 'practice_mode', enabled: false });
     }
     if (!this.taraweehMode) {
       this._taraweehPos = 'QIYAM';
@@ -428,21 +426,21 @@ export class AudioPipeline {
       position: this._taraweehPos, rakat: this._rakatCount });
   }
 
-  setVerseHoldMode(enabled) {
-    this.verseHoldMode = !!enabled;
-    if (this.verseHoldMode) {
+  setPracticeMode(enabled) {
+    this.practiceMode = !!enabled;
+    if (this.practiceMode) {
       this.taraweehMode = false;
       this._taraweehPos = 'QIYAM';
       this.onStatus({ type: 'taraweeh_mode', enabled: false,
         position: this._taraweehPos, rakat: this._rakatCount });
     }
-    if (this.verseHoldMode) this._cancelReadAdvance();
-    this._verseHoldPendingSurah = 0;
-    this._verseHoldPendingAyah  = 0;
-    this._verseHoldPendingWins   = 0;
-    console.log(`[Pipeline] Follow recitation mode ${this.verseHoldMode ? 'ON' : 'OFF'}`);
-    this.onStatus({ type: 'verse_hold_mode', enabled: this.verseHoldMode });
+    if (this.practiceMode) this._cancelReadAdvance();
+    console.log(`[Pipeline] Practice mode ${this.practiceMode ? 'ON' : 'OFF'}`);
+    this.onStatus({ type: 'practice_mode', enabled: this.practiceMode });
   }
+
+  // Legacy alias
+  setVerseHoldMode(enabled) { this.setPracticeMode(enabled); }
 
   _handleTranscriptionError(err) {
     if (err && (err.status === 429 || /HTTP 429/.test(err.message || ''))) {
@@ -1060,8 +1058,10 @@ export class AudioPipeline {
       const preferredSurah = (this.taraweehMode && this._taraweehPos === 'RUKU') ? 1
         : expectFatiha ? 1
         : (this._arRahmanRefrainSeen ? 55 : this.preferredSurah);
-      const opts = { preferredSurah, fastMode: this.fastMode, missBeforeResuming: MISSED_BEFORE_RESUMING_V3, missBeforeLost: MISSED_BEFORE_LOST_V3 };
-      if (expectFatiha) opts.taraweehExpectFatiha = true;
+      const opts = { preferredSurah, fastMode: this.fastMode, missBeforeResuming: MISSED_BEFORE_RESUMING_V3, missBeforeLost: MISSED_BEFORE_LOST_V3, practiceMode: this.practiceMode };
+      if (this.practiceMode) {
+        opts.preferredSurah = 0;
+      } else if (expectFatiha) opts.taraweehExpectFatiha = true;
       if (this.state.mode === 'RESUMING' && this._displaySurah > 0 && this._displayAyah > 0) {
         opts.displaySurah = this._displaySurah;
         opts.displayAyah = this._displayAyah;
@@ -1091,7 +1091,7 @@ export class AudioPipeline {
         const sameSurahRelock = this.state.surah === this._displaySurah
           && this._displayAyah > 0;
         const relockGap = this._displayAyah - this.state.ayah;
-        if (sameSurahRelock && this.state.ayah < this._displayAyah && relockGap < 10) {
+        if (sameSurahRelock && this.state.ayah < this._displayAyah && relockGap < 10 && !this.practiceMode) {
           console.log(`[Pipeline] LOCKED on ${this.state.surah}:${this.state.ayah} after ${bufMs}ms — display stays at :${this._displayAyah} (not going back, gap=${relockGap})`);
           this._userSearchingDisplay = false;
           this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
@@ -1133,7 +1133,7 @@ export class AudioPipeline {
 
         // Only start first-lock timer if no timer is already running for this ayah
         // (timer may already be set from read-advance into this ayah)
-        if (!this._displayAdvanceTimer && !this.verseHoldMode) {
+        if (!this._displayAdvanceTimer && !this.practiceMode) {
           this._scheduleReadAdvance(this.state.confidence, 0, FIRST_LOCK_DURATION_FACTOR);
         }
         this._emitState(text, rms);
@@ -1277,11 +1277,12 @@ export class AudioPipeline {
 
       const prevSurah = this.state.surah;
       const anchorResult = processWhisperResult(cleaned, this.state, {
-        preferredSurah: this.preferredSurah,
+        preferredSurah: this.practiceMode ? 0 : this.preferredSurah,
         fastMode: this.fastMode,
         missBeforeResuming: MISSED_BEFORE_RESUMING_V3,
         missBeforeLost: MISSED_BEFORE_LOST_V3,
-        isGroqMode: this.isFastProvider,    // anchor uses this for BYOK score thresholds — applies to both Groq and OpenAI
+        isGroqMode: this.isFastProvider,
+        practiceMode: this.practiceMode,
       });
       const dropDecision = this._shouldDropLockedResult(anchorResult, resultAgeMs, seq);
       if (dropDecision.drop) {
@@ -1295,6 +1296,11 @@ export class AudioPipeline {
       if (seq > 0) this._lockedLastAppliedSeq = Math.max(this._lockedLastAppliedSeq, seq);
 
       if (anchorResult.mode !== 'LOCKED') {
+        if (this.practiceMode) {
+          this.state = { ...anchorResult, mode: 'LOCKED', surah: this._displaySurah, ayah: this._displayAyah };
+          this._emitState(text, rms);
+          return;
+        }
         // Don't cancel the timer — keep the display flowing at the measured
         // pace while we try to re-lock. The display keeps advancing so the
         // user sees continuous verses, not "Synchronizing".
@@ -1304,7 +1310,7 @@ export class AudioPipeline {
         this._resetSearchBuf();
         this._lockedSeq = Math.max(this._lockedSeq, seq);
         this._emitState(text, rms);
-      } else if (anchorResult.surah !== prevSurah && anchorResult.surah !== 0) {
+      } else if (anchorResult.surah !== prevSurah && anchorResult.surah !== 0 && !this.practiceMode) {
         console.log(`[Pipeline] Surah mismatch: display=${this._displaySurah} whisper=${anchorResult.surah} — releasing lock to re-search`);
         this._cancelReadAdvance();
         this._measuredWps = READ_WORDS_PER_SEC;
@@ -1323,9 +1329,17 @@ export class AudioPipeline {
           finalResult = { ...anchorResult, ayah: minAnchorAyah };
         }
         this.state = finalResult;
-        // _locked = spotCheck found a real word match; false = noise/miss.
-        // Pass this through so the timer hold only fires on real confirms.
         const realMatch = !!finalResult._locked;
+        if (this.practiceMode && finalResult.mode === 'LOCKED') {
+          this._displaySurah = finalResult.surah;
+          this._displayAyah  = finalResult.ayah;
+          this._whisperSurah = finalResult.surah;
+          this._whisperAyah  = finalResult.ayah;
+          this._cancelReadAdvance();
+          this._ayahStartTime = Date.now();
+          this._lockTime = this._ayahStartTime;
+          this._currentWordIndex = 0;
+        }
         this._onWhisperConfirm(finalResult.surah, finalResult.ayah, finalResult.confidence, text, rms, realMatch, words);  // V4: Pass words
       }
     } catch (err) {
@@ -1353,34 +1367,17 @@ export class AudioPipeline {
       this._whisperAyah  = confirmedAyah;
     }
 
-    // Follow mode: show what is being recited; advance only when speech confirms
-    // the next (or different) ayah — never on a display timer.
-    if (this.verseHoldMode) {
+    // Practice mode: sync display to heard verse only — no timers or catch-up.
+    if (this.practiceMode) {
       this._cancelReadAdvance();
-      if (!realMatch || score < 35) {
-        this._emitState(text, rms);
-        return;
-      }
-
-      const ayahChanged = confirmedSurah !== this._displaySurah || confirmedAyah !== this._displayAyah;
-
-      if (ayahChanged) {
-        if (confirmedSurah === this._verseHoldPendingSurah && confirmedAyah === this._verseHoldPendingAyah) {
-          this._verseHoldPendingWins++;
-        } else {
-          this._verseHoldPendingSurah = confirmedSurah;
-          this._verseHoldPendingAyah  = confirmedAyah;
-          this._verseHoldPendingWins  = 1;
-        }
-        const winsNeeded = score >= 65 ? 1 : 2;
-        if (this._verseHoldPendingWins >= winsNeeded) {
+      if (realMatch && score >= 30) {
+        const changed = confirmedSurah !== this._displaySurah || confirmedAyah !== this._displayAyah;
+        if (changed) {
           this._displaySurah = confirmedSurah;
           this._displayAyah  = confirmedAyah;
           this._ayahStartTime = Date.now();
           this._lockTime = this._ayahStartTime;
           this._currentWordIndex = 0;
-          this._sameAyahStreak = 0;
-          this._verseHoldPendingWins = 0;
           this.state = {
             ...this.state,
             mode: 'LOCKED',
@@ -1390,16 +1387,9 @@ export class AudioPipeline {
             lastLockedSurah: confirmedSurah,
             lastLockedAyah: confirmedAyah,
           };
-          console.log(`[Pipeline] Follow sync → ${confirmedSurah}:${confirmedAyah} (conf=${score}%)`);
         }
-      } else {
-        this._verseHoldPendingSurah = 0;
-        this._verseHoldPendingAyah  = 0;
-        this._verseHoldPendingWins  = 0;
-        this._sameAyahStreak++;
-        if (words.length > 0) {
+        if (words.length > 0 && confirmedSurah === this._displaySurah && confirmedAyah === this._displayAyah) {
           this._wordTimestamps = words;
-          this._learnWordPaceFromTimestamps();
           const ayah = getAyah(this._displaySurah, this._displayAyah);
           const totalWords = ayah?.words?.length ?? 0;
           if (totalWords > 0) {
@@ -1831,7 +1821,7 @@ export class AudioPipeline {
   // ── Timer: reading-pace advance (uncapped — Whisper corrects, never blocks) ─
 
   _canDisplayAdvance() {
-    if (this.verseHoldMode) return false;
+    if (this.practiceMode) return false;
 
     // End-of-surah exception: if we're on the last ayah, let the timer run even
     // during silence. Firing it is the trigger that resets state to SEARCHING;
@@ -2140,7 +2130,7 @@ export class AudioPipeline {
   // ── Smooth catch-up: step display forward one ayah at a time ───────────────
 
   _smoothAdvanceTo(targetSurah, targetAyah, stepMs) {
-    if (this.verseHoldMode) return;
+    if (this.practiceMode) return;
     const interval = stepMs || SMOOTH_ADVANCE_STEP_MS;
     this._smoothAdvanceTimer = null;
     if (!this._canDisplayAdvance()) return;
@@ -2311,7 +2301,7 @@ export class AudioPipeline {
       candidates,
       lockProgress: {
         wins: this.state._wins || 0,
-        winsRequired: 2,
+        winsRequired: this.practiceMode ? 1 : 2,
         margin,
         coverage: top ? Math.round((top.coverage || 0) * 100) : 0,
         pendingMatch: this.state._pendingMatch,
@@ -2389,7 +2379,7 @@ export class AudioPipeline {
         confidence: this.state.confidence <= 1
           ? this.state.confidence
           : (this.state.confidence || 0) / 100,
-        timerMs: timerMs || undefined,
+        timerMs: this.practiceMode ? undefined : (timerMs || undefined),
         isCandidate:     isCandidate || false,
         candidateScore:  isCandidate ? Math.round(topScore * 100) : undefined,
         candidateMargin: isCandidate ? topMargin : undefined,

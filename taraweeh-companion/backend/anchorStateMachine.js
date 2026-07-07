@@ -107,6 +107,44 @@ export function processWhisperResult(whisperText, state, options = {}) {
 }
 
 function handleSearching(whisperText, state, preferredSurah, opts = {}) {
+  // Practice: global match only — no sequential bias, instant lock on first hit.
+  if (opts.practiceMode) {
+    const { matches, keywords } = findAnchor(whisperText, 0);
+    if (!matches.length) {
+      return { ...state, _matches: [], _locked: false, _wins: 0, _pendingMatch: null, lastKeywords: keywords };
+    }
+    const pt = matches[0];
+    const mc = pt.matchedWords?.length ?? 0;
+    if (pt.score >= 0.32 && mc >= 2) {
+      console.log(`[Anchor] Practice lock [${pt.surah}:${pt.ayah}] score=${pt.score.toFixed(2)} words=${mc}`);
+      return {
+        ...state,
+        mode: 'LOCKED',
+        surah: pt.surah,
+        ayah: pt.ayah,
+        confidence: pt.score,
+        missedChunks: 0,
+        ayahsSinceLock: 0,
+        ayahsSinceCheck: 0,
+        _matches: matches.slice(0, 3),
+        _locked: true,
+        _wins: 1,
+        _pendingMatch: { surah: pt.surah, ayah: pt.ayah, score: pt.score },
+        lastLockedSurah: pt.surah,
+        lastLockedAyah: pt.ayah,
+        lastKeywords: keywords,
+      };
+    }
+    return {
+      ...state,
+      _matches: matches.slice(0, 3),
+      _locked: false,
+      _wins: 0,
+      _pendingMatch: { surah: pt.surah, ayah: pt.ayah },
+      lastKeywords: keywords,
+    };
+  }
+
   // After a surah completes, bias toward the NEXT surah (sequential order in Quran)
   // e.g. after Luqman (31) ends, boost As-Sajdah (32) ayah 1-10
   const lastSurah = state.lastLockedSurah;
@@ -165,9 +203,6 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
 
   if (matches.length === 0) {
     console.log(`[Anchor] No matches for keywords=[${extractKeywords(whisperText).join(', ')}]`);
-    // Only preserve pending wins for reasonably confident candidates (≥ SINGLE_WIN_SCORE).
-    // Weak matches must NOT accumulate wins across noise windows — doing so lets a feeble
-    // 0.48-score candidate reach wins=2 and trigger isConsistentLock prematurely.
     const pendingScore = state._pendingMatch?.score ?? 0;
     if (pendingScore >= SINGLE_WIN_SCORE) {
       return { ...state, _matches: [], _locked: false, lastKeywords: keywords };
@@ -177,6 +212,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
 
   const top    = matches[0];
   const second = matches[1];
+
   // Use raw score for margin so the sequential boost doesn't inflate it
   const topRaw    = top.rawScore ?? top.score;
   const secondRaw = second ? (second.rawScore ?? second.score) : 0;
@@ -449,6 +485,37 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
 
 function handleLocked(whisperText, state, fastMode = false, opts = {}) {
   const { missBeforeResuming = MISSED_BEFORE_RESUMING, isGroqMode = false } = opts;
+
+  // Practice mode: always global scan — jump to whatever verse is being recited.
+  if (opts.practiceMode) {
+    const { matches, keywords } = findAnchor(whisperText, 0);
+    const top = matches[0];
+    if (!top || top.score < 0.30) {
+      return { ...state, missedChunks: 0, _matches: matches.slice(0, 3), _locked: false, lastKeywords: keywords };
+    }
+    const mc = top.matchedWords?.length ?? 0;
+    if (mc < 2) {
+      return { ...state, missedChunks: 0, _matches: matches.slice(0, 3), _locked: false, lastKeywords: keywords };
+    }
+    const jumped = top.surah !== state.surah || top.ayah !== state.ayah;
+    if (jumped) {
+      console.log(`[Anchor] Practice → [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)} (was ${state.surah}:${state.ayah})`);
+    }
+    return {
+      ...state,
+      mode: 'LOCKED',
+      surah: top.surah,
+      ayah: top.ayah,
+      confidence: top.score,
+      missedChunks: 0,
+      _matches: matches.slice(0, 3),
+      _locked: true,
+      lastLockedSurah: top.surah,
+      lastLockedAyah: top.ayah,
+      lastKeywords: keywords,
+    };
+  }
+
   const keywords = extractKeywords(whisperText);
   if (keywords.length === 0) {
     const missed = state.missedChunks + 1;
