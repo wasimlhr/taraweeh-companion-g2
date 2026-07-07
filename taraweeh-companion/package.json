@@ -16,8 +16,8 @@
     "live-monitor": "powershell -ExecutionPolicy Bypass -File scripts/live-monitor.ps1",
     "download-quran-db": "node scripts/download-quran-db.js",
     "build:evenhub": "node scripts/build-evenhub-dist.js",
-    "pack:evenhub": "npm run build:evenhub && npx @evenrealities/evenhub-cli@0.1.12 pack app.json dist -o taraweeh-companion.ehpk",
-    "pack:evenhub:check": "npm run build:evenhub && npx @evenrealities/evenhub-cli@0.1.12 pack app.json dist -o taraweeh-companion.ehpk --check"
+    "pack:evenhub": "node scripts/pack-evenhub.js",
+    "pack:evenhub:check": "node scripts/pack-evenhub.js --check"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.10",
