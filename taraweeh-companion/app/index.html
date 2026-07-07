@@ -1236,6 +1236,10 @@ body {
     _taraweehMode = mode === 'taraweeh';
     _practiceMode = mode === 'practice';
     _updateReciteModeUI();
+    if (_practiceMode) {
+      stopPageFlip();
+      stopCountdown();
+    }
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: _taraweehMode }));
       S.ws.send(JSON.stringify({ type: 'set_practice_mode', enabled: _practiceMode }));
@@ -1635,6 +1639,7 @@ body {
       _practiceMode = !!s.enabled;
       if (_practiceMode) { _reciteMode = 'practice'; _taraweehMode = false; }
       _updateReciteModeUI();
+      if (_practiceMode) { stopPageFlip(); stopCountdown(); }
     } else if (s.type === 'session_quota') {
       // Shared-mode per-session usage cap: warn at 80%, hard-stop at 100%.
       // Surface as the main status banner so user can switch to BYOK.
@@ -1903,6 +1908,7 @@ body {
   var _cdTickCount  = 0;
 
   function startCountdown(durationMs, baseHdr, body) {
+    if (_practiceMode) { stopCountdown(); return; }
     stopCountdown();
     _cdStartMs    = Date.now();
     _cdDurationMs = durationMs;
@@ -2044,6 +2050,7 @@ body {
   var _pageMs       = 0;
 
   function startPageFlip(display, totalMs) {
+    if (_practiceMode) { stopPageFlip(); return; }
     stopPageFlip();
     _pageDisplay = display;
     _pageIdx     = 0;
@@ -2308,6 +2315,8 @@ body {
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         fastMode: _fastMode,
         slowMode: _slowMode,
+        practiceMode: _practiceMode,
+        taraweehMode: _taraweehMode,
         transcriptionProvider: S.settings.transcriptionProvider || 'groq',
         groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
         openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
@@ -2493,25 +2502,30 @@ body {
 
         if (msg.state.mode === 'LOCKED') {
           var ayahChanged = msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
-          if (ayahChanged) {
-            // Force full rebuild so glasses reliably receive the new verse
-            // (textContainerUpgrade can fail to push over BLE in some cases)
-            S.displayRebuilt = false;
-            var wc = (msg.state.arabic || '').split(/\s+/).length || 4;
-            var rawMs = msg.state.timerMs || Math.max(3000, wc * 700);
-            // With Groq (fast transcription), the next ayah lock arrives sooner than
-            // the display timer would expire — shave more aggressively so the visual
-            // countdown doesn't lag behind real events. The next state update will
-            // still preempt the timer immediately when an ayah change arrives.
-            var usingGroq = S.settings && S.settings.transcriptionProvider === 'groq';
-            var shave = usingGroq ? 1200 : 500;
-            var floor = usingGroq ? 900 : 1500;
-            var estMs = Math.max(floor, rawMs - shave);
-            startPageFlip(gDisplay, estMs);
-          } else if (msg.state.timerMs && !_pageTimer) {
-            // Refresh countdown when we have timerMs — backend sends every 1s so
-            // countdown never disappears. Skip when in multi-page flip (has own timing).
-            startCountdown(msg.state.timerMs, gDisplay.hdr, gDisplay.pages[0] || '');
+          if (!_practiceMode) {
+            if (ayahChanged) {
+              // Force full rebuild so glasses reliably receive the new verse
+              // (textContainerUpgrade can fail to push over BLE in some cases)
+              S.displayRebuilt = false;
+              var wc = (msg.state.arabic || '').split(/\s+/).length || 4;
+              var rawMs = msg.state.timerMs || Math.max(3000, wc * 700);
+              // With Groq (fast transcription), the next ayah lock arrives sooner than
+              // the display timer would expire — shave more aggressively so the visual
+              // countdown doesn't lag behind real events. The next state update will
+              // still preempt the timer immediately when an ayah change arrives.
+              var usingGroq = S.settings && S.settings.transcriptionProvider === 'groq';
+              var shave = usingGroq ? 1200 : 500;
+              var floor = usingGroq ? 900 : 1500;
+              var estMs = Math.max(floor, rawMs - shave);
+              startPageFlip(gDisplay, estMs);
+            } else if (msg.state.timerMs && !_pageTimer) {
+              // Refresh countdown when we have timerMs — backend sends every 1s so
+              // countdown never disappears. Skip when in multi-page flip (has own timing).
+              startCountdown(msg.state.timerMs, gDisplay.hdr, gDisplay.pages[0] || '');
+            }
+          } else {
+            stopPageFlip();
+            stopCountdown();
           }
         } else {
           stopPageFlip(); stopCountdown();
@@ -2913,10 +2927,15 @@ body {
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
+        fastMode: _fastMode,
+        slowMode: _slowMode,
+        practiceMode: _practiceMode,
+        taraweehMode: _taraweehMode,
         transcriptionProvider: S.settings.transcriptionProvider || 'groq',
         groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
         openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
       }));
+      setReciteMode(_reciteMode);
       S.ws.send(JSON.stringify({ type: 'start' }));
       log('Reused existing WS, sent start', 'ok');
     }
@@ -3171,6 +3190,10 @@ body {
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
+        fastMode: _fastMode,
+        slowMode: _slowMode,
+        practiceMode: _practiceMode,
+        taraweehMode: _taraweehMode,
         transcriptionProvider: p,
         groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
         openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
@@ -3381,13 +3404,15 @@ body {
       lang: (S.settings.lang || '').trim() || null,
       pipelineVersion: S.settings.pipelineVersion || 'v4',
       fastMode: _fastMode,
-      slowMode: false,
+      slowMode: _slowMode,
+      practiceMode: _practiceMode,
+      taraweehMode: _taraweehMode,
       transcriptionProvider: provider,
       groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
       openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
     }));
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
-    S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: false }));
+    S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
     setReciteMode(_reciteMode);
     if (S.isRecording) S.ws.send(JSON.stringify({ type: 'start' }));
   }

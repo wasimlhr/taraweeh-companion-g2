@@ -434,7 +434,22 @@ export class AudioPipeline {
       this.onStatus({ type: 'taraweeh_mode', enabled: false,
         position: this._taraweehPos, rakat: this._rakatCount });
     }
-    if (this.practiceMode) this._cancelReadAdvance();
+    if (this.practiceMode) {
+      this._cancelReadAdvance();
+      // Snap display to heard position — no timer drift in Practice.
+      if (this._whisperSurah > 0 && this._whisperAyah > 0) {
+        this._displaySurah = this._whisperSurah;
+        this._displayAyah  = this._whisperAyah;
+        if (this.state.mode === 'LOCKED') {
+          this.state = {
+            ...this.state,
+            surah: this._whisperSurah,
+            ayah: this._whisperAyah,
+          };
+        }
+        this._emitState(null, null);
+      }
+    }
     console.log(`[Pipeline] Practice mode ${this.practiceMode ? 'ON' : 'OFF'}`);
     this.onStatus({ type: 'practice_mode', enabled: this.practiceMode });
   }
@@ -476,7 +491,7 @@ export class AudioPipeline {
     this._stopTimerHeartbeat();
     // 500ms with 3s chunks = smoother countdown; Whisper results also emit on confirm/bump
     this._timerHeartbeatRef = setInterval(() => {
-      if (!this.active || this.state.mode !== 'LOCKED') return;
+      if (!this.active || this.practiceMode || this.state.mode !== 'LOCKED') return;
       if (this._displayAdvanceTimer && this._timerStartedAt) {
         this._emitState(null, null);
       }
@@ -1849,7 +1864,7 @@ export class AudioPipeline {
 
   _scheduleReadAdvance(confidence, afterPauseMinMs = 0, durationFactor = 1.0, overrideDurationMs = 0) {
     this._cancelReadAdvance();
-    if (!this._canDisplayAdvance()) return;
+    if (this.practiceMode || !this._canDisplayAdvance()) return;
 
     let durationMs;
     if (overrideDurationMs > 0) {
