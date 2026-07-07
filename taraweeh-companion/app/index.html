@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.2</span>
+      <span class="version" id="versionEl">v2.6.3</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1125,7 +1125,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.2';
+  const APP_VERSION = 'v2.6.3';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2237,6 +2237,7 @@ body {
   // ─── Searching dots animation (G2) ────────────────────────────────────────
   var _searchingDotsTimer = null;
   var _searchingDotsIdx   = 0;
+  var _glassesSessionId   = 0;   // bumped each startListening — forces glasses resync
 
   function startSearchingDots() {
     stopSearchingDots();
@@ -2244,7 +2245,10 @@ body {
     _searchingDotsTimer = setInterval(function () {
       if (!S.isRecording || !S.isG2 || !S.bridge) return;
       if (S._lastGlassesState && (S._lastGlassesState.isCandidate || S._lastGlassesState.mode === 'LOCKED')) {
+        // Stale searching animation must not block verse display (common after stop→start).
         stopSearchingDots();
+        S.displayRebuilt = false;
+        showGlassesPage(buildGlassesText(S._lastGlassesState), 0);
         return;
       }
       _searchingDotsIdx = (_searchingDotsIdx + 1) % 4;
@@ -2631,12 +2635,14 @@ body {
       updatePhoneUI(msg.state, msg.whisperText);
       if (S.isG2) {
         var prev = S._lastGlassesState || {};
-        S._lastGlassesState = msg.state;
+        var sessionStart = prev._glassesSession !== _glassesSessionId;
+        S._lastGlassesState = Object.assign({}, msg.state, { _glassesSession: _glassesSessionId });
         if (msg.state.isCandidate || msg.state.mode === 'LOCKED') stopSearchingDots();
         if (msg.state.isCandidate) startLockingDots();
         else stopLockingDots();
         // Force full rebuild when leaving LOCKED or when candidate verse changes so G2 reliably gets updates (textContainerUpgrade can fail over BLE)
-        if ((prev.mode === 'LOCKED' && msg.state.mode !== 'LOCKED') ||
+        if (sessionStart ||
+            (prev.mode === 'LOCKED' && msg.state.mode !== 'LOCKED') ||
             (msg.state.mode !== 'LOCKED' && (prev.surah !== msg.state.surah || prev.ayah !== msg.state.ayah)))
           S.displayRebuilt = false;
         var gDisplay = buildGlassesText(msg.state);
@@ -2661,7 +2667,7 @@ body {
         } else if (shownPill) { shownPill.style.display = 'none'; }
 
         if (msg.state.mode === 'LOCKED') {
-          var ayahChanged = msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
+          var ayahChanged = sessionStart || msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
           if (!_practiceMode) {
             if (ayahChanged) {
               // Force full rebuild so glasses reliably receive the new verse
@@ -3077,6 +3083,8 @@ body {
       }
     }
     S.isRecording = true;
+    _glassesSessionId++;
+    S._lastGlassesState = null;
     S.displayRebuilt = false;
     S.pcmAccum = [];
     S.lastSend = 0;
@@ -3175,6 +3183,7 @@ body {
     btn.classList.remove('recording');
     setStatus('Stopped');
     stopPageFlip(); stopCountdown(); stopSearchingDots(); stopLockingDots();
+    S._lastGlassesState = null;
     updatePhoneUI({ mode: 'SEARCHING' });
   }
 
