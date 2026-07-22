@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.5</span>
+      <span class="version" id="versionEl">v2.6.7</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1087,17 +1087,17 @@ body {
 
   <div class="s-section" id="helpSection">Help — G2 &amp; modes</div>
   <div class="s-card" id="helpCard">
-    <p class="s-hint" style="margin:0 0 12px">Temple and R1 ring share the same gestures (Device APIs). Long-press in the Even app menu opens native exit.</p>
+    <p class="s-hint" style="margin:0 0 12px">Temple and R1 ring share the same gestures (Device APIs). Double-tap on the ready/stopped screen opens the system exit confirmation (same idea as long-press).</p>
     <ul class="help-list">
-      <li><strong>Single tap</strong> — next ayah</li>
+      <li><strong>Single tap (ready / stopped)</strong> — start or resume listening</li>
+      <li><strong>Single tap (while listening)</strong> - pause listening</li>
       <li><strong>Swipe up / down</strong> — previous / next ayah</li>
-      <li><strong>Double tap (ready screen)</strong> — start listening
-        <span class="help-sub">Double-tap the ring or temple when you see the ready screen.</span>
+      <li><strong>Double tap (ready / stopped)</strong> — system exit confirmation
+        <span class="help-sub">Cancel keeps you in the app. Confirm closes glasses and phone WebView.</span>
       </li>
-      <li><strong>Double tap (while listening)</strong> — stop listening
-        <span class="help-sub">Pauses transcription so you can rest; core workflow for recitation.</span>
+      <li><strong>Double tap (while listening)</strong> — pause / stop listening
+        <span class="help-sub">Returns to the root screen so you can exit or resume.</span>
       </li>
-      <li><strong>Double tap (stopped on a verse)</strong> — resume listening</li>
       <li><strong>Double tap (long ayah)</strong> — next page on glasses when the translation spans multiple screens</li>
     </ul>
     <p class="s-hint" style="margin:14px 0 8px">Recitation modes (bottom of main screen):</p>
@@ -1125,7 +1125,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.5';
+  const APP_VERSION = 'v2.6.7';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1483,6 +1483,9 @@ body {
 
   // ─── Settings ─────────────────────────────────────────────────────────────
   function defaultWsUrl() {
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
+    }
     return 'wss://taraweeh.up.railway.app/ws';
   }
 
@@ -1805,9 +1808,9 @@ body {
 
   function _startupBodyText() {
     if (_ringConnected) {
-      return 'Ring connected.\nDouble-tap ring or temple to start.\nRecite to begin.';
+      return 'Ring connected.\nSingle-tap to start.\nDouble-tap to exit.';
     }
-    return 'G2 ready.\nDouble-tap temple to start.\nRecite to begin.';
+    return 'G2 ready.\nSingle-tap to start.\nDouble-tap to exit.';
   }
 
   function _updateG2StatusPill() {
@@ -2163,9 +2166,9 @@ body {
         var pRef  = pName + ' ' + (state.surah ? state.surah + ':' + state.ayah : '');
         var pHdr  = '\u23F8 PAUSED  ' + pRef;
         var transForPaused = state.translationGlasses ?? state.translation;
-        var pBody = transForPaused || 'Double-tap to resume';
+        var pBody = transForPaused || 'Single-tap to resume';
         var pPages = buildPages(pBody, state.transliteration, 2);
-        pPages[pPages.length - 1] += '\n' + G2_DIV + '\nPAUSED \u2014 double-tap to resume';
+        pPages[pPages.length - 1] += '\n' + G2_DIV + '\nSingle-tap resume \u00B7 Double-tap exit';
         return { hdr: pHdr, pages: pPages };
       }
 
@@ -2185,7 +2188,7 @@ body {
         return { hdr: '\u26A0 Signal Lost', pages: ['Resume recitation.'] };
     
       default:
-        return { hdr: appTitleHdr(), pages: ['Ready.'] };
+        return { hdr: appTitleHdr(), pages: ['Ready.\nSingle-tap to start.\nDouble-tap to exit.'] };
     }
   }
 
@@ -2368,10 +2371,13 @@ body {
       document.getElementById('confPct').textContent = conf + '%';
       confRow.style.display = (state.mode === 'LOCKED' || isCandidate || isUserSearching) ? 'flex' : 'none';
 
-      var statusLabel = (isCandidate || state.userSearching)
-        ? 'Auto locking… ' + (state.surahName || '') + ' \u2022 ' + (state.ayah || '') + (isCandidate ? ' (' + (state.candidateScore || '') + '%)' : '')
-        : (state.surahName || '') + ' \u2022 ' + (state.ayah || '');
-      setStatus(statusLabel, (isCandidate || state.userSearching) ? '' : 'result');
+      var statusLabel = state.syncing
+        ? 'Syncing recitation\u2026 Heard ' + (state.whisperSurah || '?') + ':' + (state.whisperAyah || '?')
+          + ' \u2022 Shown ' + (state.surah || '?') + ':' + (state.ayah || '?')
+        : (isCandidate || state.userSearching)
+          ? 'Auto locking\u2026 ' + (state.surahName || '') + ' \u2022 ' + (state.ayah || '') + (isCandidate ? ' (' + (state.candidateScore || '') + '%)' : '')
+          : (state.surahName || '') + ' \u2022 ' + (state.ayah || '');
+      setStatus(statusLabel, (state.syncing || isCandidate || state.userSearching) ? '' : 'result');
     } else {
       locked.style.display = 'none';
       var navRow = document.getElementById('verseNavRow');
@@ -2394,18 +2400,19 @@ body {
 
       // Show surah-complete banner if a surah just finished
       var tipEl = document.getElementById('searchingTip');
-      if (state.completedSurah) {
-        var cName = state.completedSurahName || ('Surah ' + state.completedSurah);
-        tipEl.dir = 'ltr';
-        tipEl.textContent = '\u2713 ' + cName + ' complete \u2014 searching for next verse\u2026';
-        tipEl.style.color = '#4caf50';
-      } else if (whisper) {
-        // Only show whisper feedback if it's a real (non-noise) transcription
-        tipEl.dir = 'rtl';
-        tipEl.style.color = '';
-        tipEl.textContent = whisper.slice(0, 60) + ' \u2014 no match';
-      } else {
-        tipEl.textContent = '';
+      if (tipEl) {
+        if (state.completedSurah) {
+          var cName = state.completedSurahName || ('Surah ' + state.completedSurah);
+          tipEl.dir = 'ltr';
+          tipEl.textContent = '\u2713 ' + cName + ' complete \u2014 searching for next verse\u2026';
+          tipEl.style.color = '#4caf50';
+        } else if (whisper) {
+          tipEl.dir = 'rtl';
+          tipEl.style.color = '';
+          tipEl.textContent = whisper.slice(0, 60) + ' \u2014 no match';
+        } else {
+          tipEl.textContent = '';
+        }
       }
 
       if (state.mode === 'PAUSED') setStatus('Paused \u2014 ' + (state.nonQuranType || 'waiting'));
@@ -2468,6 +2475,29 @@ body {
     try { ws.close(); } catch (_) {}
   }
 
+  function isEvenHubSimulatorRuntime() {
+    if (window.__TAURI_INTERNALS__ || window.__TAURI__ || window.__TAURI_IPC__) return true;
+    var ua = navigator.userAgent || '';
+    return S.isG2 && !/Android|iPhone|iPad|iPod/i.test(ua);
+  }
+
+  function currentAudioSource() {
+    if (S.settings.forcePhoneMic || !S.isG2) return 'browser';
+    return isEvenHubSimulatorRuntime() ? 'simulator' : 'g2';
+  }
+
+  var _lastSentAudioSource = null;
+  function sendStartForCurrentAudioSource() {
+    if (!S.ws || S.ws.readyState !== WebSocket.OPEN) return;
+    var source = currentAudioSource();
+    S.ws.send(JSON.stringify({ type: 'set_audio_source', source: source }));
+    S.ws.send(JSON.stringify({ type: 'start' }));
+    if (_lastSentAudioSource !== source) {
+      log('Audio profile -> ' + source, 'ok');
+      _lastSentAudioSource = source;
+    }
+  }
+
   function connectWS() {
     _cancelReconnect();
     _closeWsSilently(S.ws);   // close old WS without triggering its onclose
@@ -2485,6 +2515,7 @@ body {
       S.ws.send(JSON.stringify({
         type: 'init',
         sessionId: _clientSessionId,
+        audioSource: currentAudioSource(),
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
@@ -2501,14 +2532,19 @@ body {
       setReciteMode(_reciteMode);
       // If recording was already active (reconnect mid-session), re-send start
       if (S.isRecording) {
-        S.ws.send(JSON.stringify({ type: 'start' }));
+        sendStartForCurrentAudioSource();
         log('Re-sent start after reconnect', 'ok');
       }
-      // Force full glasses rebuild on reconnect so display isn't stale/zombie
-      if (S.isG2) {
+      // Force a search rebuild only for an active listening session. The app
+      // connects eagerly while idle, so rendering SEARCHING here would replace
+      // the welcome screen before the user starts listening.
+      if (S.isG2 && S.isRecording) {
         S.displayRebuilt = false;
         showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0);
         startSearchingDots();
+      } else if (S.isG2) {
+        stopSearchingDots();
+        refreshGlassesWelcomeText();
       }
     };
 
@@ -2609,9 +2645,6 @@ body {
         setPill('sPillModel', 'warn', 'Server waking\u2026');
       }
       setPill('sPillConf', '', 'Match: --');
-      // Send start if recording button was already active (reconnect case)
-      if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN)
-        S.ws.send(JSON.stringify({ type: 'start' }));
     } else if (msg.type === 'pipeline_version') {
       var pv = (msg.version || 'v3').toUpperCase();
       document.getElementById('versionEl').textContent = APP_VERSION + ' ' + pv;
@@ -2644,7 +2677,9 @@ body {
       }
       if (msg.state.pace) updatePacePill(msg.state.pace);
       updatePhoneUI(msg.state, msg.whisperText);
-      if (S.isG2) {
+      // The backend initializes in SEARCHING mode even before capture starts.
+      // Keep those idle state packets from overwriting the glasses welcome UI.
+      if (S.isG2 && S.isRecording) {
         var prev = S._lastGlassesState || {};
         var sessionStart = prev._glassesSession !== _glassesSessionId;
         S._lastGlassesState = Object.assign({}, msg.state, { _glassesSession: _glassesSessionId });
@@ -2808,7 +2843,8 @@ body {
 
     // ── Stage 1 log: mic is capturing ─────────────────────────────────────────
     if (_pcmChunkCount === 0) {
-      var src = S.isG2 ? 'G2 mic' : 'browser mic';
+      var source = currentAudioSource();
+      var src = source === 'g2' ? 'G2 mic' : (source === 'simulator' ? 'simulator mic' : 'browser mic');
       log('\u25cf Stage 1 \u2014 ' + src + ' capturing (' + u8.byteLength + 'B/frame)', 'ok');
       setPill('sPillConf', 'ok', 'Match: listening');
     }
@@ -2964,14 +3000,9 @@ body {
   var _scrollBurstTimer = null;
   var _lastDoubleTapTime = 0;   // debounce double-tap (G2 sometimes fires twice)
 
-  // Idle root: startup / searching with no verse locked — double-tap opens system exit.
-  function isG2RootIdle() {
-    if (S.isRecording) return false;
-    var st = S._lastGlassesState;
-    if (!st) return true;
-    if (st.isCandidate) return false;
-    if (st.mode === 'LOCKED' && st.surah > 0 && st.ayah > 0) return false;
-    return true;
+  // Root = not recording (ready / stopped / paused). Double-tap opens system exit dialog.
+  function isG2Root() {
+    return !S.isRecording;
   }
 
   function onG2Event(event) {
@@ -2990,7 +3021,7 @@ body {
       if (st === 4) {
         log('G2 foreground enter', 'ok');
         if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN) {
-          S.ws.send(JSON.stringify({ type: 'start' }));
+          sendStartForCurrentAudioSource();
         }
         handleForegroundEnter();
       } else if (st === 5) {
@@ -3010,22 +3041,29 @@ body {
 
     var t = (ev.eventType == null ? 0 : ev.eventType);
 
-    // TAP (Click) → advance one ayah forward
+    // TAP (Click) - start/resume on root; pause while listening
     if (t === 0 || t === undefined) {
-      if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-        S.ws.send(JSON.stringify({ type: 'manual_advance' }));
+      if (isG2Root()) {
+        startListening();
+      } else {
+        stopListening();
       }
       return;
     }
 
-    // DOUBLE TAP → next page on multi-page ayahs, or pause/resume on last/single page
+    // DOUBLE TAP → exit confirm on root; next page on multi-page ayah; pause while listening
     if (t === 3) {
       // Debounce: G2 bridge can fire the same double-tap twice in quick
-      // succession, producing a stop→start flash. Swallow repeats within 700ms.
+      // succession. Swallow repeats within 700ms.
       var nowDt = Date.now();
       if (nowDt - (_lastDoubleTapTime || 0) < 700) return;
       _lastDoubleTapTime = nowDt;
-      // Multi-page ayah: double-tap advances pages (not exit/pause).
+      // Root (ready / stopped / paused): system exit confirmation (EvenHub Make15).
+      if (isG2Root()) {
+        requestSystemExit();
+        return;
+      }
+      // Multi-page ayah: double-tap advances pages (not pause).
       if (_pageDisplay && _pageDisplay.pages && _pageDisplay.pages.length > 1 && _pageIdx < _pageDisplay.pages.length - 1) {
         // Multi-page ayah, not on last page — advance to next page
         _pageIdx++;
@@ -3045,12 +3083,8 @@ body {
         }
         return;
       }
-      // Single page or last page — double-tap is a simple START/STOP toggle.
-      if (!S.isRecording) {
-        startListening();
-      } else {
-        stopListening();
-      }
+      // Listening on single/last page — pause back to root.
+      stopListening();
       return;
     }
 
@@ -3122,26 +3156,10 @@ body {
     if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
       connectWS();
     } else {
-      // Already connected — just re-init pipeline and activate.
-      // MUST include groqApiKey or the server falls back to HF and the UI
-      // flashes "Server warming up / whisper-v3" until the user opens
-      // settings (which triggers a correct reinit).
-      S.ws.send(JSON.stringify({
-        type: 'init',
-        sessionId: _clientSessionId,
-        preferredSurah: parseInt(S.settings.defaultSurah || '0'),
-        lang: (S.settings.lang || '').trim() || null,
-        pipelineVersion: S.settings.pipelineVersion || 'v4',
-        fastMode: _fastMode,
-        slowMode: _slowMode,
-        practiceMode: _practiceMode,
-        taraweehMode: _taraweehMode,
-        transcriptionProvider: S.settings.transcriptionProvider || 'groq',
-        groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
-        openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
-      }));
+      // The open connection already owns a configured pipeline. Recreating it
+      // here wastes initialization work and can duplicate provider calls.
       setReciteMode(_reciteMode);
-      S.ws.send(JSON.stringify({ type: 'start' }));
+      sendStartForCurrentAudioSource();
       log('Reused existing WS, sent start', 'ok');
     }
 
@@ -3185,8 +3203,8 @@ body {
 
     // Update G2 glasses BEFORE tearing down mic/WS — bridge must still be alive
     if (S.isG2) {
-      glassesUpdate({ hdr: appTitleHdr(), body: 'Stopped.' });
-      S.displayRebuilt = false;   // reset for next session
+      S.displayRebuilt = false;
+      showGlassesPage({ hdr: appTitleHdr(), pages: ['Stopped.\nSingle-tap to resume.\nDouble-tap to exit.'] }, 0);
     }
 
     var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
@@ -3299,7 +3317,7 @@ body {
           var pipe = document.getElementById('settingPipeline');
           if (pipe) pipe.value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
           if (typeof setProvider === 'function')
-            setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq');
+            setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq', false);
         } catch (_) {}
         // Theme may have been overwritten by bridge value too.
         var t = Storage.getItem('qc_theme');
@@ -3372,7 +3390,7 @@ body {
   // Free vs BYOK key mode. Shared mode = no client key sent → backend uses
   // SHARED_GROQ_KEY/SHARED_OPENAI_KEY env vars and enforces the per-session
   // minute cap. BYOK = user's own key, no cap, no failover.
-  window.setKeyMode = function (m) {
+  window.setKeyMode = function (m, reinitialize) {
     m = (m === 'byok') ? 'byok' : 'shared';
     S.settings.keyMode = m;
     try { saveSettings(); } catch (_) {}
@@ -3384,11 +3402,11 @@ body {
     var byokSec = document.getElementById('byokSection');
     if (sHint) sHint.style.display = (m === 'shared') ? '' : 'none';
     if (byokSec) byokSec.style.display = (m === 'byok') ? '' : 'none';
-    if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
+    if (reinitialize !== false && S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
     log('Key mode: ' + (m === 'shared' ? 'Free (shared)' : 'My own key'), 'ok');
   };
 
-  window.setProvider = function (p) {
+  window.setProvider = function (p, reinitialize) {
     p = (p === 'openai') ? 'openai' : 'groq';
     S.settings.transcriptionProvider = p;
     try { saveSettings(); } catch (_) {}
@@ -3407,10 +3425,11 @@ body {
     if (gRow) gRow.style.display = (p === 'groq') ? '' : 'none';
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
     // Re-init pipeline live if recording so the switch takes immediate effect.
-    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+    if (reinitialize !== false && S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({
         type: 'init',
         sessionId: _clientSessionId,
+        audioSource: currentAudioSource(),
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
@@ -3606,8 +3625,8 @@ body {
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
     var oaiInput = document.getElementById('settingOpenAIKey');
     if (oaiInput) oaiInput.value = S.settings.openaiApiKey || '';
-    setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq');
-    setKeyMode(S.settings.keyMode === 'byok' ? 'byok' : 'shared');
+    setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq', false);
+    setKeyMode(S.settings.keyMode === 'byok' ? 'byok' : 'shared', false);
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
@@ -3630,6 +3649,7 @@ body {
     S.ws.send(JSON.stringify({
       type: 'init',
       sessionId: _clientSessionId,
+      audioSource: currentAudioSource(),
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       lang: (S.settings.lang || '').trim() || null,
       pipelineVersion: S.settings.pipelineVersion || 'v4',
@@ -3644,7 +3664,7 @@ body {
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
     S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
     setReciteMode(_reciteMode);
-    if (S.isRecording) S.ws.send(JSON.stringify({ type: 'start' }));
+    if (S.isRecording) sendStartForCurrentAudioSource();
   }
 
   window.hideSettings = function () {

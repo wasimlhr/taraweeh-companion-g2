@@ -29,6 +29,7 @@ const SAMPLE_RATE = 16000;
 const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
 const ENDPOINT_ON_DEMAND_ENABLED = process.env.ENDPOINT_ON_DEMAND_ENABLED === 'true';
 const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
+const ALLOWED_AUDIO_SOURCES = new Set(['browser', 'simulator', 'g2']);
 const LOCAL_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
 
 let lastEndpointLifecycle = {
@@ -55,6 +56,11 @@ function sanitizePipelineVersion(version) {
 function sanitizeTranslationLang(lang) {
   const normalized = (lang && String(lang).trim()) || '';
   return LOCAL_TRANSLATION_LANGS.has(normalized) ? normalized : '';
+}
+
+function sanitizeAudioSource(source) {
+  const normalized = String(source || '').toLowerCase().trim();
+  return ALLOWED_AUDIO_SOURCES.has(normalized) ? normalized : 'g2';
 }
 
 function buildWhisperOpts() {
@@ -254,16 +260,18 @@ wss.on('connection', (ws, req) => {
     }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
     const translationLang = sanitizeTranslationLang(requestedTranslation);
+    const audioSource = sanitizeAudioSource(opts.audioSource);
     if (requestedTranslation && requestedTranslation !== translationLang) {
       console.warn(`[Init] Unsupported translation "${requestedTranslation}" requested; falling back to built-in local English`);
     }
 
-    console.log(`[Init] Creating pipeline ${pipelineVersion.toUpperCase()} translationLang=${translationLang || '(built-in)'}`);
+    console.log(`[Init] Creating pipeline ${pipelineVersion.toUpperCase()} translationLang=${translationLang || '(built-in)'} audioSource=${audioSource}`);
     pipeline = new Ctor({
       preferredSurah,
       translationLang,
       hfToken: HF_TOKEN,
       whisperOpts,
+      audioSource,
       geminiKey: opts.geminiKey || GEMINI_KEY,
       onStateUpdate: (msg) => send(msg),
       onStatus: (s) => {
@@ -348,6 +356,7 @@ wss.on('connection', (ws, req) => {
           case 'manual_prev': pipeline?.manualPrev(); break;
           case 'set_fast_mode': pipeline?.setFastMode(msg.enabled); break;
           case 'set_slow_mode': pipeline?.setSlowMode(msg.enabled); break;
+          case 'set_audio_source': pipeline?.setAudioSource?.(sanitizeAudioSource(msg.source)); break;
           case 'set_taraweeh_mode': pipeline?.setTaraweehMode(msg.enabled); break;
           case 'set_practice_mode':
           case 'set_verse_hold_mode': pipeline?.setPracticeMode?.(msg.enabled); break;

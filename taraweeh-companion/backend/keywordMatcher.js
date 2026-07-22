@@ -54,7 +54,10 @@ function normalizeDaggerAlef(text) {
 }
 
 function splitWords(text) {
-  return normalize(text).split(/\s+/).filter(Boolean);
+  return normalize(text)
+    .replace(/يا\s+ايها/g, 'ياايها')
+    .split(/\s+/)
+    .filter(Boolean);
 }
 
 // Whisper spells out huruf muqatta'at — map them to what appears in the Quran
@@ -99,6 +102,7 @@ export function loadQuran() {
       // but Whisper gives "الانسان" (with alef). Add the expanded form to index too.
       const normTextAlt = normalizeDaggerAlef(a.text);
       const wordsAlt = normTextAlt.split(/\s+/).filter(Boolean);
+      const canonicalWordCount = Math.min(words.length, wordsAlt.length);
 
       // Add common Whisper spellings for muqatta'at letters
       const extraWords = [];
@@ -111,7 +115,7 @@ export function loadQuran() {
       // Union: original + dagger-alef-expanded + muqatta'at aliases
       words = [...new Set([...words, ...wordsAlt, ...extraWords])];
       const idx = ayahList.length;
-      ayahList.push({ surah, ayah: a.verse, text: a.text, normText, words });
+      ayahList.push({ surah, ayah: a.verse, text: a.text, normText, words, canonicalWordCount });
       for (const w of new Set(words)) {
         if (!wordIndex.has(w)) wordIndex.set(w, new Set());
         wordIndex.get(w).add(idx);
@@ -252,7 +256,7 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
 
     // Require 2+ matched words; 3+ for longer ayahs
     if (matchedWords.length < 2) continue;
-    if (matchedWords.length < 3 && a.words.length > 4) continue;
+    if (matchedWords.length < 3 && a.canonicalWordCount > 4) continue;
 
     // Sequential boost: candidate is the expected next verse(s) after last lock
     const inSeqRange = seqHint

@@ -203,6 +203,18 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     }
   } else {
     ({ matches, keywords } = findAnchor(whisperText, preferredSurah, seqHint));
+    // preferredSurah is a bias, not a hard lock. Taraweeh starts by expecting
+    // Fatiha, but the reciter may begin another surah or ASR may miss Fatiha.
+    // Fall back globally so a strong Quran match is never discarded solely
+    // because it is outside the preferred surah.
+    if (!matches.length && preferredSurah) {
+      const globalResult = findAnchor(whisperText, 0, seqHint);
+      matches = globalResult.matches;
+      keywords = globalResult.keywords;
+      if (matches.length) {
+        console.log('[Anchor] Preferred surah ' + preferredSurah + ' missed - global search found [' + matches[0].surah + ':' + matches[0].ayah + ']');
+      }
+    }
   }
 
   if (matches.length === 0) {

@@ -54,10 +54,59 @@ const BYTES_PER_MS     = (SAMPLE_RATE * BYTES_PER_SAMPLE) / 1000;
 // Start at 3s for fast first lock; same logic continues in locked (3s chunks).
 const SEARCH_WINDOWS_MS = [3000, 5000, 8000, 12000, 20000];
 const MAX_SEARCH_BUF_MS = 35000;
+const SEARCH_SEND_MS = parseInt(process.env.SEARCH_SEND_MS || '12000', 10);
+const SEARCH_PREROLL_MS = parseInt(process.env.SEARCH_PREROLL_MS || '1000', 10);
+
+const VOICE_MIN_ACTIVE_MS = parseInt(process.env.VOICE_MIN_ACTIVE_MS || '500', 10);
+const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '2500', 10);
+const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '4000', 10);
+const SEARCH_SEND_BYTES = Math.floor(BYTES_PER_MS * SEARCH_SEND_MS);
+const SEARCH_PREROLL_BYTES = Math.floor(BYTES_PER_MS * SEARCH_PREROLL_MS);
 // Practice: pause after a shown verse → next recitation is a fresh global search (surah jumps).
 const PRACTICE_FRESH_SILENCE_MS = parseInt(process.env.PRACTICE_FRESH_SILENCE_MS || '2500', 10);
 const PRACTICE_FRESH_MIN_HOLD_MS = parseInt(process.env.PRACTICE_FRESH_MIN_HOLD_MS || '1200', 10);
 const PRACTICE_FRESH_SEARCH_MS = parseInt(process.env.PRACTICE_FRESH_SEARCH_MS || '2000', 10);
+
+const AUDIO_SOURCE_PROFILES = Object.freeze({
+  browser: Object.freeze({
+    source: 'browser',
+    removeDcOffset: true,
+    voiceMinActivityRms: parseFloat(process.env.BROWSER_VOICE_MIN_ACTIVITY_RMS || '0.004'),
+    voiceMaxActivityRms: parseFloat(process.env.BROWSER_VOICE_MAX_ACTIVITY_RMS || '0.025'),
+    voiceNoiseMultiplier: parseFloat(process.env.BROWSER_VOICE_NOISE_MULTIPLIER || '1.8'),
+    lockedVoiceGateFactor: parseFloat(process.env.BROWSER_LOCKED_VOICE_GATE_FACTOR || '0.75'),
+    quietBoostThreshold: parseFloat(process.env.BROWSER_QUIET_BOOST_THRESHOLD || '0.025'),
+    quietBoostTarget: parseFloat(process.env.BROWSER_QUIET_BOOST_TARGET || '0.08'),
+    maxBoostGain: parseFloat(process.env.BROWSER_MAX_BOOST_GAIN || '8'),
+  }),
+  simulator: Object.freeze({
+    source: 'simulator',
+    removeDcOffset: true,
+    voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.0022'),
+    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.010'),
+    voiceNoiseMultiplier: parseFloat(process.env.SIMULATOR_VOICE_NOISE_MULTIPLIER || '1.5'),
+    lockedVoiceGateFactor: parseFloat(process.env.SIMULATOR_LOCKED_VOICE_GATE_FACTOR || '0.8'),
+    quietBoostThreshold: parseFloat(process.env.SIMULATOR_QUIET_BOOST_THRESHOLD || '0.015'),
+    quietBoostTarget: parseFloat(process.env.SIMULATOR_QUIET_BOOST_TARGET || '0.08'),
+    maxBoostGain: parseFloat(process.env.SIMULATOR_MAX_BOOST_GAIN || '20'),
+  }),
+  g2: Object.freeze({
+    source: 'g2',
+    removeDcOffset: true,
+    voiceMinActivityRms: parseFloat(process.env.G2_VOICE_MIN_ACTIVITY_RMS || '0.0008'),
+    voiceMaxActivityRms: parseFloat(process.env.G2_VOICE_MAX_ACTIVITY_RMS || '0.006'),
+    voiceNoiseMultiplier: parseFloat(process.env.G2_VOICE_NOISE_MULTIPLIER || '1.35'),
+    lockedVoiceGateFactor: parseFloat(process.env.G2_LOCKED_VOICE_GATE_FACTOR || '0.75'),
+    quietBoostThreshold: parseFloat(process.env.G2_QUIET_BOOST_THRESHOLD || '0.010'),
+    quietBoostTarget: parseFloat(process.env.G2_QUIET_BOOST_TARGET || '0.06'),
+    maxBoostGain: parseFloat(process.env.G2_MAX_BOOST_GAIN || '24'),
+  }),
+});
+
+function normalizeAudioSource(source) {
+  const normalized = String(source || '').toLowerCase().trim();
+  return Object.prototype.hasOwnProperty.call(AUDIO_SOURCE_PROFILES, normalized) ? normalized : 'g2';
+}
 
 // Use 3s chunks continuously (same as search start) — faster feedback, consistent logic
 const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '4000', 10);
@@ -72,6 +121,8 @@ const LOCKED_MAX_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MAX_MS);
 const LOCKED_SEND_BYTES = Math.floor(BYTES_PER_MS * LOCKED_SEND_MS);
 const LOCKED_MAX_INFLIGHT = parseInt(process.env.LOCKED_MAX_INFLIGHT || '2', 10);
 const LOCKED_RESULT_STALE_MS = parseInt(process.env.LOCKED_RESULT_STALE_MS || '3000', 10);
+const CAPPED_RECOVERY_MAX_CHECKS = parseInt(process.env.CAPPED_RECOVERY_MAX_CHECKS || '2', 10);
+const CAPPED_RECOVERY_RECENT_VOICE_MS = parseInt(process.env.CAPPED_RECOVERY_RECENT_VOICE_MS || '15000', 10);
 
 const SILENCE_THRESHOLD        = parseFloat(process.env.SILENCE_THRESHOLD        || '0.005');
 const READ_ADVANCE_CONFIDENCE  = parseInt(process.env.READ_ADVANCE_CONFIDENCE    || '40',    10);
@@ -103,7 +154,7 @@ const PAUSE_COOLDOWN_MS    = parseInt(process.env.PAUSE_COOLDOWN_MS   || '6000',
 const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS || '2000', 10);
 
 const BASE_DISPLAY_LEAD = 2;
-const BLOCKED_FORCE_UNBLOCK_MS = 8000;  // Force-unblock after 8s even without real Whisper match
+const BLOCKED_FORCE_UNBLOCK_MS = parseInt(process.env.BLOCKED_FORCE_UNBLOCK_MS || '8000', 10);
 
 // ── Noise filtering ──────────────────────────────────────────────────────────
 
@@ -152,18 +203,31 @@ function computeRms(pcm) {
   return Math.sqrt(s / n);
 }
 
+function removeDcOffset(pcm) {
+  const samples = Math.floor(pcm.length / 2);
+  if (samples === 0) return pcm;
+  let sum = 0;
+  for (let offset = 0; offset < samples * 2; offset += 2) sum += pcm.readInt16LE(offset);
+  const mean = Math.round(sum / samples);
+  if (Math.abs(mean) < 8) return pcm;
+  const centered = Buffer.alloc(pcm.length);
+  for (let offset = 0; offset < samples * 2; offset += 2) {
+    const sample = pcm.readInt16LE(offset) - mean;
+    centered.writeInt16LE(Math.max(-32768, Math.min(32767, sample)), offset);
+  }
+  return centered;
+}
+
 const CLIP_THRESHOLD = parseFloat(process.env.CLIP_THRESHOLD || '0.10');
 const CLIP_TARGET    = parseFloat(process.env.CLIP_TARGET    || '0.04');
-const QUIET_BOOST_THRESHOLD = 0.015;  // G2 mic often 0.001–0.009 — boost to proper speech level
-const QUIET_BOOST_TARGET   = 0.08;   // target normal speech RMS for better Whisper accuracy
-function applyClipGuard(pcm, rms) {
+function applyClipGuard(pcm, rms, profile) {
   let gain = 1;
-  if (rms > 0 && rms < QUIET_BOOST_THRESHOLD) {
-    gain = QUIET_BOOST_TARGET / rms;
-    console.log(`[Pipeline] G2 quiet boost: rms=${rms.toFixed(4)} → ${QUIET_BOOST_TARGET} (gain=${gain.toFixed(0)})`);
+  if (rms > 0 && rms < profile.quietBoostThreshold) {
+    gain = Math.min(profile.maxBoostGain, profile.quietBoostTarget / rms);
+    console.log(`[Pipeline] ${profile.source} quiet boost: rms=${rms.toFixed(4)} -> ${profile.quietBoostTarget} (gain=${gain.toFixed(1)})`);
   } else if (rms > CLIP_THRESHOLD) {
     gain = CLIP_TARGET / rms;
-    console.log(`[Pipeline] Audio normalize: rms=${rms.toFixed(3)} → ${CLIP_TARGET} (gain=${gain.toFixed(3)})`);
+    console.log(`[Pipeline] Audio normalize: rms=${rms.toFixed(3)} -> ${CLIP_TARGET} (gain=${gain.toFixed(3)})`);
   } else {
     return pcm;
   }
@@ -246,7 +310,7 @@ const TARAWEEH_STUCK_TIMEOUT_MS = 15000;
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, translationLang = '', hfToken, whisperOpts }) {
+  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, translationLang = '', hfToken, whisperOpts, audioSource = 'g2' }) {
     this.onStateUpdate   = onStateUpdate;
     this.onStatus        = onStatus || (() => {});
     this.onError         = onError  || (() => {});
@@ -292,6 +356,9 @@ export class AudioPipeline {
     this._searchGen    = 0;
     this._arRahmanRefrainSeen = false;  // once refrain detected, ignore content verses until lock
     this._lastSearchTexts = [];  // last 2–3 chunk texts for combined matching
+    this._searchVoicedMs = 0;
+    this._searchLastVoiceAt = 0;
+    this._lastSearchCall = 0;
     this._timerHeartbeatRef = null;  // periodic emit so frontend countdown never disappears
 
     this._lockedBuf      = Buffer.alloc(0);
@@ -300,6 +367,10 @@ export class AudioPipeline {
     this._lockedInFlight = 0;
     this._lockedSeq = 0;
     this._lockedLastAppliedSeq = 0;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
+    this._lastDetectedVoiceAt = 0;
+    this._cappedRecoveryChecks = 0;
 
     this._displayAdvanceTimer = null;
     this._nextAdvanceMs       = 0;
@@ -307,6 +378,9 @@ export class AudioPipeline {
     this._smoothAdvanceTimer  = null;
 
     this._lastAudioStatusMs = 0;
+    this.audioSource = null;
+    this._audioProfile = null;
+    this._noiseFloorRms = 0;
     this._ayahStartTime     = 0;
 
     this._pauseAnalysisBuf   = Buffer.alloc(0);
@@ -337,6 +411,7 @@ export class AudioPipeline {
     this._sameAyahStreak    = 0;    // consecutive confirms of same ayah at display (reciter repeating)
     this._bumpCountForAyah  = 0;    // bumps applied this ayah — capped to avoid indefinite extension
     this._blockedSince      = 0;    // timestamp when display first got BLOCKED (0 = not blocked)
+    this._syncingDisplay    = false;
 
     // Learned pace: measured from manual advance clicks (ms per word)
     this._measuredMsPerWord = 0;   // 0 = no data yet, use default
@@ -384,6 +459,7 @@ export class AudioPipeline {
     if (!this.isFastProvider) {
       probeWhisperEndpoint(this.whisperOpts, this.onStatus).catch(() => {});
     }
+    this.setAudioSource(audioSource);
   }
 
   get _maxDisplayLead() {
@@ -393,6 +469,23 @@ export class AudioPipeline {
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
+
+  setAudioSource(source) {
+    const normalized = normalizeAudioSource(source);
+    if (normalized === this.audioSource && this._audioProfile) return;
+    this.audioSource = normalized;
+    this._audioProfile = AUDIO_SOURCE_PROFILES[normalized];
+    this._noiseFloorRms = 0;
+    this._resetSearchBuf();
+    this._lockedBuf = Buffer.alloc(0);
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
+    this._lastDetectedVoiceAt = 0;
+    this._cappedRecoveryChecks = 0;
+    const profile = this._audioProfile;
+    console.log(`[Pipeline] Audio profile=${normalized} gate=${profile.voiceMinActivityRms}-${profile.voiceMaxActivityRms} noise*${profile.voiceNoiseMultiplier} boost<${profile.quietBoostThreshold}`);
+    this.onStatus({ type: 'audio_profile', component: 'audio', status: 'ready', source: normalized });
+  }
 
   setFastMode(enabled) {
     this.fastMode = !!enabled;
@@ -424,8 +517,9 @@ export class AudioPipeline {
       this._rakatCount = 0;
       this._expectFatiha = false;
     } else if (this.state.mode === 'SEARCHING') {
-      // Imam always opens with Fatiha — prime fast-lock from the first rakat.
-      this._expectFatiha = true;
+      // A session may start mid-recitation. Search globally until the prayer
+      // position detector observes a transition that specifically expects Fatiha.
+      this._expectFatiha = false;
     }
     console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}${this._expectFatiha ? ' (expectFatiha=true)' : ''}`);
     this.onStatus({ type: 'taraweeh_mode', enabled: this.taraweehMode,
@@ -534,6 +628,10 @@ export class AudioPipeline {
     this._lockedInFlight = 0;
     this._lockedSeq = 0;
     this._lockedLastAppliedSeq = 0;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
+    this._lastDetectedVoiceAt = 0;
+    this._cappedRecoveryChecks = 0;
     this._preRecitSkips = 0;
     this._resetSearchBuf();
     console.log(`[Pipeline] Started (last known: ${prevSurah}:${prevAyah || 0})`);
@@ -548,6 +646,10 @@ export class AudioPipeline {
     this._lockedInFlight     = 0;
     this._lockedSeq          = 0;
     this._lockedLastAppliedSeq = 0;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
+    this._lastDetectedVoiceAt = 0;
+    this._cappedRecoveryChecks = 0;
     this._pauseAnalysisBuf   = Buffer.alloc(0);
     this._pauseAccumMs       = 0;
     this._cancelReadAdvance();
@@ -567,6 +669,8 @@ export class AudioPipeline {
     this._bumpCountForAyah = 0;
     this._lastManualAdjustMs = 0;
     this._lockedLastAppliedSeq = 0;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
     this._lastTexts = [];
 
     let s = this._displaySurah || this.state.surah || this.state.lastLockedSurah || this.preferredSurah || 1;
@@ -667,6 +771,8 @@ export class AudioPipeline {
     this._lastTexts = [];
     this._lockedInFlight = 0;
     this._lockedLastAppliedSeq = 0;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
     this._searchWinIdx = 0;
     if (this._lockedBuf.length > 0) {
       this._searchBuf = Buffer.concat([this._searchBuf, this._lockedBuf]);
@@ -939,6 +1045,10 @@ export class AudioPipeline {
     this._lockedInFlight = 0;
     this._lockedSeq = 0;
     this._lockedLastAppliedSeq = 0;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
+    this._lastDetectedVoiceAt = 0;
+    this._cappedRecoveryChecks = 0;
     this._emitState(null, null);
   }
 
@@ -952,6 +1062,10 @@ export class AudioPipeline {
     this._lockedInFlight = 0;
     this._lockedSeq = 0;
     this._lockedLastAppliedSeq = 0;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
+    this._lastDetectedVoiceAt = 0;
+    this._cappedRecoveryChecks = 0;
     this.onStateUpdate = () => {};  // swallow any late callbacks
     this.onStatus = () => {};
     this.onError = () => {};
@@ -966,43 +1080,74 @@ export class AudioPipeline {
     this._maybePracticeFreshRun();
 
     const now = Date.now();
-    if (now - this._lastAudioStatusMs >= 3000) {
-      this._lastAudioStatusMs = now;
-      const rms = computeRms(pcmData);
-      console.log(`[Pipeline] Audio: rms=${rms.toFixed(4)} mode=${this.state.mode}`);
-      this.onStatus({ component: 'audio', status: 'active', rms: +rms.toFixed(4) });
+    const profile = this._audioProfile || AUDIO_SOURCE_PROFILES.g2;
+    const processedPcm = profile.removeDcOffset ? removeDcOffset(pcmData) : pcmData;
+    const rms = computeRms(processedPcm);
+    const pcmMs = processedPcm.length / BYTES_PER_MS;
+    if (this._noiseFloorRms <= 0) {
+      this._noiseFloorRms = Math.min(rms, profile.voiceMinActivityRms / profile.voiceNoiseMultiplier);
+    }
+    const activityGate = Math.max(profile.voiceMinActivityRms,
+      Math.min(profile.voiceMaxActivityRms, this._noiseFloorRms * profile.voiceNoiseMultiplier));
+    const lockedTracking = this.state.mode === 'LOCKED' || this.state.mode === 'PAUSED';
+    const detectionGate = lockedTracking
+      ? activityGate * profile.lockedVoiceGateFactor
+      : activityGate;
+    const hasVoice = rms > detectionGate;
+    if (hasVoice) this._lastDetectedVoiceAt = now;
+    if (!hasVoice && rms <= this._noiseFloorRms * 1.1) {
+      this._noiseFloorRms = this._noiseFloorRms * 0.98 + rms * 0.02;
     }
 
-    // Pause detection disabled — the transliteration-based timer with WPS
-    // adaptation and elongation bonus handles ayah timing better than raw
-    // silence detection, which was triggering on breaths and causing the
-    // display to race ahead of the reciter.
+    if (now - this._lastAudioStatusMs >= 3000) {
+      this._lastAudioStatusMs = now;
+      console.log(`[Pipeline] Audio: source=${this.audioSource} rms=${rms.toFixed(4)} gate=${detectionGate.toFixed(4)} voice=${hasVoice} mode=${this.state.mode}`);
+      this.onStatus({ component: 'audio', status: 'active', source: this.audioSource, rms: +rms.toFixed(4), voice: hasVoice });
+    }
 
-    // PAUSED keeps listening (locked-mode audio) so Whisper tracks reciter position
     if (this.state.mode === 'LOCKED' || this.state.mode === 'PAUSED') {
-      this._lockedBuf = Buffer.concat([this._lockedBuf, pcmData]);
+      if (hasVoice) {
+        this._lockedVoicedMs += pcmMs;
+        this._lockedLastVoiceAt = now;
+      }
+      this._lockedBuf = Buffer.concat([this._lockedBuf, processedPcm]);
 
-      // Keep a rolling buffer of the last 10s of audio
       if (this._lockedBuf.length > LOCKED_MAX_BYTES) {
         this._lockedBuf = this._lockedBuf.subarray(this._lockedBuf.length - LOCKED_MAX_BYTES);
       }
 
       this._maybeProcessLockedBufferedChunk();
-    } else {
-      this._searchBuf = Buffer.concat([this._searchBuf, pcmData]);
-      const bufMs = this._searchBuf.length / BYTES_PER_MS;
+      return;
+    }
 
-      if (bufMs >= MAX_SEARCH_BUF_MS) {
-        console.log('[Pipeline] Search buffer full (30s) — resetting');
-        this._resetSearchBuf();
-        this.onStatus({ component: 'search', status: 'reset', message: 'Buffer reset — resume reciting' });
-        return;
-      }
+    if (this._searchLastVoiceAt && now - this._searchLastVoiceAt > VOICE_HANGOVER_MS && !this.processing) {
+      this._resetSearchBuf();
+    }
+    if (hasVoice) {
+      this._searchVoicedMs += pcmMs;
+      this._searchLastVoiceAt = now;
+    }
 
-      const targetMs = SEARCH_WINDOWS_MS[this._searchWinIdx];
-      if (bufMs >= targetMs && !this.processing) {
-        this._processSearchChunk();
-      }
+    this._searchBuf = Buffer.concat([this._searchBuf, processedPcm]);
+    if (this._searchVoicedMs === 0 && this._searchBuf.length > SEARCH_PREROLL_BYTES) {
+      this._searchBuf = this._searchBuf.subarray(this._searchBuf.length - SEARCH_PREROLL_BYTES);
+    }
+
+    const bufMs = this._searchBuf.length / BYTES_PER_MS;
+    if (bufMs >= MAX_SEARCH_BUF_MS) {
+      console.log('[Pipeline] Search buffer full — resetting');
+      this._resetSearchBuf();
+      this.onStatus({ component: 'search', status: 'reset', message: 'Buffer reset — resume reciting' });
+      return;
+    }
+
+    const targetMs = SEARCH_WINDOWS_MS[this._searchWinIdx];
+    const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
+      && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
+    const providerGapOk = !this.isGroqMode || !this._lastSearchCall
+      || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
+    if (bufMs >= targetMs && freshVoice && providerGapOk && !this.processing) {
+      this._processSearchChunk();
     }
   }
 
@@ -1010,12 +1155,21 @@ export class AudioPipeline {
     if (!this.active) return false;
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
     if (this._isRateLimited()) return false;
-    // Groq free tier caps at 20 RPM → tighten (5s / 1 in-flight).
-    // OpenAI has no practical RPM cap → use the faster default (4s / 2 in-flight).
+    // Groq uses non-overlapping 6s checks (10 RPM max). OpenAI keeps the
+    // faster default, but both providers require newly detected speech.
     const maxInFlight = this.isGroqMode ? 1 : LOCKED_MAX_INFLIGHT;
-    const minIntervalMs = this.isGroqMode ? 5000 : LOCKED_MIN_MS;
+    const minIntervalMs = this.isGroqMode ? Math.max(6000, LOCKED_SEND_MS) : LOCKED_MIN_MS;
     if (this._lockedInFlight >= maxInFlight || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
+    const freshVoice = this._lockedVoicedMs >= VOICE_MIN_ACTIVE_MS
+      && now - this._lockedLastVoiceAt <= VOICE_HANGOVER_MS;
+    const displayCapped = this._isDisplayCapped();
+    if (!displayCapped) this._cappedRecoveryChecks = 0;
+    const canForceRecovery = displayCapped
+      && this._cappedRecoveryChecks < CAPPED_RECOVERY_MAX_CHECKS
+      && this._lastDetectedVoiceAt > 0
+      && now - this._lastDetectedVoiceAt <= CAPPED_RECOVERY_RECENT_VOICE_MS;
+    if (!freshVoice && !canForceRecovery) return false;
     const timeSinceLastSend = this._lastLockedCall ? (now - this._lastLockedCall) : Infinity;
     if (timeSinceLastSend < minIntervalMs) return false;
 
@@ -1050,7 +1204,13 @@ export class AudioPipeline {
       if (this._sessionCapReached) return false;
     }
     const seq = ++this._lockedSeq;
+    if (!freshVoice) {
+      this._cappedRecoveryChecks++;
+      console.log(`[Pipeline] Capped recovery check ${this._cappedRecoveryChecks}/${CAPPED_RECOVERY_MAX_CHECKS}`);
+    }
     this._lastLockedCall = now;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
     this._lockedInFlight++;
     console.log(`[Pipeline] Locked chunk #${seq} ${bufMs}ms (${Math.round(chunk.length/1024)}KB) gap=${Math.round(timeSinceLastSend)}ms tail=${Math.round(LOCKED_SEND_MS / 1000)}s inFlight=${this._lockedInFlight}/${LOCKED_MAX_INFLIGHT}`);
     this._processLockedChunk(chunk, seq);
@@ -1087,6 +1247,8 @@ export class AudioPipeline {
     this._searchWinIdx = 0;
     this._arRahmanRefrainSeen = false;
     this._lastSearchTexts = [];
+    this._searchVoicedMs = 0;
+    this._searchLastVoiceAt = 0;
     this.processing    = false;
     this._searchGen    = (this._searchGen || 0) + 1;
   }
@@ -1105,32 +1267,43 @@ export class AudioPipeline {
       return;
     }
 
+    const now = Date.now();
+    const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
+      && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
+    const providerGapOk = !this.isGroqMode || !this._lastSearchCall
+      || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
+    if (!freshVoice || !providerGapOk) {
+      this.processing = false;
+      return;
+    }
+
+    // Preserve cumulative context during initial locking. A short first result
+    // may contain only a generic Quran prefix; the next call must still include
+    // that prefix plus the identifying words that followed it.
+    const sendSlice = this._searchBuf.length > SEARCH_SEND_BYTES
+      ? this._searchBuf.subarray(this._searchBuf.length - SEARCH_SEND_BYTES)
+      : this._searchBuf;
+    const searchChunk = Buffer.from(sendSlice);
+    const sendMs = Math.round(searchChunk.length / BYTES_PER_MS);
+    const rms = computeRms(searchChunk);
+    this._lastSearchCall = now;
+    this._searchVoicedMs = 0;
+    this._searchLastVoiceAt = 0;
+
     try {
-      const rms = computeRms(this._searchBuf);
-      this.onStatus({ component: 'audio', status: 'active', rms: +rms.toFixed(4) });
-
-      // G2 mic via phone runs at 0.002–0.015 RMS — well below the old 0.005 gate.
-      // The clip-guard boosts quiet chunks to ~0.08 before sending, so we can
-      // trust the transcriber to reject true silence. Apply to both providers.
-      const silenceGate = 0.002;
-      if (rms < silenceGate) {
-        console.log(`[Pipeline] Search silent (${bufMs}ms, rms=${rms.toFixed(4)})`);
-        if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
-        return;
-      }
-
-      console.log(`[Pipeline] Search ${bufMs}ms rms=${rms.toFixed(3)}, window=${this._searchWinIdx + 1}/${SEARCH_WINDOWS_MS.length}`);
-      this.onStatus({ component: 'search', status: 'transcribing', audioSec: bufMs / 1000, window: this._searchWinIdx + 1 });
+      this.onStatus({ component: 'audio', status: 'active', rms: +rms.toFixed(4), voice: true });
+      console.log(`[Pipeline] Search ${bufMs}ms buffered, sending newest ${sendMs}ms rms=${rms.toFixed(3)}, window=${this._searchWinIdx + 1}/${SEARCH_WINDOWS_MS.length}`);
+      this.onStatus({ component: 'search', status: 'transcribing', audioSec: sendMs / 1000, window: this._searchWinIdx + 1 });
 
       let text = '';
       let words = [];  // V4: Word timestamps from Whisper
       try {
-        const audioToSend = applyClipGuard(this._searchBuf, rms);
+        const audioToSend = applyClipGuard(searchChunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2);
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
         if (stale()) { console.log('[Pipeline] Stale search result discarded'); return; }
-        console.log(`[Pipeline] Whisper (${bufMs}ms): "${text.substring(0, 80)}"${words.length > 0 ? ` [${words.length} words]` : ''}`);
+        console.log(`[Pipeline] Whisper (${sendMs}ms): "${text.substring(0, 80)}"${words.length > 0 ? ` [${words.length} words]` : ''}`);
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
         this._handleTranscriptionError(err);
@@ -1350,7 +1523,13 @@ export class AudioPipeline {
       this.processing = false;
       const bufMs2 = this._searchBuf.length / BYTES_PER_MS;
       const nextTarget = SEARCH_WINDOWS_MS[this._searchWinIdx];
-      if (nextTarget && bufMs2 >= nextTarget && this.state.mode !== 'LOCKED') {
+      const now = Date.now();
+      const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
+        && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
+      const providerGapOk = !this.isGroqMode || !this._lastSearchCall
+        || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
+      if (nextTarget && bufMs2 >= nextTarget && freshVoice && providerGapOk
+          && this.state.mode !== 'LOCKED') {
         setTimeout(() => {
           if (!this.processing && this.state.mode !== 'LOCKED' && this.active) {
             this._processSearchChunk();
@@ -1381,8 +1560,7 @@ export class AudioPipeline {
 
       // When display is capped waiting for Whisper, force transcription even on quiet audio
       // so Whisper can catch up. Otherwise the display freezes indefinitely during soft passages.
-      const displayCapped = this._whisperAyah > 0
-        && (this._displayAyah - this._whisperAyah) >= this._maxDisplayLead;
+      const displayCapped = this._isDisplayCapped();
 
       const lockedSilenceGate = 0.002;
       if (rms < lockedSilenceGate && !displayCapped) {
@@ -1401,7 +1579,7 @@ export class AudioPipeline {
       let words = [];  // V4: Word timestamps from Whisper
       let resultAgeMs = 0;
       try {
-        const audioToSend = applyClipGuard(chunk, rms);
+        const audioToSend = applyClipGuard(chunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2);
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
@@ -2003,7 +2181,7 @@ export class AudioPipeline {
     // Groq silence guard: word-level timestamps let us detect when the reciter
     // is paused (emotional, breath, end-of-ayah wait). If the last heard word
     // was >3s ago, don't let the timer fire — reciter hasn't moved.
-    if (this.isFastProvider && this._lastHeardWordMs > 0 && !onLastAyah) {
+    if (this.isFastProvider && !this.taraweehMode && this._lastHeardWordMs > 0 && !onLastAyah) {
       const silenceMs = Date.now() - this._lastHeardWordMs;
       if (silenceMs > 3000) {
         if (!this._lastSilenceLogMs || (Date.now() - this._lastSilenceLogMs) > 2000) {
@@ -2015,6 +2193,13 @@ export class AudioPipeline {
     }
     return this._displaySurah > 0 && this._displayAyah > 0
       && (this.state.mode === 'LOCKED' || this.state.mode === 'RESUMING' || this.state.mode === 'SEARCHING');
+  }
+
+  _isDisplayCapped() {
+    return this._whisperSurah > 0
+      && this._whisperSurah === this._displaySurah
+      && this._whisperAyah > 0
+      && (this._displayAyah - this._whisperAyah) >= this._maxDisplayLead;
   }
 
   _scheduleReadAdvance(confidence, afterPauseMinMs = 0, durationFactor = 1.0, overrideDurationMs = 0) {
@@ -2038,7 +2223,19 @@ export class AudioPipeline {
       if (!this._blockedSince) this._blockedSince = now;
       const blockedFor = now - this._blockedSince;
       if (blockedFor < BLOCKED_FORCE_UNBLOCK_MS) {
-        console.log(`[Pipeline] Display BLOCKED: :${this._displayAyah} (whisper :${this._whisperAyah}, lead=${this._displayAyah - this._whisperAyah}, ${Math.round(blockedFor/1000)}s) — waiting for Whisper`);
+        console.log(`[Pipeline] Display BLOCKED: :${this._displayAyah} (whisper :${this._whisperAyah}, lead=${this._displayAyah - this._whisperAyah}, ${Math.round(blockedFor/1000)}s) -- waiting for Whisper`);
+        const syncWaitMs = Math.max(250, BLOCKED_FORCE_UNBLOCK_MS - blockedFor);
+        this._syncingDisplay = true;
+        this._nextAdvanceMs = syncWaitMs;
+        this._timerStartedAt = now;
+        this._displayAdvanceTimer = setTimeout(() => {
+          this._displayAdvanceTimer = null;
+          this._nextAdvanceMs = 0;
+          this._timerStartedAt = 0;
+          if (!this.active || this.state.mode !== 'LOCKED') return;
+          this._scheduleReadAdvance(confidence, afterPauseMinMs, durationFactor, overrideDurationMs);
+        }, syncWaitMs);
+        this._emitState(null, null);
         return;
       }
       // Force-unblock: assume timer-based position is correct, catch up whisperAyah
@@ -2046,9 +2243,12 @@ export class AudioPipeline {
       this._whisperSurah = this._displaySurah;
       this._whisperAyah  = this._displayAyah;
       this._blockedSince = 0;
+      this._cappedRecoveryChecks = 0;
     } else {
       this._blockedSince = 0;  // not blocked anymore
+      this._cappedRecoveryChecks = 0;
     }
+    this._syncingDisplay = false;
 
     if (confidence < READ_ADVANCE_CONFIDENCE) {
       const lingeredMs = this._ayahStartTime ? Date.now() - this._ayahStartTime : 0;
@@ -2341,6 +2541,7 @@ export class AudioPipeline {
     this._nextAdvanceMs  = 0;
     this._timerStartedAt = 0;
     this._pauseAccumMs   = 0;
+    this._syncingDisplay = false;
   }
 
   // ── Emit helpers ───────────────────────────────────────────────────────────
@@ -2550,6 +2751,7 @@ export class AudioPipeline {
           ? this.state.confidence
           : (this.state.confidence || 0) / 100,
         timerMs: this.practiceMode ? undefined : (timerMs || undefined),
+        syncing: this._syncingDisplay || undefined,
         isCandidate:     isCandidate || false,
         candidateScore:  isCandidate ? Math.round(topScore * 100) : undefined,
         candidateMargin: isCandidate ? topMargin : undefined,
