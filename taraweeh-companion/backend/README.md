@@ -10,12 +10,14 @@ npm install
 
 ## API Keys
 
-Transcription uses **Groq** (`whisper-large-v3-turbo`) and/or **OpenAI** (`whisper-1`). Users can bring their own key in the app, or you can host shared keys:
+Transcription uses **Groq**, **Deepgram**, **ElevenLabs**, and/or **OpenAI**. Auto mode failsover when one engine rate-limits.
 
 | Variable | Required | Where to get |
 |----------|----------|--------------|
 | `SHARED_GROQ_KEY` | For free/shared mode | [console.groq.com/keys](https://console.groq.com/keys) |
-| `SHARED_OPENAI_KEY` | Failover when Groq 429s | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `SHARED_DEEPGRAM_KEY` | Recommended failover | [console.deepgram.com](https://console.deepgram.com/) |
+| `SHARED_ELEVENLABS_KEY` | Recommended failover | [elevenlabs.io API keys](https://elevenlabs.io/app/settings/api-keys) |
+| `SHARED_OPENAI_KEY` | Recommended failover | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | `GEMINI_API_KEY` | No (Pro) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 | `MAX_MIN_PER_SESSION` | No | Cap shared-key sessions (default `90` min) |
 | `MOBILE_ONLY_MODE` | No | `true` enforces phone mic in UI |
@@ -31,7 +33,7 @@ npm run start
 SHARED_GROQ_KEY=gsk_xxx SHARED_OPENAI_KEY=sk_xxx npm run start
 ```
 
-Without shared keys, users must enter their own Groq or OpenAI key in **Settings → Use my own key**.
+Without shared keys, users must enter their own Groq, Deepgram, ElevenLabs, or OpenAI key in **Settings → Use my own key**.
 
 ## Data
 

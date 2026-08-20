@@ -317,18 +317,17 @@ export class AudioPipeline {
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
-    // Provider flags — strict, one true at a time:
-    //   isGroqMode      → Groq-only behaviour (RPM throttle, 20% timer cushion)
-    //   isOpenAIMode    → OpenAI-only behaviour (no throttle, no cushion)
-    //   isFastProvider  → either BYOK provider (low-latency, word timestamps,
-    //                     reciter-hold, lower anchor thresholds, faster catch-up)
-    // The HF / public-fallback path is the implicit default for none-of-above.
+    // Provider flags:
+    //   isGroqMode      → Groq-only RPM throttle (skip when failover exists)
+    //   isFastProvider  → Groq/OpenAI/Deepgram/ElevenLabs/auto (word timestamps)
     const _provider = this.whisperOpts?.provider || '';
-    this.isGroqMode       = _provider === 'groq';
+    const _fastSet = new Set(['groq', 'openai', 'deepgram', 'elevenlabs', 'auto', 'shared']);
+    this.hasFailover      = !!this.whisperOpts?.failoverAvailable;
+    this.isGroqMode       = _provider === 'groq' && !this.hasFailover;
     this.isOpenAIMode     = _provider === 'openai';
-    this.isFastProvider   = this.isGroqMode || this.isOpenAIMode;
+    this.isFastProvider   = _fastSet.has(_provider) || this.hasFailover;
     this.isHFMode         = !this.isFastProvider;
-    console.log(`[Pipeline] Constructed — provider=${_provider || 'default(hf)'}, fast=${this.isFastProvider}, groq=${this.isGroqMode}, openai=${this.isOpenAIMode}`);
+    console.log(`[Pipeline] Constructed — provider=${_provider || 'default(hf)'}, fast=${this.isFastProvider}, groqThrottle=${this.isGroqMode}, failover=${this.hasFailover}`);
 
     this.state     = createState();
     this.active    = false;
@@ -558,17 +557,36 @@ export class AudioPipeline {
   setVerseHoldMode(enabled) { this.setPracticeMode(enabled); }
 
   _handleTranscriptionError(err) {
-    if (err && (err.status === 429 || /HTTP 429/.test(err.message || ''))) {
-      // Use server-supplied hint, clamped to [5s, 60s]. We never want to
-      // freeze longer than a minute even on day-cap 429s — user can see the
-      // Model pill "Groq: rate-limited Xs" and decide to stop/retry.
-      const hintMs = err.retryAfterMs || 0;
-      const waitMs = Math.max(5000, Math.min(hintMs || 15000, 60000));
-      this._rateLimitedUntilMs = Date.now() + waitMs;
-      console.warn(`[Pipeline] Groq 429 — cooldown ${Math.round(waitMs/1000)}s before next request`);
-      this.onStatus({ component: 'model', status: 'error', provider: 'groq',
-        message: `Rate limit — waiting ${Math.round(waitMs/1000)}s`, retryAfterMs: waitMs, httpStatus: 429 });
+    if (!err) return;
+    const is429 = err.status === 429 || /HTTP 429|rate.?limit/i.test(err.message || '');
+    if (!is429) return;
+    // Failover already tried every configured provider. Only freeze the
+    // pipeline when nothing else can serve this chunk.
+    if (this.hasFailover) {
+      console.warn(`[Pipeline] All providers exhausted on 429 — brief 3s pause then retry`);
+      this._rateLimitedUntilMs = Date.now() + 3000;
+      this.onStatus({
+        component: 'model',
+        status: 'error',
+        provider: this.whisperOpts?._stickyProvider || this.whisperOpts?.provider || 'auto',
+        message: 'All STT providers rate-limited — retrying shortly',
+        retryAfterMs: 3000,
+        httpStatus: 429,
+      });
+      return;
     }
+    const hintMs = err.retryAfterMs || 0;
+    const waitMs = Math.max(5000, Math.min(hintMs || 15000, 60000));
+    this._rateLimitedUntilMs = Date.now() + waitMs;
+    console.warn(`[Pipeline] 429 — cooldown ${Math.round(waitMs / 1000)}s before next request`);
+    this.onStatus({
+      component: 'model',
+      status: 'error',
+      provider: this.whisperOpts?.provider || 'groq',
+      message: `Rate limit — waiting ${Math.round(waitMs / 1000)}s`,
+      retryAfterMs: waitMs,
+      httpStatus: 429,
+    });
   }
 
   _isRateLimited() {
@@ -1192,14 +1210,14 @@ export class AudioPipeline {
         console.log(`[Pipeline] Session at ${Math.round(pct * 100)}% of shared-mode cap (~${minLeft}min left)`);
         this.onStatus({ type: 'session_quota', component: 'quota', status: 'warn',
           usedMs: this._sessionAudioMs, capMs: this._sessionCapMs, minLeft,
-          message: `Approaching free-session limit (~${minLeft} min left). Add your own Groq key in Settings for unlimited use.` });
+          message: `Approaching free-session limit (~${minLeft} min left). Add your own STT key in Settings for unlimited use.` });
       }
       if (pct >= 1.0 && !this._sessionCapReached) {
         this._sessionCapReached = true;
         console.log(`[Pipeline] Session shared-mode cap reached — refusing further chunks`);
         this.onStatus({ type: 'session_quota', component: 'quota', status: 'error',
           usedMs: this._sessionAudioMs, capMs: this._sessionCapMs,
-          message: 'Free-session limit reached. Add your own Groq key in Settings to continue.' });
+          message: 'Free-session limit reached. Add your own STT key in Settings to continue.' });
       }
       if (this._sessionCapReached) return false;
     }

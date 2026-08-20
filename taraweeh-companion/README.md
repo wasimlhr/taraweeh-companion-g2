@@ -126,13 +126,12 @@ Create a `.env` file in `backend/`:
 
 ```env
 SHARED_GROQ_KEY=gsk_your_groq_key_here
+SHARED_DEEPGRAM_KEY=your_deepgram_key_here
+SHARED_ELEVENLABS_KEY=your_elevenlabs_key_here
 SHARED_OPENAI_KEY=sk_your_openai_key_here
-
-# Optional: Gemini for non-Quran detection
-# GEMINI_API_KEY=your_gemini_key
 ```
 
-Users can also bring their own Groq or OpenAI key in **Settings → Use my own key**.
+Users can also bring their own Groq, Deepgram, ElevenLabs, or OpenAI key in **Settings → Use my own key**.
 
 ### Run
 
@@ -143,6 +142,11 @@ npm run backend:dev
 The server starts on:
 - `http://localhost:3001` (HTTP)
 - `https://localhost:3443` (HTTPS — needed for mic access on LAN)
+
+```bash
+npm run evenhub:download   # EvenHub CLI + G2 simulator
+npm run sim                # glasses simulator → http://localhost:3001
+```
 
 ### Connect G2 Glasses
 
@@ -181,9 +185,11 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 | Provider | Model | Notes |
 |----------|-------|-------|
-| **Groq** (primary) | `whisper-large-v3-turbo` | Fast; shared key tried first |
-| **OpenAI** (failover) | `whisper-1` | Automatic failover when Groq rate-limits |
-| **BYOK** | Either | User key in app settings — uncapped |
+| **Groq** | `whisper-large-v3-turbo` | Quran-strong; free-tier RPM limits |
+| **Deepgram** | `nova-3` Arabic | Fast spoken Arabic failover |
+| **ElevenLabs** | `scribe_v2` | 90+ languages |
+| **OpenAI** | `whisper-1` | Automatic failover when others rate-limit |
+| **Auto / BYOK** | chain | User or shared keys; skips rate-limited engines |
 
 Set `SHARED_GROQ_KEY` and `SHARED_OPENAI_KEY` for free/shared mode (`MAX_MIN_PER_SESSION` caps sessions, default 90 min).
 

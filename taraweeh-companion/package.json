@@ -1,23 +1,25 @@
 {
   "name": "taraweeh-companion",
-  "version": "2.6.7",
+  "version": "2.6.8",
   "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {
     "postinstall": "cd backend && npm install",
     "start": "cd backend && npm run start",
     "backend:dev": "cd backend && npm run dev",
-    "qr": "npx @evenrealities/evenhub-cli@0.1.12 qr --http --port 3001",
-    "qr:url": "npx @evenrealities/evenhub-cli@0.1.12 qr --url",
+    "qr": "npx @evenrealities/evenhub-cli@0.1.14 qr --http --port 3001",
+    "qr:url": "npx @evenrealities/evenhub-cli@0.1.14 qr --url",
     "qr:railway": "node scripts/qr-web-url.js https://taraweeh.up.railway.app --png",
     "kill-backend": "node scripts/kill-port-3001.js",
-    "sim": "node node_modules/@evenrealities/evenhub-simulator/bin/index.js http://localhost:3001",
+    "evenhub:download": "node scripts/download-evenhub-tools.js",
+    "sim": "node scripts/run-evenhub-simulator.js http://localhost:3001",
     "simulator": "npm run sim",
     "live-monitor": "powershell -ExecutionPolicy Bypass -File scripts/live-monitor.ps1",
     "download-quran-db": "node scripts/download-quran-db.js",
     "build:evenhub": "node scripts/build-evenhub-dist.js",
     "pack:evenhub": "node scripts/pack-evenhub.js",
-    "pack:evenhub:check": "node scripts/pack-evenhub.js --check"
+    "pack:evenhub:check": "node scripts/pack-evenhub.js --check",
+    "test": "node --test backend/transcriptionRouter.test.js"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.10",
@@ -28,7 +30,7 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "@evenrealities/evenhub-cli": "^0.1.12",
-    "@evenrealities/evenhub-simulator": "^0.7.3"
+    "@evenrealities/evenhub-cli": "^0.1.14",
+    "@evenrealities/evenhub-simulator": "^0.9.0"
   }
 }

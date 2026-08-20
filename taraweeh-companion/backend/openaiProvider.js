@@ -5,6 +5,7 @@
  * Docs: https://platform.openai.com/docs/api-reference/audio/createTranscription
  */
 import { pcmToWav } from './pcmToWav.js';
+import { httpError } from './httpRetry.js';
 
 const OPENAI_URL = 'https://api.openai.com/v1/audio/transcriptions';
 const OPENAI_MODEL = 'whisper-1';
@@ -42,16 +43,7 @@ export async function transcribeWithOpenAI(pcmBuffer, apiKey, emit = null) {
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    const msg = `OpenAI HTTP ${res.status}: ${body.slice(0, 200)}`;
-    const retryAfterHdr = res.headers.get('retry-after') || '';
-    let retryAfterSec = parseInt(retryAfterHdr, 10);
-    if (!Number.isFinite(retryAfterSec) || retryAfterSec <= 0) {
-      const m = body.match(/try again in\s+(?:(\d+)m)?(\d+(?:\.\d+)?)s/i);
-      if (m) retryAfterSec = Math.ceil((parseInt(m[1] || '0', 10) * 60) + parseFloat(m[2]));
-    }
-    const err = new Error(msg);
-    err.status = res.status;
-    err.retryAfterMs = (Number.isFinite(retryAfterSec) && retryAfterSec > 0) ? retryAfterSec * 1000 : 0;
+    const err = httpError('OpenAI', res, body);
     emit?.({ component: 'model', status: 'error', provider: 'openai', message: body.slice(0, 100), retryAfterMs: err.retryAfterMs, httpStatus: res.status });
     throw err;
   }

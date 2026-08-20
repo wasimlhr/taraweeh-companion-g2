@@ -2,7 +2,7 @@
   "package_id": "com.taraweehcompanion.g2",
   "edition": "202601",
   "name": "Quran Companion",
-  "version": "2.6.7",
+  "version": "2.6.8",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.10",
   "entrypoint": "index.html",
@@ -18,8 +18,12 @@
         "wss://taraweeh.up.railway.app/ws",
         "https://api.groq.com",
         "https://api.openai.com",
+        "https://api.deepgram.com",
+        "https://api.elevenlabs.io",
         "https://console.groq.com",
-        "https://platform.openai.com"
+        "https://platform.openai.com",
+        "https://console.deepgram.com",
+        "https://elevenlabs.io"
       ]
     },
     {

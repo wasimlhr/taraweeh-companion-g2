@@ -125,15 +125,17 @@ cd backend && npm install && cd ..
 Create a `.env` file in `taraweeh-companion/backend/`:
 
 ```env
-# Shared keys for free mode (Groq first, OpenAI failover on rate limit)
+# Shared keys for free mode (Auto failsover on rate limits)
 SHARED_GROQ_KEY=gsk_your_groq_key_here
+SHARED_DEEPGRAM_KEY=your_deepgram_key_here
+SHARED_ELEVENLABS_KEY=your_elevenlabs_key_here
 SHARED_OPENAI_KEY=sk_your_openai_key_here
 
 # Optional: Gemini for non-Quran detection (tasbeeh, takbeer)
 # GEMINI_API_KEY=your_gemini_key
 ```
 
-Users can also bring their own Groq or OpenAI key in **Settings → Use my own key** — no server env vars needed for BYOK.
+Users can also bring their own Groq, Deepgram, ElevenLabs, or OpenAI key in **Settings → Use my own key**.
 
 ### Run
 
@@ -168,7 +170,7 @@ Open `https://<your-lan-ip>:3443` in your phone browser (accept the self-signed 
 
 ## Deployment
 
-Users need to **host the app** (backend + frontend). Transcription runs via **Groq** and **OpenAI** Whisper APIs — no GPU hosting required.
+Users need to **host the app** (backend + frontend). Transcription runs via Groq, Deepgram, ElevenLabs, or OpenAI — no GPU hosting required.
 
 ### 1. Host the app
 
@@ -176,7 +178,7 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 | Platform | Notes |
 |----------|-------|
-| **Railway** | One-click from GitHub. Add `SHARED_GROQ_KEY` and/or `SHARED_OPENAI_KEY` in Variables. |
+| **Railway** | One-click from GitHub. Add `SHARED_GROQ_KEY`, `SHARED_DEEPGRAM_KEY`, `SHARED_ELEVENLABS_KEY`, and/or `SHARED_OPENAI_KEY` in Variables. |
 | **Render** | Web Service, set env vars in dashboard |
 | **Fly.io** | `fly launch` then `fly secrets set SHARED_GROQ_KEY=... SHARED_OPENAI_KEY=...` |
 
@@ -188,18 +190,23 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 | Provider | Model | Notes |
 |----------|-------|-------|
-| **Groq** (primary) | `whisper-large-v3-turbo` | Fast, generous free tier; shared key tried first |
-| **OpenAI** (failover) | `whisper-1` | Used automatically when Groq rate-limits (429) |
-| **BYOK** | Either | User supplies their own key in app settings — uncapped |
+| **Auto** (default) | failover chain | Groq → Deepgram → ElevenLabs → OpenAI; skips rate-limited engines |
+| **Groq** | `whisper-large-v3-turbo` | Usually best on Quran recitation; free tier ~20 RPM |
+| **Deepgram** | `nova-3` Arabic | Fast spoken Arabic; good when Groq is capped |
+| **ElevenLabs** | `scribe_v2` | 90+ languages, word timestamps |
+| **OpenAI** | `whisper-1` | Slower, more reliable quota |
+| **BYOK** | any of the above | Paste keys in Settings; Auto failsover across the keys you paste |
 
-Set `SHARED_GROQ_KEY` and `SHARED_OPENAI_KEY` on the server for free/shared mode. Sessions are capped at `MAX_MIN_PER_SESSION` minutes (default 90) to protect the budget.
+Set any `SHARED_*_KEY` on the server for free/shared mode. Sessions are capped at `MAX_MIN_PER_SESSION` minutes (default 90). Use **Settings → Compare providers** to see which engine hears a short recitation best.
 
 ### 3. Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SHARED_GROQ_KEY` | For shared mode | [Groq API key](https://console.groq.com/keys) |
-| `SHARED_OPENAI_KEY` | Recommended | [OpenAI API key](https://platform.openai.com/api-keys) — failover on Groq 429 |
+| `SHARED_DEEPGRAM_KEY` | Recommended | [Deepgram API key](https://console.deepgram.com/) |
+| `SHARED_ELEVENLABS_KEY` | Recommended | [ElevenLabs API key](https://elevenlabs.io/app/settings/api-keys) |
+| `SHARED_OPENAI_KEY` | Recommended | [OpenAI API key](https://platform.openai.com/api-keys) |
 | `MAX_MIN_PER_SESSION` | No | Shared-mode session cap in minutes (default `90`) |
 | `GEMINI_API_KEY` | No | Optional non-Quran detection |
 | `PORT` | No | Default 3001 |
@@ -284,22 +291,33 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 |---|---|
 | **Frontend** | Vanilla HTML/CSS/JS (single file), Amiri Arabic font, Even Hub SDK |
 | **Backend** | Node.js, Express, WebSocket (`ws`), ES Modules |
-| **ASR** | OpenAI Whisper via Groq (`whisper-large-v3-turbo`) and OpenAI (`whisper-1`) |
+| **ASR** | Groq Whisper, Deepgram Nova-3 Arabic, ElevenLabs Scribe v2, OpenAI Whisper |
 | **Quran Data** | Local JSON (quran-json format), 6,236 ayahs with Arabic text |
 | **Display Data** | Local JSON with transliterations (Sahih International) and translations |
 | **Glasses** | Even Realities G2 via `@evenrealities/even_hub_sdk` |
-| **Dev Tools** | `@evenrealities/evenhub-cli` (QR codes), `evenhub-simulator` |
+| **Dev Tools** | `@evenrealities/evenhub-cli` 0.1.14 (QR codes), `@evenrealities/evenhub-simulator` 0.9.0 |
 
 ---
 
 ## Transcription
 
-The app uses standard **OpenAI Whisper** models via hosted APIs:
+The app can use several hosted STT engines. **Auto** (default) tries them in order and skips anyone who is rate-limited:
 
-- **Groq** — `whisper-large-v3-turbo` (primary; low latency, word-level timestamps)
-- **OpenAI** — `whisper-1` (failover when Groq rate-limits, or BYOK choice)
+- **Groq** — `whisper-large-v3-turbo` (usually strongest on Quran recitation; free-tier RPM limits)
+- **Deepgram** — `nova-3` Arabic (fast spoken Arabic)
+- **ElevenLabs** — `scribe_v2` (90+ languages, word timestamps)
+- **OpenAI** — `whisper-1` (slower, more stable quota)
 
-Arabic transcription is passed to the local keyword matcher against the full Quran corpus. No HuggingFace token is required.
+Arabic text is passed to the local keyword matcher against the full Quran corpus. Use **Settings → Compare providers** with a 4-second recitation to see which engine hears you best.
+
+### EvenHub simulator
+
+```bash
+npm run evenhub:download   # CLI 0.1.14 + simulator 0.9.0
+npm run backend:dev        # terminal 1
+npm run sim                # terminal 2 — G2 glasses simulator at http://localhost:3001
+npm run qr                 # QR for the real Even Hub iPhone app
+```
 
 ---
 
