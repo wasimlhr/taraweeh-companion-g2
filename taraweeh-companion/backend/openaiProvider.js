@@ -14,9 +14,10 @@ const OPENAI_MODEL = 'whisper-1';
  * @param {Buffer} pcmBuffer    - Raw PCM S16LE 16kHz mono
  * @param {string} apiKey       - User's OpenAI API key (sk-...)
  * @param {Function} [emit]     - status callback
+ * @param {{ prompt?: string }} [extra]
  * @returns {Promise<{text: string, words: Array, provider: 'openai'}>}
  */
-export async function transcribeWithOpenAI(pcmBuffer, apiKey, emit = null) {
+export async function transcribeWithOpenAI(pcmBuffer, apiKey, emit = null, extra = {}) {
   if (!apiKey) {
     throw new Error('OpenAI API key missing. Set it in app settings.');
   }
@@ -31,6 +32,7 @@ export async function transcribeWithOpenAI(pcmBuffer, apiKey, emit = null) {
   form.append('timestamp_granularities[]', 'word');
   form.append('timestamp_granularities[]', 'segment');
   form.append('temperature', '0');
+  if (extra.prompt) form.append('prompt', extra.prompt);
 
   emit?.({ component: 'model', status: 'pending', provider: 'openai' });
 

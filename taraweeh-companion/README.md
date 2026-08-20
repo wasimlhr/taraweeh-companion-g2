@@ -131,7 +131,7 @@ SHARED_ELEVENLABS_KEY=your_elevenlabs_key_here
 SHARED_OPENAI_KEY=sk_your_openai_key_here
 ```
 
-Users can also bring their own Groq, Deepgram, ElevenLabs, or OpenAI key in **Settings → Use my own key**.
+Users can also bring their own Groq or OpenAI key in **Settings → Use my own key**. Each engine recognizes verses independently.
 
 ### Run
 
@@ -185,20 +185,19 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 | Provider | Model | Notes |
 |----------|-------|-------|
-| **Groq** | `whisper-large-v3-turbo` | Quran-strong; free-tier RPM limits |
-| **Deepgram** | `nova-3` Arabic | Fast spoken Arabic failover |
-| **ElevenLabs** | `scribe_v2` | 90+ languages |
-| **OpenAI** | `whisper-1` | Automatic failover when others rate-limit |
-| **Auto / BYOK** | chain | User or shared keys; skips rate-limited engines |
+| **Groq** | `whisper-large-v3-turbo` | Independent engine; fast Quranic Arabic |
+| **OpenAI** | `whisper-1` | Independent engine; same matcher, own quota |
+| **Deepgram** | `nova-3` Arabic | Optional extra engine (not a backup) |
+| **ElevenLabs** | `scribe_v2` | Optional extra engine (not a backup) |
 
-Set `SHARED_GROQ_KEY` and `SHARED_OPENAI_KEY` for free/shared mode (`MAX_MIN_PER_SESSION` caps sessions, default 90 min).
+Set `SHARED_GROQ_KEY` and/or `SHARED_OPENAI_KEY` for free/shared mode (`MAX_MIN_PER_SESSION` caps sessions, default 90 min). Pick Groq or OpenAI in the app — nothing failsover.
 
 ### 3. Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SHARED_GROQ_KEY` | For shared mode | [Groq API key](https://console.groq.com/keys) |
-| `SHARED_OPENAI_KEY` | Recommended | [OpenAI API key](https://platform.openai.com/api-keys) — failover on Groq 429 |
+| `SHARED_OPENAI_KEY` | For shared OpenAI mode | [OpenAI API key](https://platform.openai.com/api-keys) — independent of Groq |
 | `MAX_MIN_PER_SESSION` | No | Shared-mode session cap in minutes (default `90`) |
 | `G2_SPLASH_IMAGE_DATA_URL` | No | Optional base64 image (`data:image/jpeg;base64,...`) for glasses startup splash; ignored unless `G2_STARTUP_SPLASH_ENABLED=true` |
 | `G2_STARTUP_SPLASH_ENABLED` | `false` | Enables image-container startup splash path on glasses; keep `false` for text-only startup stability |
@@ -264,10 +263,10 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | `WHISPER_ENDPOINT_URL` | — | Legacy dedicated Whisper endpoint |
 | `MODAL_KEY` / `MODAL_SECRET` | — | Legacy Modal proxy auth |
 | `SHARED_GROQ_KEY` | — | Server-held Groq key for free/shared mode |
-| `SHARED_OPENAI_KEY` | — | Server-held OpenAI key; failover when Groq 429s |
+| `SHARED_OPENAI_KEY` | — | Server-held OpenAI key; independent engine |
 | `MAX_MIN_PER_SESSION` | `90` | Shared-mode session cap (minutes) |
 | `GEMINI_API_KEY` | — | Google Gemini API key (optional non-Quran detection) |
-| `TRANSCRIPTION_PROVIDER` | `groq` | `groq`, `openai`, `gemini`, or legacy `whisper` |
+| `TRANSCRIPTION_PROVIDER` | `groq` | `groq` or `openai` (independent engines; optional `deepgram` / `elevenlabs`) |
 | `PORT` | `3001` | HTTP server port |
 | `HTTPS_PORT` | `3443` | HTTPS server port |
 | `READ_ADVANCE_CONFIDENCE` | `40` | Minimum confidence (%) for timer-based advance |

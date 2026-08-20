@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.8</span>
+      <span class="version" id="versionEl">v2.6.9</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -937,11 +937,10 @@ body {
   <!-- Transcription provider switch (main screen) -->
   <div style="margin-top:8px">
     <div class="mv-toggle-group" role="group" aria-label="Transcription provider" style="flex-wrap:wrap">
-      <button type="button" class="mv-toggle-btn active" id="btnProviderAutoMain" onclick="setProvider('auto')">Auto</button>
-      <button type="button" class="mv-toggle-btn" id="btnProviderGroqMain" onclick="setProvider('groq')">Groq</button>
+      <button type="button" class="mv-toggle-btn active" id="btnProviderGroqMain" onclick="setProvider('groq')">Groq</button>
+      <button type="button" class="mv-toggle-btn" id="btnProviderOpenAIMain" onclick="setProvider('openai')">OpenAI</button>
       <button type="button" class="mv-toggle-btn" id="btnProviderDeepgramMain" onclick="setProvider('deepgram')">Deepgram</button>
       <button type="button" class="mv-toggle-btn" id="btnProviderElevenMain" onclick="setProvider('elevenlabs')">ElevenLabs</button>
-      <button type="button" class="mv-toggle-btn" id="btnProviderOpenAIMain" onclick="setProvider('openai')">OpenAI</button>
     </div>
   </div>
 
@@ -1048,24 +1047,22 @@ body {
         <button type="button" class="toggle-btn" id="btnModeBYOK" onclick="setKeyMode('byok')">Use my own key</button>
       </div>
       <div id="sharedHint" style="margin-top:8px;padding:10px 12px;background:var(--bc-2);border-radius:var(--r);font-size:12px;line-height:1.55;color:var(--tc-1)">
-        <b>Free mode</b> uses shared keys as <i>sadaka jariya</i> (~90 min/session). <b>Auto</b> tries Groq, then Deepgram, ElevenLabs, and OpenAI when one hits a rate limit — the session no longer freezes.<br><br>
-        For unlimited use, switch to <b>"Use my own key"</b> and paste keys. Auto still failsover across the keys you paste.
+        <b>Free mode</b> uses a shared Groq or OpenAI key as <i>sadaka jariya</i> (~90 min/session). Pick <b>Groq</b> or <b>OpenAI</b> — each engine recognizes verses on its own. Nothing is a backup.<br><br>
+        For unlimited use, switch to <b>"Use my own key"</b> and paste the key for the engine you selected.
       </div>
 
       <div id="byokSection" style="display:none;margin-top:12px">
         <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-          <button type="button" class="toggle-btn active" id="btnProviderAuto" onclick="setProvider('auto')">Auto</button>
-          <button type="button" class="toggle-btn" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
+          <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
+          <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
           <button type="button" class="toggle-btn" id="btnProviderDeepgram" onclick="setProvider('deepgram')">Deepgram</button>
           <button type="button" class="toggle-btn" id="btnProviderEleven" onclick="setProvider('elevenlabs')">ElevenLabs</button>
-          <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
         </div>
         <span class="s-hint" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
-          <b>Auto</b> — pick the first engine that works; skip rate limits.<br>
-          <b>Groq</b> <code>whisper-large-v3-turbo</code> — usually best on Quran, but free-tier 20 RPM.<br>
-          <b>Deepgram</b> <code>nova-3</code> Arabic — fast spoken Arabic, fewer RPM traps.<br>
-          <b>ElevenLabs</b> <code>scribe_v2</code> — 90+ languages, word timestamps.<br>
-          <b>OpenAI</b> <code>whisper-1</code> — slower, more reliable quota.
+          Each engine is independent — pick one and it must lock verses on its own.<br>
+          <b>Groq</b> <code>whisper-large-v3-turbo</code> — fast Quranic Arabic.<br>
+          <b>OpenAI</b> <code>whisper-1</code> — same matcher, its own key and quota.<br>
+          <b>Deepgram</b> / <b>ElevenLabs</b> — optional extra engines, not backups.
         </span>
         <div id="groqKeyRow">
           <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
@@ -1113,7 +1110,7 @@ body {
       </div>
       <div style="margin-top:12px">
         <button type="button" class="back-btn btn-arrow" onclick="compareSttProviders()" style="font-size:13px">Compare providers (4s recitation)</button>
-        <span class="s-hint" id="compareSttResult" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">Recite a short ayah, then tap Compare. Runs every configured engine (your keys and/or shared keys) in parallel so you can see what works best.</span>
+        <span class="s-hint" id="compareSttResult" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">Optional: recite a short ayah, then tap Compare. Runs each configured engine independently so you can see which one you want to use — not a backup chain.</span>
       </div>
     </div>
   </div>
@@ -1158,7 +1155,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.8';
+  const APP_VERSION = 'v2.6.9';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1535,7 +1532,7 @@ body {
     openaiApiKey: '',
     deepgramApiKey: '',
     elevenlabsApiKey: '',
-    transcriptionProvider: 'auto',
+    transcriptionProvider: 'groq',
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
   };
 
@@ -1544,10 +1541,11 @@ body {
     return ALLOWED_PIPELINES.has(normalized) ? normalized : 'v4';
   }
 
-  var STT_PROVIDERS = ['auto', 'groq', 'deepgram', 'elevenlabs', 'openai'];
+  var STT_PROVIDERS = ['groq', 'openai', 'deepgram', 'elevenlabs'];
   function sanitizeProvider(p) {
     p = String(p || '').toLowerCase();
-    return STT_PROVIDERS.indexOf(p) >= 0 ? p : 'auto';
+    if (p === 'auto' || p === 'shared') return 'groq';
+    return STT_PROVIDERS.indexOf(p) >= 0 ? p : 'groq';
   }
   function sttPayload() {
     var byok = S.settings.keyMode === 'byok';
@@ -1561,7 +1559,7 @@ body {
   }
   function providerLabel(p) {
     p = sanitizeProvider(p);
-    return p === 'auto' ? 'Auto' : p === 'groq' ? 'Groq' : p === 'deepgram' ? 'Deepgram' : p === 'elevenlabs' ? 'ElevenLabs' : 'OpenAI';
+    return p === 'groq' ? 'Groq' : p === 'deepgram' ? 'Deepgram' : p === 'elevenlabs' ? 'ElevenLabs' : 'OpenAI';
   }
 
   // Stable per-install session ID. Backend uses this to dedup duplicate WS
@@ -1694,7 +1692,7 @@ body {
           // (Keep whatever state the pill was in.)
           break;
         case 'ready':
-          setPill('sPillModel', 'ok', 'Ready · ' + providerLabel(s.provider || _modelProvider || 'auto'));
+          setPill('sPillModel', 'ok', 'Ready · ' + providerLabel(s.provider || _modelProvider || 'groq'));
           document.getElementById('sPillEndpoint').style.display = 'none';
           if (!S.isRecording) setStatus('Ready to listen — tap Start Listening', 'result');
           break;
@@ -1706,13 +1704,8 @@ body {
           setStatus('Backend fell back to public HF — your selected provider is not being used', 'err');
           break;
         case 'error':
-          var provLbl = providerLabel(s.provider || _modelProvider || 'auto');
+          var provLbl = providerLabel(s.provider || _modelProvider || 'groq');
           var detail = s.message ? (' — ' + s.message) : '';
-          if (s.failover) {
-            setPill('sPillModel', 'warn', provLbl + ' → next engine');
-            setStatus(provLbl + ' hit a limit — switching engine', 'result');
-            break;
-          }
           if (s.httpStatus === 429 && s.retryAfterMs > 0) {
             var waitS = Math.ceil(s.retryAfterMs / 1000);
             setPill('sPillModel', 'warn', provLbl + ': rate limit — ' + waitS + 's');
@@ -3166,9 +3159,7 @@ body {
     if (S.settings.keyMode === 'byok') {
       var provSel = sanitizeProvider(S.settings.transcriptionProvider);
       var keys = sttPayload();
-      var keyForProv = provSel === 'auto'
-        ? (keys.groqApiKey || keys.deepgramApiKey || keys.elevenlabsApiKey || keys.openaiApiKey)
-        : (keys[provSel === 'elevenlabs' ? 'elevenlabsApiKey' : provSel + 'ApiKey'] || '');
+      var keyForProv = keys[provSel === 'elevenlabs' ? 'elevenlabsApiKey' : provSel + 'ApiKey'] || '';
       if (!keyForProv) {
         setStatus(providerLabel(provSel) + ' API key required — opening settings', 'warn');
         if (typeof log === 'function') log('No STT key set — open Settings and enter one', 'warn');
@@ -3430,7 +3421,7 @@ body {
 
   // Free vs BYOK key mode. Shared mode = no client key sent → backend uses
   // SHARED_GROQ_KEY/SHARED_OPENAI_KEY env vars and enforces the per-session
-  // minute cap. BYOK = user's own key, no cap, no failover.
+  // minute cap. BYOK = user's own key, no cap. Each engine is independent.
   window.setKeyMode = function (m, reinitialize) {
     m = (m === 'byok') ? 'byok' : 'shared';
     S.settings.keyMode = m;
@@ -3452,11 +3443,10 @@ body {
     S.settings.transcriptionProvider = p;
     try { saveSettings(); } catch (_) {}
     var ids = {
-      auto: ['btnProviderAuto', 'btnProviderAutoMain'],
       groq: ['btnProviderGroq', 'btnProviderGroqMain'],
+      openai: ['btnProviderOpenAI', 'btnProviderOpenAIMain'],
       deepgram: ['btnProviderDeepgram', 'btnProviderDeepgramMain'],
       elevenlabs: ['btnProviderEleven', 'btnProviderElevenMain'],
-      openai: ['btnProviderOpenAI', 'btnProviderOpenAIMain'],
     };
     STT_PROVIDERS.forEach(function (name) {
       (ids[name] || []).forEach(function (id) {
@@ -3464,15 +3454,14 @@ body {
         if (el) el.classList.toggle('active', name === p);
       });
     });
-    var showAllKeys = (p === 'auto');
     var gRow = document.getElementById('groqKeyRow');
     var dRow = document.getElementById('deepgramKeyRow');
     var eRow = document.getElementById('elevenKeyRow');
     var oRow = document.getElementById('openaiKeyRow');
-    if (gRow) gRow.style.display = (showAllKeys || p === 'groq') ? '' : 'none';
-    if (dRow) dRow.style.display = (showAllKeys || p === 'deepgram') ? '' : 'none';
-    if (eRow) eRow.style.display = (showAllKeys || p === 'elevenlabs') ? '' : 'none';
-    if (oRow) oRow.style.display = (showAllKeys || p === 'openai') ? '' : 'none';
+    if (gRow) gRow.style.display = (p === 'groq') ? '' : 'none';
+    if (dRow) dRow.style.display = (p === 'deepgram') ? '' : 'none';
+    if (eRow) eRow.style.display = (p === 'elevenlabs') ? '' : 'none';
+    if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
     if (reinitialize !== false && S.ws && S.ws.readyState === WebSocket.OPEN) {
       reinitPipeline();
       log('Provider → ' + providerLabel(p), 'ok');
@@ -3747,13 +3736,12 @@ body {
     S.settings.deepgramApiKey = dgEl ? (dgEl.value || '').trim() : (S.settings.deepgramApiKey || '');
     var elEl = document.getElementById('settingElevenKey');
     S.settings.elevenlabsApiKey = elEl ? (elEl.value || '').trim() : (S.settings.elevenlabsApiKey || '');
-    var activeProv = 'auto';
+    var activeProv = 'groq';
     var provBtnIds = {
-      auto: 'btnProviderAuto',
       groq: 'btnProviderGroq',
+      openai: 'btnProviderOpenAI',
       deepgram: 'btnProviderDeepgram',
       elevenlabs: 'btnProviderEleven',
-      openai: 'btnProviderOpenAI',
     };
     STT_PROVIDERS.forEach(function (name) {
       var btn = document.getElementById(provBtnIds[name]);

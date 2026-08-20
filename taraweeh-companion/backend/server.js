@@ -14,7 +14,7 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { loadQuran } from './keywordMatcher.js';
 import { buildMushafIndex } from './mushafIndex.js';
-import { closeTranscription, PROVIDER, sharedKeyAvailability, failoverAvailable, compareProviders, probeProviderKey, STT_CHAIN } from './transcriptionRouter.js';
+import { closeTranscription, PROVIDER, sharedKeyAvailability, compareProviders, probeProviderKey, STT_ENGINES } from './transcriptionRouter.js';
 import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
 import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
@@ -100,7 +100,7 @@ app.get('/api/status', (req, res) => {
   const shared = sharedKeyAvailability();
   const modelName = usesLegacyWhisper
     ? (ep ? 'whisper-quran (dedicated)' : 'whisper-quran-v1 (legacy HF)')
-    : 'auto failover: groq / deepgram / elevenlabs / openai';
+    : 'independent engines: groq / openai (optional deepgram / elevenlabs)';
   res.json({
     groqConfigured: shared.groq,
     openaiConfigured: shared.openai,
@@ -112,7 +112,7 @@ app.get('/api/status', (req, res) => {
     provider: PROVIDER,
     model: modelName,
     transcription: HAS_ANY_SHARED_KEY ? 'shared-keys' : 'byok',
-    sttChain: STT_CHAIN,
+    sttEngines: STT_ENGINES,
     legacyWhisperConfigured: usesLegacyWhisper,
     endpointOnDemandEnabled: ENDPOINT_ON_DEMAND_ENABLED,
     mobileOnlyMode: MOBILE_ONLY_MODE,
@@ -127,7 +127,7 @@ app.get('/api/status', (req, res) => {
 app.post('/api/transcription/test-key', async (req, res) => {
   const provider = String(req.body?.provider || '').toLowerCase();
   const apiKey = String(req.body?.apiKey || '').trim();
-  if (!STT_CHAIN.includes(provider)) {
+  if (!STT_ENGINES.includes(provider)) {
     return res.status(400).json({ ok: false, message: 'Unknown provider' });
   }
   try {
@@ -272,10 +272,10 @@ wss.on('connection', (ws, req) => {
     const Ctor = pipelineVersion === 'v3' ? AudioPipelineV3 : AudioPipelineV4;
 
     let whisperOpts = buildWhisperOpts();
-    const allowedProviders = new Set(['auto', 'groq', 'deepgram', 'elevenlabs', 'openai']);
+    const allowedProviders = new Set(['auto', 'groq', 'openai', 'deepgram', 'elevenlabs']);
     const clientProvider = allowedProviders.has(opts?.transcriptionProvider)
       ? opts.transcriptionProvider
-      : 'auto';
+      : 'groq';
     const groqKey = (typeof opts?.groqApiKey === 'string') ? opts.groqApiKey.trim() : '';
     const openaiKey = (typeof opts?.openaiApiKey === 'string') ? opts.openaiApiKey.trim() : '';
     const deepgramKey = (typeof opts?.deepgramApiKey === 'string') ? opts.deepgramApiKey.trim() : '';
@@ -292,18 +292,17 @@ wss.on('connection', (ws, req) => {
       elevenlabsApiKey: elevenlabsKey,
       sharedMode: useSharedMode,
     };
-    whisperOpts.failoverAvailable = failoverAvailable(whisperOpts);
 
     if (useSharedMode) {
       const shared = sharedKeyAvailability();
-      console.log(`[Init] SHARED auto-failover — groq=${shared.groq} deepgram=${shared.deepgram} elevenlabs=${shared.elevenlabs} openai=${shared.openai}`);
-      send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'auto', byok: false });
+      console.log(`[Init] SHARED independent engine — requested=${clientProvider} groq=${shared.groq} openai=${shared.openai}`);
+      send({ type: 'sys_status', component: 'model', status: 'ready', provider: clientProvider === 'auto' ? 'groq' : clientProvider, byok: false });
     } else if (hasByok) {
-      console.log(`[Init] BYOK provider=${clientProvider} failover=${whisperOpts.failoverAvailable}`);
-      send({ type: 'sys_status', component: 'model', status: 'ready', provider: clientProvider, byok: true });
+      console.log(`[Init] BYOK independent engine provider=${clientProvider}`);
+      send({ type: 'sys_status', component: 'model', status: 'ready', provider: clientProvider === 'auto' ? 'groq' : clientProvider, byok: true });
     } else {
       console.log('[Init] No API key and no shared keys configured — transcribe will fail');
-      send({ type: 'sys_status', component: 'model', status: 'error', provider: clientProvider, message: 'API key required (Groq, Deepgram, ElevenLabs, or OpenAI)' });
+      send({ type: 'sys_status', component: 'model', status: 'error', provider: clientProvider, message: 'API key required (Groq or OpenAI)' });
     }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
     const translationLang = sanitizeTranslationLang(requestedTranslation);
@@ -439,7 +438,7 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   if (LAN_IP !== 'localhost') console.log(`HTTP  → http://${LAN_IP}:${PORT}`);
   const shared = sharedKeyAvailability();
   if (!HAS_ANY_SHARED_KEY) {
-    console.log('No SHARED_*_KEY env vars — users must supply Groq, Deepgram, ElevenLabs, or OpenAI in app settings');
+    console.log('No SHARED_*_KEY env vars — users must supply Groq or OpenAI in app settings');
   } else {
     console.log(`Transcription shared keys: groq=${shared.groq} deepgram=${shared.deepgram} elevenlabs=${shared.elevenlabs} openai=${shared.openai}`);
   }

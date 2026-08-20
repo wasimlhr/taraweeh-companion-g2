@@ -1,9 +1,8 @@
 /**
- * Transcription router — Groq / Deepgram / ElevenLabs / OpenAI with sticky failover.
+ * Transcription router — Groq and OpenAI are independent engines.
+ * Deepgram / ElevenLabs remain optional selectable engines (never backups).
  *
- * Default provider is env-configured: TRANSCRIPTION_PROVIDER=auto (default),
- * groq, deepgram, elevenlabs, openai, gemini, or whisper.
- *
+ * Default provider: TRANSCRIPTION_PROVIDER=groq
  * Per-session override: whisperOpts.provider + per-provider keys, or sharedMode.
  */
 import { transcribeWithWhisper } from './whisperProvider.js';
@@ -12,12 +11,12 @@ import { transcribeWithGroq } from './groqProvider.js';
 import { transcribeWithOpenAI } from './openaiProvider.js';
 import { transcribeWithDeepgram, probeDeepgramKey } from './deepgramProvider.js';
 import { transcribeWithElevenLabs, probeElevenLabsKey } from './elevenlabsProvider.js';
-import { isRetryableStatus } from './httpRetry.js';
+import { buildWhisperPrompt } from './whisperPrompt.js';
 
-export const PROVIDER = (process.env.TRANSCRIPTION_PROVIDER || 'auto').toLowerCase();
-export const STT_CHAIN = ['groq', 'deepgram', 'elevenlabs', 'openai'];
-
-const cooldowns = new Map(); // provider -> untilMs
+export const PROVIDER = (process.env.TRANSCRIPTION_PROVIDER || 'groq').toLowerCase();
+export const STT_ENGINES = ['groq', 'openai', 'deepgram', 'elevenlabs'];
+/** @deprecated use STT_ENGINES — kept so older imports do not break */
+export const STT_CHAIN = STT_ENGINES;
 
 console.log(`[Transcription] Default provider: ${PROVIDER}`);
 
@@ -55,55 +54,45 @@ export function collectKeys(whisperOpts = {}) {
   return byok;
 }
 
-export function failoverAvailable(whisperOpts = {}) {
-  const keys = collectKeys(whisperOpts);
-  return STT_CHAIN.filter((p) => keys[p]).length >= 2;
+/**
+ * Pick exactly one engine. `auto` / `shared` resolve to the first configured
+ * engine (Groq, then OpenAI) — still a single engine, never a failover chain.
+ */
+export function resolveProvider(requested, keys = {}) {
+  const req = String(requested || PROVIDER || 'groq').toLowerCase();
+  if (req === 'gemini' || req === 'whisper') return req;
+  if (STT_ENGINES.includes(req) && req !== 'auto') return req;
+  for (const name of ['groq', 'openai', 'deepgram', 'elevenlabs']) {
+    if (keys[name]) return name;
+  }
+  return 'groq';
 }
 
-function isCooling(provider) {
-  const until = cooldowns.get(provider) || 0;
-  return until > Date.now();
+function engineLabel(name) {
+  return name === 'groq' ? 'Groq'
+    : name === 'openai' ? 'OpenAI'
+    : name === 'deepgram' ? 'Deepgram'
+    : name === 'elevenlabs' ? 'ElevenLabs'
+    : name;
 }
 
-function setCooldown(provider, retryAfterMs) {
-  const wait = Math.max(5000, Math.min(retryAfterMs || 15000, 60000));
-  cooldowns.set(provider, Date.now() + wait);
-  return wait;
-}
-
-export function _resetCooldownsForTests() {
-  cooldowns.clear();
-}
-
-function buildChain(preferred) {
-  const start = STT_CHAIN.includes(preferred) ? preferred : 'groq';
-  return [start, ...STT_CHAIN.filter((p) => p !== start)];
-}
-
-function shouldRetry(err) {
-  if (!err) return false;
-  if (err.retryable) return true;
-  if (isRetryableStatus(err.status)) return true;
-  return /HTTP 429|rate.?limit|ECONNRESET|ETIMEDOUT|fetch failed/i.test(err.message || '');
-}
-
-async function callProvider(name, pcmBuffer, apiKey, emit) {
+async function callProvider(name, pcmBuffer, apiKey, emit, extra = {}) {
   switch (name) {
     case 'groq':
-      return transcribeWithGroq(pcmBuffer, apiKey, emit);
+      return transcribeWithGroq(pcmBuffer, apiKey, emit, extra);
     case 'deepgram':
       return transcribeWithDeepgram(pcmBuffer, apiKey, emit);
     case 'elevenlabs':
       return transcribeWithElevenLabs(pcmBuffer, apiKey, emit);
     case 'openai':
-      return transcribeWithOpenAI(pcmBuffer, apiKey, emit);
+      return transcribeWithOpenAI(pcmBuffer, apiKey, emit, extra);
     default:
       throw new Error(`Unknown STT provider: ${name}`);
   }
 }
 
 /**
- * Transcribe a PCM audio chunk to Arabic text with sticky failover.
+ * Transcribe a PCM audio chunk with exactly one selected engine.
  *
  * @param {Buffer} pcmBuffer
  * @param {object|string} [whisperOpts]
@@ -120,67 +109,29 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
   }
 
   const keys = collectKeys(opts);
-  const requested = String(opts.provider || PROVIDER || 'auto').toLowerCase();
-  const preferred = (requested === 'auto' || requested === 'shared')
-    ? (opts._stickyProvider || 'groq')
-    : requested;
-  const chain = buildChain(preferred).filter((p) => keys[p]);
-
-  if (!chain.length) {
-    throw new Error('No transcription API key configured. Add Groq, Deepgram, ElevenLabs, or OpenAI in Settings, or set a SHARED_*_KEY env var.');
+  const name = resolveProvider(opts.provider, keys);
+  const apiKey = keys[name] || '';
+  if (!apiKey) {
+    throw new Error(`${engineLabel(name)} API key missing. Add it in Settings, or set SHARED_${name.toUpperCase()}_KEY.`);
   }
 
-  const ready = chain.filter((p) => !isCooling(p));
-  const order = ready.length ? ready : chain;
-
-  const errors = [];
-  for (const name of order) {
-    if (isCooling(name) && order.length > 1) {
-      console.log(`[Transcription] Skipping ${name} (cooldown)`);
-      continue;
-    }
-    try {
-      const result = await callProvider(name, pcmBuffer, keys[name], emit);
-      opts._stickyProvider = name;
-      return result;
-    } catch (err) {
-      errors.push(err);
-      if (shouldRetry(err) && order.length > 1) {
-        const wait = setCooldown(name, err.retryAfterMs);
-        console.log(`[Transcription] ${name} failed (${err.status || err.message}) — failover in ${Math.round(wait / 1000)}s cooldown`);
-        emit?.({
-          component: 'model',
-          status: 'error',
-          provider: name,
-          message: `failing over (${err.status || 'error'})`,
-          retryAfterMs: wait,
-          httpStatus: err.status || 0,
-          failover: true,
-        });
-        continue;
-      }
-      // Auth errors on a specifically chosen BYOK provider should surface.
-      if (requested === name && requested !== 'auto' && !opts.sharedMode) {
-        throw err;
-      }
-      if (order.length > 1) {
-        console.log(`[Transcription] ${name} error — trying next provider: ${err.message?.slice(0, 80)}`);
-        continue;
-      }
-      throw err;
-    }
-  }
-
-  const last = errors[errors.length - 1];
-  throw last || new Error('All transcription providers failed or are rate-limited');
+  const extra = {
+    prompt: opts.prompt || buildWhisperPrompt({
+      lastTranscript: opts.lastTranscript || '',
+      ayahText: opts.ayahText || '',
+    }),
+  };
+  return callProvider(name, pcmBuffer, apiKey, emit, extra);
 }
 
 export async function compareProviders(pcmBuffer, whisperOpts, emit = null) {
   const keys = collectKeys(whisperOpts || {});
-  const jobs = STT_CHAIN.filter((p) => keys[p]).map(async (name) => {
+  const jobs = STT_ENGINES.filter((p) => keys[p]).map(async (name) => {
     const t0 = Date.now();
     try {
-      const result = await callProvider(name, pcmBuffer, keys[name], emit);
+      const result = await callProvider(name, pcmBuffer, keys[name], emit, {
+        prompt: buildWhisperPrompt(),
+      });
       return {
         provider: name,
         ok: true,

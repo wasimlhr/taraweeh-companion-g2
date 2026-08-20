@@ -9,11 +9,12 @@
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { transcribe } from './transcriptionRouter.js';
+import { transcribe, collectKeys, resolveProvider } from './transcriptionRouter.js';
 import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah } from './anchorStateMachine.js';
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
 import { findAnchor, isRefrain, getAyah } from './keywordMatcher.js';
+import { buildWhisperPrompt } from './whisperPrompt.js';
 
 // ── Word-level corpus data (morphology + tajweed weights) ───────────────────
 const __dirname_v4 = dirname(fileURLToPath(import.meta.url));
@@ -51,15 +52,18 @@ const SAMPLE_RATE      = 16000;
 const BYTES_PER_SAMPLE = 2;
 const BYTES_PER_MS     = (SAMPLE_RATE * BYTES_PER_SAMPLE) / 1000;
 
-// Start at 3s for fast first lock; same logic continues in locked (3s chunks).
-const SEARCH_WINDOWS_MS = [3000, 5000, 8000, 12000, 20000];
+// First search at 2s so lock can happen on the opening words; later windows
+// accumulate so the matcher gets enough unique tokens without extra STT engines.
+const SEARCH_WINDOWS_MS = [2000, 4000, 7000, 12000, 20000];
 const MAX_SEARCH_BUF_MS = 35000;
 const SEARCH_SEND_MS = parseInt(process.env.SEARCH_SEND_MS || '12000', 10);
 const SEARCH_PREROLL_MS = parseInt(process.env.SEARCH_PREROLL_MS || '1000', 10);
 
 const VOICE_MIN_ACTIVE_MS = parseInt(process.env.VOICE_MIN_ACTIVE_MS || '500', 10);
 const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '2500', 10);
-const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '4000', 10);
+// 2.5s search gap ≈ 24 RPM only during the brief unlock phase. Once locked we
+// drop to ~15 RPM. Starving search at 4–6s is what prevented lock (and caused 429s).
+const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '2500', 10);
 const SEARCH_SEND_BYTES = Math.floor(BYTES_PER_MS * SEARCH_SEND_MS);
 const SEARCH_PREROLL_BYTES = Math.floor(BYTES_PER_MS * SEARCH_PREROLL_MS);
 // Practice: pause after a shown verse → next recitation is a fresh global search (surah jumps).
@@ -108,10 +112,12 @@ function normalizeAudioSource(source) {
   return Object.prototype.hasOwnProperty.call(AUDIO_SOURCE_PROFILES, normalized) ? normalized : 'g2';
 }
 
-// Use 3s chunks continuously (same as search start) — faster feedback, consistent logic
-const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '4000', 10);
+// Locked: send a 6s tail at least every ~3.2s. Groq stays 1-in-flight at 3.5s
+// (~17 RPM) so free-tier 20 RPM is not the bottleneck — matching is.
+const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '3200', 10);
 const LOCKED_MAX_MS    = parseInt(process.env.LOCKED_MAX_MS    || '10000', 10);
 const LOCKED_SEND_MS   = parseInt(process.env.LOCKED_SEND_MS   || '6000', 10);
+const GROQ_LOCKED_MIN_INTERVAL_MS = parseInt(process.env.GROQ_LOCKED_MIN_INTERVAL_MS || '3500', 10);
 // 3s chunks → 4 misses = 12s (too fast). 12 misses ≈ 36s, similar to 10s chunks × 4.
 // 2s chunks → 16 misses ≈ 32s before resuming (same effective time as 12 × 3s)
 const MISSED_BEFORE_RESUMING_V3 = parseInt(process.env.MISSED_BEFORE_RESUMING_V3 || '16', 10);
@@ -317,17 +323,19 @@ export class AudioPipeline {
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
-    // Provider flags:
-    //   isGroqMode      → Groq-only RPM throttle (skip when failover exists)
-    //   isFastProvider  → Groq/OpenAI/Deepgram/ElevenLabs/auto (word timestamps)
-    const _provider = this.whisperOpts?.provider || '';
-    const _fastSet = new Set(['groq', 'openai', 'deepgram', 'elevenlabs', 'auto', 'shared']);
-    this.hasFailover      = !!this.whisperOpts?.failoverAvailable;
-    this.isGroqMode       = _provider === 'groq' && !this.hasFailover;
+    // Each engine is independent. Groq uses a slightly wider send gap so free-tier
+    // 20 RPM is not exceeded *after* lock; search is not starved.
+    const _keys = collectKeys(this.whisperOpts || {});
+    const _provider = resolveProvider(this.whisperOpts?.provider, _keys);
+    const _fastSet = new Set(['groq', 'openai', 'deepgram', 'elevenlabs']);
+    this.resolvedProvider = _provider;
+    this.hasFailover      = false;
+    this.isGroqMode       = _provider === 'groq';
     this.isOpenAIMode     = _provider === 'openai';
-    this.isFastProvider   = _fastSet.has(_provider) || this.hasFailover;
+    this.isFastProvider   = _fastSet.has(_provider);
     this.isHFMode         = !this.isFastProvider;
-    console.log(`[Pipeline] Constructed — provider=${_provider || 'default(hf)'}, fast=${this.isFastProvider}, groqThrottle=${this.isGroqMode}, failover=${this.hasFailover}`);
+    this._lastPromptText  = '';
+    console.log(`[Pipeline] Constructed — provider=${_provider}, fast=${this.isFastProvider}, groqThrottle=${this.isGroqMode}`);
 
     this.state     = createState();
     this.active    = false;
@@ -556,33 +564,32 @@ export class AudioPipeline {
   // Legacy alias
   setVerseHoldMode(enabled) { this.setPracticeMode(enabled); }
 
+  _applyWhisperPrompt() {
+    if (!this.whisperOpts || typeof this.whisperOpts !== 'object') return;
+    let ayahText = '';
+    if (this.state?.mode === 'LOCKED' && this.state.surah > 0 && this.state.ayah > 0) {
+      ayahText = getAyah(this.state.surah, this.state.ayah)?.text || '';
+    }
+    this.whisperOpts.prompt = buildWhisperPrompt({
+      lastTranscript: this._lastPromptText || '',
+      ayahText,
+    });
+  }
+
   _handleTranscriptionError(err) {
     if (!err) return;
     const is429 = err.status === 429 || /HTTP 429|rate.?limit/i.test(err.message || '');
     if (!is429) return;
-    // Failover already tried every configured provider. Only freeze the
-    // pipeline when nothing else can serve this chunk.
-    if (this.hasFailover) {
-      console.warn(`[Pipeline] All providers exhausted on 429 — brief 3s pause then retry`);
-      this._rateLimitedUntilMs = Date.now() + 3000;
-      this.onStatus({
-        component: 'model',
-        status: 'error',
-        provider: this.whisperOpts?._stickyProvider || this.whisperOpts?.provider || 'auto',
-        message: 'All STT providers rate-limited — retrying shortly',
-        retryAfterMs: 3000,
-        httpStatus: 429,
-      });
-      return;
-    }
+    // Short pause only — long 15–60s freezes were a byproduct of failed lock
+    // (search kept retrying). Faster lock is the real fix.
     const hintMs = err.retryAfterMs || 0;
-    const waitMs = Math.max(5000, Math.min(hintMs || 15000, 60000));
+    const waitMs = Math.max(3000, Math.min(hintMs || 8000, 12000));
     this._rateLimitedUntilMs = Date.now() + waitMs;
     console.warn(`[Pipeline] 429 — cooldown ${Math.round(waitMs / 1000)}s before next request`);
     this.onStatus({
       component: 'model',
       status: 'error',
-      provider: this.whisperOpts?.provider || 'groq',
+      provider: this.resolvedProvider || this.whisperOpts?.provider || 'groq',
       message: `Rate limit — waiting ${Math.round(waitMs / 1000)}s`,
       retryAfterMs: waitMs,
       httpStatus: 429,
@@ -1173,10 +1180,11 @@ export class AudioPipeline {
     if (!this.active) return false;
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
     if (this._isRateLimited()) return false;
-    // Groq uses non-overlapping 6s checks (10 RPM max). OpenAI keeps the
-    // faster default, but both providers require newly detected speech.
+    // Groq: 1 in-flight at ~3.5s ≈ 17 RPM (under free-tier 20). OpenAI can overlap.
     const maxInFlight = this.isGroqMode ? 1 : LOCKED_MAX_INFLIGHT;
-    const minIntervalMs = this.isGroqMode ? Math.max(6000, LOCKED_SEND_MS) : LOCKED_MIN_MS;
+    const minIntervalMs = this.isGroqMode
+      ? Math.max(GROQ_LOCKED_MIN_INTERVAL_MS, LOCKED_MIN_MS)
+      : LOCKED_MIN_MS;
     if (this._lockedInFlight >= maxInFlight || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
     const freshVoice = this._lockedVoicedMs >= VOICE_MIN_ACTIVE_MS
@@ -1317,9 +1325,11 @@ export class AudioPipeline {
       let words = [];  // V4: Word timestamps from Whisper
       try {
         const audioToSend = applyClipGuard(searchChunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2);
+        this._applyWhisperPrompt();
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
+        if (text) this._lastPromptText = text;
         if (stale()) { console.log('[Pipeline] Stale search result discarded'); return; }
         console.log(`[Pipeline] Whisper (${sendMs}ms): "${text.substring(0, 80)}"${words.length > 0 ? ` [${words.length} words]` : ''}`);
       } catch (err) {
@@ -1407,9 +1417,7 @@ export class AudioPipeline {
       // split the refrain; combined "فبأي آلاء" + "ربكما تكذبان" scores better.
       this._lastSearchTexts.push(cleaned);
       if (this._lastSearchTexts.length > 3) this._lastSearchTexts.shift();
-      const combined = this._lastSearchTexts.length >= 2
-        ? this._lastSearchTexts.slice(-2).join(' ')
-        : cleaned;
+      const combined = this._lastSearchTexts.join(' ');
 
       // Ar-Rahman (55): once we detect the refrain "فأي الأء ربكما تكذبان", we know surah 55.
       // Ignore WEAK content matches (they cause false locks); but allow STRONG content matches
@@ -1598,9 +1606,11 @@ export class AudioPipeline {
       let resultAgeMs = 0;
       try {
         const audioToSend = applyClipGuard(chunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2);
+        this._applyWhisperPrompt();
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
+        if (text) this._lastPromptText = text;
         resultAgeMs = Date.now() - startedAt;
       } catch (err) {
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));

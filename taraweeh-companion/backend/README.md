@@ -10,14 +10,14 @@ npm install
 
 ## API Keys
 
-Transcription uses **Groq**, **Deepgram**, **ElevenLabs**, and/or **OpenAI**. Auto mode failsover when one engine rate-limits.
+Transcription uses **Groq** or **OpenAI** independently. Pick one engine; it must lock verses on its own (nothing is a backup).
 
 | Variable | Required | Where to get |
 |----------|----------|--------------|
-| `SHARED_GROQ_KEY` | For free/shared mode | [console.groq.com/keys](https://console.groq.com/keys) |
-| `SHARED_DEEPGRAM_KEY` | Recommended failover | [console.deepgram.com](https://console.deepgram.com/) |
-| `SHARED_ELEVENLABS_KEY` | Recommended failover | [elevenlabs.io API keys](https://elevenlabs.io/app/settings/api-keys) |
-| `SHARED_OPENAI_KEY` | Recommended failover | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `SHARED_GROQ_KEY` | For free/shared Groq | [console.groq.com/keys](https://console.groq.com/keys) |
+| `SHARED_OPENAI_KEY` | For free/shared OpenAI | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `SHARED_DEEPGRAM_KEY` | Optional extra engine | [console.deepgram.com](https://console.deepgram.com/) |
+| `SHARED_ELEVENLABS_KEY` | Optional extra engine | [elevenlabs.io API keys](https://elevenlabs.io/app/settings/api-keys) |
 | `GEMINI_API_KEY` | No (Pro) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 | `MAX_MIN_PER_SESSION` | No | Cap shared-key sessions (default `90` min) |
 | `MOBILE_ONLY_MODE` | No | `true` enforces phone mic in UI |

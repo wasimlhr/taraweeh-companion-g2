@@ -1,11 +1,17 @@
 # Changelog
 
+## 2.6.9 - 2026-08-20
+
+- Groq and OpenAI each recognize recitation independently. Nothing is a backup; Auto failover is gone.
+- Faster first lock: search starts at 2s (was 3s), Groq search gap 2.5s (was 4s), locked Groq checks every ~3.5s (was 6s). The 6s starve is what made matching fail and then hit rate limits.
+- Quranic Whisper `prompt` plus last-transcript continuation on Groq and OpenAI so Arabic tokens land in the matcher sooner.
+- First distinctive hit can lock (single-win 0.42 / margin 8) instead of waiting for a second 4–6s window.
+- Rate-limit pauses cap at 12s. 429s are a byproduct of failed lock, not the product bug.
+
 ## 2.6.8 - 2026-08-20
 
-- Groq rate-limits no longer freeze the session: Auto mode failsover to Deepgram, ElevenLabs, then OpenAI and sticks with the provider that works.
-- Added Deepgram Nova-3 Arabic and ElevenLabs Scribe v2 as selectable STT engines, plus a "Compare providers" mic test.
-- Stopped applying Groq's 6s RPM throttle when another engine is available (that throttle is what made matching feel broken).
 - Download Even Realities EvenHub simulator + CLI with `npm run evenhub:download` / `npm run sim` (simulator 0.9.0, CLI 0.1.14).
+- Optional Deepgram / ElevenLabs engines remain selectable independently (not used as failover).
 
 ## 2.6.7 - 2026-07-21
 

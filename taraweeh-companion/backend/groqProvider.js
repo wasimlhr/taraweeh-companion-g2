@@ -1,6 +1,6 @@
 /**
  * Groq Whisper provider — sends WAV audio to Groq's whisper-large-v3-turbo endpoint.
- * Used when user supplies their own Groq API key (free tier: ~6k requests/day).
+ * Used when user supplies their own Groq API key (free tier: 20 RPM / 2000 RPD).
  *
  * Docs: https://console.groq.com/docs/speech-text
  */
@@ -14,9 +14,10 @@ const GROQ_MODEL = 'whisper-large-v3-turbo';
  * @param {Buffer} pcmBuffer    - Raw PCM S16LE 16kHz mono
  * @param {string} apiKey       - User's Groq API key (gsk_...)
  * @param {Function} [emit]     - status callback
+ * @param {{ prompt?: string }} [extra]
  * @returns {Promise<{text: string, words: Array, provider: 'groq'}>}
  */
-export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null) {
+export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null, extra = {}) {
   if (!apiKey) {
     throw new Error('Groq API key missing. Set it in app settings.');
   }
@@ -31,6 +32,7 @@ export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null) {
   form.append('timestamp_granularities[]', 'word');   // word-level timestamps for silence / repeat detection
   form.append('timestamp_granularities[]', 'segment');
   form.append('temperature', '0');
+  if (extra.prompt) form.append('prompt', extra.prompt);
 
   emit?.({ component: 'model', status: 'pending', provider: 'groq' });
 
