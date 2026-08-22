@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.10</span>
+      <span class="version" id="versionEl">v2.6.11</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1053,11 +1053,17 @@ body {
         <div style="display:flex;gap:6px;margin-bottom:8px">
           <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
           <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
+          <button type="button" class="toggle-btn" id="btnProviderDeepgram" onclick="setProvider('deepgram')">Deepgram</button>
         </div>
         <span class="s-hint" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
-          <b>Groq</b> <code>whisper-large-v3-turbo</code> — fast (~300ms), free tier 20 RPM.<br>
-          <b>OpenAI</b> <code>whisper-1</code> — slower (~500ms), no RPM cap, $0.006/min.
+          Measured on real recitation, all three keep the verse within one ayah.<br>
+          <b>Groq</b> — fastest (~350ms) and cheapest, but 20 req/min and 2,000/day.<br>
+          <b>OpenAI</b> — no practical rate limit, dearer.<br>
+          <b>Deepgram</b> — ~450ms, keeps word timings, priced between the two.
         </span>
+        <label class="s-lbl" for="settingTranscribeModel">Model</label>
+        <select id="settingTranscribeModel" onchange="setTranscribeModel(this.value)"></select>
+        <span class="s-hint" id="modelHint" style="font-size:11px;display:block;margin:6px 0 10px;line-height:1.5"></span>
         <div id="groqKeyRow">
           <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
@@ -1076,6 +1082,12 @@ body {
           </div>
           <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
             <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get an OpenAI key →</a>
+          </span>
+        </div>
+        <div id="deepgramKeyRow" style="margin-top:10px;display:none">
+          <input id="settingDeepgramKey" type="password" placeholder="Deepgram API key" autocomplete="off" spellcheck="false" />
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
+            <a href="https://console.deepgram.com/" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a Deepgram key →</a>
           </span>
         </div>
         <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
@@ -1125,7 +1137,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.10';
+  const APP_VERSION = 'v2.6.11';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1500,7 +1512,9 @@ body {
     keyMode: 'shared',      // 'shared' = use server-held free key; 'byok' = user key
     groqApiKey: '',         // Groq API key (only used when keyMode='byok')
     openaiApiKey: '',       // OpenAI API key (only used when keyMode='byok')
-    transcriptionProvider: 'groq',  // BYOK provider: 'groq' or 'openai'
+    deepgramApiKey: '',     // Deepgram API key (only used when keyMode='byok')
+    transcriptionProvider: 'groq',  // BYOK provider: 'groq', 'openai' or 'deepgram'
+    transcriptionModel: '',         // per-provider model; '' = provider default
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
   };
 
@@ -1536,7 +1550,7 @@ body {
       merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
       merged.lang = sanitizeTranslationLang(merged.lang);
       // Providers: 'groq' | 'openai'. Anything else (incl. legacy 'whisper') → groq.
-      if (merged.transcriptionProvider !== 'groq' && merged.transcriptionProvider !== 'openai') {
+      if (['groq', 'openai', 'deepgram'].indexOf(merged.transcriptionProvider) < 0) {
         merged.transcriptionProvider = 'groq';
       }
       delete merged.whisperUnlocked;
@@ -2524,8 +2538,10 @@ body {
         practiceMode: _practiceMode,
         taraweehMode: _taraweehMode,
         transcriptionProvider: S.settings.transcriptionProvider || 'groq',
+        transcriptionModel: S.settings.transcriptionModel || null,
         groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
         openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
+        deepgramApiKey: (S.settings.keyMode === 'byok' ? (S.settings.deepgramApiKey || '').trim() : '') || null,
       }));
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -3127,9 +3143,9 @@ body {
     // mode uses server-held keys — no precheck needed (backend will tell us
     // via sys_status if neither shared key is configured).
     if (S.settings.keyMode === 'byok') {
-      var provSel = S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq';
-      var keyForProv = provSel === 'openai'
-        ? (S.settings.openaiApiKey || '').trim()
+      var provSel = S.settings.transcriptionProvider || 'groq';
+      var keyForProv = provSel === 'openai' ? (S.settings.openaiApiKey || '').trim()
+        : provSel === 'deepgram' ? (S.settings.deepgramApiKey || '').trim()
         : (S.settings.groqApiKey || '').trim();
       if (!keyForProv) {
         var pLabel = provSel === 'openai' ? 'OpenAI' : 'Groq';
@@ -3310,6 +3326,8 @@ body {
           if (gKey && !gKey.value) gKey.value = S.settings.groqApiKey || '';
           var oKey = document.getElementById('settingOpenAIKey');
           if (oKey && !oKey.value) oKey.value = S.settings.openaiApiKey || '';
+          var dKey = document.getElementById('settingDeepgramKey');
+          if (dKey && !dKey.value) dKey.value = S.settings.deepgramApiKey || '';
           var lang = document.getElementById('settingLang');
           if (lang) lang.value = sanitizeTranslationLang(S.settings.lang || '');
           var surah = document.getElementById('settingSurah');
@@ -3317,7 +3335,7 @@ body {
           var pipe = document.getElementById('settingPipeline');
           if (pipe) pipe.value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
           if (typeof setProvider === 'function')
-            setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq', false);
+            setProvider(S.settings.transcriptionProvider || 'groq', false);
         } catch (_) {}
         // Theme may have been overwritten by bridge value too.
         var t = Storage.getItem('qc_theme');
@@ -3406,6 +3424,60 @@ body {
     log('Key mode: ' + (m === 'shared' ? 'Free (shared)' : 'My own key'), 'ok');
   };
 
+  // Mirrors ALLOWED_MODELS in server.js. Notes are measured, not marketing:
+  // latency is the median observed end to end on real recitation.
+  var TRANSCRIBE_MODELS = {
+    groq: [
+      { id: 'whisper-large-v3-turbo', label: 'whisper-large-v3-turbo (default)',
+        note: 'Fastest measured: ~350ms, word timings, ~$0.12 per 90min session.' },
+      { id: 'whisper-large-v3', label: 'whisper-large-v3',
+        note: 'Slightly lower error rate than turbo, ~3x the price.' },
+    ],
+    openai: [
+      { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe (default)',
+        note: '~450ms and half the price of whisper-1. No word timings, which tracking does not need.' },
+      { id: 'gpt-transcribe', label: 'gpt-transcribe',
+        note: "OpenAI's newer default. ~465ms, no word timings." },
+      { id: 'gpt-4o-transcribe', label: 'gpt-4o-transcribe',
+        note: '~1.4s, no word timings. Higher accuracy claim than mini.' },
+      { id: 'whisper-1', label: 'whisper-1 (legacy)',
+        note: 'The only OpenAI model returning word timings, but ~1.25s and dearest.' },
+    ],
+    deepgram: [
+      { id: 'nova-3', label: 'nova-3 (default)',
+        note: "~450ms with word timings. Deepgram's own Arabic model." },
+      { id: 'whisper-large', label: 'whisper-large',
+        note: 'Deepgram-hosted Whisper. Similar latency, Whisper transcripts.' },
+    ],
+  };
+
+  function refreshModelChoices() {
+    var p = S.settings.transcriptionProvider || 'groq';
+    var list = TRANSCRIBE_MODELS[p] || [];
+    var sel = document.getElementById('settingTranscribeModel');
+    var hint = document.getElementById('modelHint');
+    if (!sel) return;
+    // A model chosen for one provider is meaningless for another.
+    var ids = list.map(function (m) { return m.id; });
+    if (ids.indexOf(S.settings.transcriptionModel) < 0) S.settings.transcriptionModel = list[0] ? list[0].id : '';
+    sel.innerHTML = list.map(function (m) {
+      return '<option value="' + m.id + '"' + (m.id === S.settings.transcriptionModel ? ' selected' : '') + '>' + m.label + '</option>';
+    }).join('');
+    var cur = list.filter(function (m) { return m.id === S.settings.transcriptionModel; })[0];
+    if (hint) hint.textContent = cur ? cur.note : '';
+  }
+  window.refreshModelChoices = refreshModelChoices;
+
+  window.setTranscribeModel = function (id) {
+    S.settings.transcriptionModel = id || '';
+    saveSettings();
+    refreshModelChoices();
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      setProvider(S.settings.transcriptionProvider || 'groq', true);
+    }
+    log('Model -> ' + (id || 'default'), 'ok');
+  };
+
   window.setProvider = function (p, reinitialize) {
     p = (p === 'openai') ? 'openai' : 'groq';
     S.settings.transcriptionProvider = p;
@@ -3413,17 +3485,22 @@ body {
     // Settings view
     var gBtn = document.getElementById('btnProviderGroq');
     var oBtn = document.getElementById('btnProviderOpenAI');
+    var dBtn = document.getElementById('btnProviderDeepgram');
     if (gBtn) gBtn.classList.toggle('active', p === 'groq');
     if (oBtn) oBtn.classList.toggle('active', p === 'openai');
-    // Main view
+    if (dBtn) dBtn.classList.toggle('active', p === 'deepgram');
+    // Main view has no Deepgram button; light neither when Deepgram is picked.
     var gBtnM = document.getElementById('btnProviderGroqMain');
     var oBtnM = document.getElementById('btnProviderOpenAIMain');
     if (gBtnM) gBtnM.classList.toggle('active', p === 'groq');
     if (oBtnM) oBtnM.classList.toggle('active', p === 'openai');
     var gRow = document.getElementById('groqKeyRow');
     var oRow = document.getElementById('openaiKeyRow');
+    var dRow = document.getElementById('deepgramKeyRow');
     if (gRow) gRow.style.display = (p === 'groq') ? '' : 'none';
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
+    if (dRow) dRow.style.display = (p === 'deepgram') ? '' : 'none';
+    refreshModelChoices();
     // Re-init pipeline live if recording so the switch takes immediate effect.
     if (reinitialize !== false && S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({
@@ -3438,10 +3515,13 @@ body {
         practiceMode: _practiceMode,
         taraweehMode: _taraweehMode,
         transcriptionProvider: p,
+        transcriptionModel: S.settings.transcriptionModel || null,
         groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
         openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
+        deepgramApiKey: (S.settings.keyMode === 'byok' ? (S.settings.deepgramApiKey || '').trim() : '') || null,
       }));
-      log('Provider → ' + (p === 'openai' ? 'OpenAI' : 'Groq'), 'ok');
+      log('Provider -> ' + (p === 'deepgram' ? 'Deepgram' : p === 'openai' ? 'OpenAI' : 'Groq')
+        + (S.settings.transcriptionModel ? ' (' + S.settings.transcriptionModel + ')' : ''), 'ok');
     }
   };
 
@@ -3625,7 +3705,9 @@ body {
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
     var oaiInput = document.getElementById('settingOpenAIKey');
     if (oaiInput) oaiInput.value = S.settings.openaiApiKey || '';
-    setProvider(S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq', false);
+    var dgInput = document.getElementById('settingDeepgramKey');
+    if (dgInput) dgInput.value = S.settings.deepgramApiKey || '';
+    setProvider(S.settings.transcriptionProvider || 'groq', false);
     setKeyMode(S.settings.keyMode === 'byok' ? 'byok' : 'shared', false);
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
@@ -3640,7 +3722,7 @@ body {
 
   function reinitPipeline() {
     if (!S.ws || S.ws.readyState !== WebSocket.OPEN) return;
-    var provider = S.settings.transcriptionProvider === 'openai' ? 'openai' : 'groq';
+    var provider = S.settings.transcriptionProvider || 'groq';
     // Reset stale provider-specific pills before new sys_status arrives.
     var fePill = document.getElementById('sPillEndpoint');
     if (fePill) fePill.style.display = 'none';
@@ -3658,8 +3740,10 @@ body {
       practiceMode: _practiceMode,
       taraweehMode: _taraweehMode,
       transcriptionProvider: provider,
+      transcriptionModel: S.settings.transcriptionModel || null,
       groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
       openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
+      deepgramApiKey: (S.settings.keyMode === 'byok' ? (S.settings.deepgramApiKey || '').trim() : '') || null,
     }));
     S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
     S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
@@ -3674,6 +3758,8 @@ body {
     S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
     var oaiEl = document.getElementById('settingOpenAIKey');
     S.settings.openaiApiKey = oaiEl ? (oaiEl.value || '').trim() : (S.settings.openaiApiKey || '');
+    var dgEl = document.getElementById('settingDeepgramKey');
+    if (dgEl) S.settings.deepgramApiKey = dgEl.value.trim();
     S.settings.transcriptionProvider =
       document.getElementById('btnProviderOpenAI').classList.contains('active') ? 'openai' : 'groq';
     S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.11 - 2026-08-22
+
+- Choose your transcription provider and model in Settings.
+- Added Deepgram alongside Groq and OpenAI.
+- OpenAI now defaults to a model that is faster and half the price.
+
 ## 2.6.10 - 2026-08-22
 
 - Display now keeps within one ayah of the reciter on real recitations.

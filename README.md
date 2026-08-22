@@ -330,7 +330,10 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | `SHARED_OPENAI_KEY` | — | Server-held OpenAI key; failover when Groq 429s |
 | `MAX_MIN_PER_SESSION` | `90` | Shared-mode session cap (minutes) |
 | `GEMINI_API_KEY` | — | Google Gemini API key (optional non-Quran detection) |
-| `TRANSCRIPTION_PROVIDER` | `groq` | `groq`, `openai`, `gemini`, or legacy `whisper` |
+| `TRANSCRIPTION_PROVIDER` | `groq` | `groq`, `openai`, `deepgram`, `gemini`, or legacy `whisper` |
+| `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-mini-transcribe` | OpenAI model. `whisper-1` is the only one returning word timings |
+| `DEEPGRAM_MODEL` | `nova-3` | Deepgram model. `whisper-large` also serves Arabic |
+| `DEEPGRAM_API_KEY` | — | Deepgram key for server-held mode |
 | `PORT` | `3001` | HTTP server port |
 | `HTTPS_PORT` | `3443` | HTTPS server port |
 | `READ_ADVANCE_CONFIDENCE` | `40` | Minimum confidence (%) for timer-based advance |

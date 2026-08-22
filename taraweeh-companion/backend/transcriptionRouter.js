@@ -8,6 +8,7 @@ import { transcribeWithWhisper } from './whisperProvider.js';
 import { transcribeWithGemini, closeGeminiSession } from './geminiProvider.js';
 import { transcribeWithGroq } from './groqProvider.js';
 import { transcribeWithOpenAI } from './openaiProvider.js';
+import { transcribeWithDeepgram } from './deepgramProvider.js';
 
 export const PROVIDER = process.env.TRANSCRIPTION_PROVIDER || 'groq';
 
@@ -57,7 +58,10 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
     return transcribeWithGroq(pcmBuffer, whisperOpts.apiKey, emit);
   }
   if (whisperOpts && typeof whisperOpts === 'object' && whisperOpts.provider === 'openai') {
-    return transcribeWithOpenAI(pcmBuffer, whisperOpts.apiKey, emit);
+    return transcribeWithOpenAI(pcmBuffer, whisperOpts.apiKey, emit, whisperOpts.model);
+  }
+  if (whisperOpts && typeof whisperOpts === 'object' && whisperOpts.provider === 'deepgram') {
+    return transcribeWithDeepgram(pcmBuffer, whisperOpts.apiKey, emit, whisperOpts.model);
   }
 
   switch (PROVIDER) {
@@ -67,6 +71,8 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
       return transcribeWithOpenAI(pcmBuffer, process.env.OPENAI_API_KEY || process.env.SHARED_OPENAI_KEY, emit);
     case 'groq':
       return transcribeWithGroq(pcmBuffer, process.env.GROQ_API_KEY || process.env.SHARED_GROQ_KEY, emit);
+    case 'deepgram':
+      return transcribeWithDeepgram(pcmBuffer, process.env.DEEPGRAM_API_KEY || process.env.SHARED_DEEPGRAM_KEY, emit);
     case 'whisper':
       return transcribeWithWhisper(pcmBuffer, whisperOpts, emit);
     default:

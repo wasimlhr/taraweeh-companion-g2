@@ -30,6 +30,14 @@ const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
 const ENDPOINT_ON_DEMAND_ENABLED = process.env.ENDPOINT_ON_DEMAND_ENABLED === 'true';
 const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
 const ALLOWED_AUDIO_SOURCES = new Set(['browser', 'simulator', 'g2']);
+const ALLOWED_PROVIDERS = new Set(['groq', 'openai', 'deepgram']);
+// Only models this app has actually been measured against, so a client cannot
+// point the pipeline at an arbitrary endpoint-side model name.
+const ALLOWED_MODELS = {
+  groq: new Set(['whisper-large-v3-turbo', 'whisper-large-v3']),
+  openai: new Set(['gpt-4o-mini-transcribe', 'gpt-transcribe', 'gpt-4o-transcribe', 'whisper-1']),
+  deepgram: new Set(['nova-3', 'whisper-large']),
+};
 const LOCAL_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
 
 let lastEndpointLifecycle = {
@@ -56,6 +64,16 @@ function sanitizePipelineVersion(version) {
 function sanitizeTranslationLang(lang) {
   const normalized = (lang && String(lang).trim()) || '';
   return LOCAL_TRANSLATION_LANGS.has(normalized) ? normalized : '';
+}
+
+function sanitizeProvider(p) {
+  const v = String(p || '').toLowerCase().trim();
+  return ALLOWED_PROVIDERS.has(v) ? v : '';
+}
+
+function sanitizeModel(provider, model) {
+  const v = String(model || '').trim();
+  return ALLOWED_MODELS[provider]?.has(v) ? v : '';
 }
 
 function sanitizeAudioSource(source) {
@@ -109,6 +127,8 @@ app.get('/api/status', (req, res) => {
     mobileOnlyMode: MOBILE_ONLY_MODE,
     probeOnInit: process.env.WHISPER_PROBE_ON_INIT !== 'false',
     allowedPipelines: ['v3', 'v4'],
+    allowedProviders: [...ALLOWED_PROVIDERS],
+    allowedModels: Object.fromEntries(Object.entries(ALLOWED_MODELS).map(([k, v]) => [k, [...v]])),
     translationSource: 'local-bundled',
     allowedTranslationLangs: ['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv'],
     endpointLifecycle: lastEndpointLifecycle,
@@ -226,11 +246,14 @@ wss.on('connection', (ws, req) => {
     // Everything else in whisperOpts remains host-managed.
     // Client-supplied provider selection. Prefer openai > groq when both are
     // set (openai has no RPM cap on normal accounts). Never fall back to HF.
-    const clientProvider = opts?.transcriptionProvider || '';
+    const clientProvider = sanitizeProvider(opts?.transcriptionProvider);
+    const clientModel = sanitizeModel(clientProvider, opts?.transcriptionModel);
     const openaiKey = (typeof opts?.openaiApiKey === 'string') ? opts.openaiApiKey.trim() : '';
     const groqKey   = (typeof opts?.groqApiKey   === 'string') ? opts.groqApiKey.trim()   : '';
+    const deepgramKey = (typeof opts?.deepgramApiKey === 'string') ? opts.deepgramApiKey.trim() : '';
     const wantOpenAI = clientProvider === 'openai' && openaiKey;
     const wantGroq   = clientProvider === 'groq' && groqKey;
+    const wantDeepgram = clientProvider === 'deepgram' && deepgramKey;
     const fallbackOpenAI = !clientProvider && openaiKey;
     const fallbackGroq   = !clientProvider && groqKey;
     // Server-held shared keys (sadaka jariya). Default to shared mode when
@@ -239,13 +262,17 @@ wss.on('connection', (ws, req) => {
     const hasSharedOpenAI = !!SHARED_OPENAI_KEY;
     const useSharedMode = !openaiKey && !groqKey && (hasSharedGroq || hasSharedOpenAI);
 
-    if (wantOpenAI || fallbackOpenAI) {
-      whisperOpts = { ...whisperOpts, provider: 'openai', apiKey: openaiKey };
-      console.log('[Init] BYOK: OpenAI key — no usage limit');
+    if (wantDeepgram) {
+      whisperOpts = { ...whisperOpts, provider: 'deepgram', apiKey: deepgramKey, model: clientModel };
+      console.log(`[Init] BYOK: Deepgram key${clientModel ? ` (${clientModel})` : ''} — no usage limit`);
+      send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'deepgram', byok: true });
+    } else if (wantOpenAI || fallbackOpenAI) {
+      whisperOpts = { ...whisperOpts, provider: 'openai', apiKey: openaiKey, model: clientModel };
+      console.log(`[Init] BYOK: OpenAI key${clientModel ? ` (${clientModel})` : ''} — no usage limit`);
       send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'openai', byok: true });
     } else if (wantGroq || fallbackGroq) {
-      whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: groqKey };
-      console.log('[Init] BYOK: Groq key — no usage limit');
+      whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: groqKey, model: clientModel };
+      console.log(`[Init] BYOK: Groq key${clientModel ? ` (${clientModel})` : ''} — no usage limit`);
       send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'groq', byok: true });
     } else if (useSharedMode) {
       // Shared mode: pipeline picks Groq for tuning (low-latency family), router

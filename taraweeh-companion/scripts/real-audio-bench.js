@@ -117,9 +117,9 @@ const apiKey = OPTS.keyFile ? readFileSync(OPTS.keyFile, 'utf8').trim() : '';
 // A key means "go to the real provider"; without one, Groq is stubbed from a
 // pre-computed transcript so the bench still runs offline.
 const LIVE = !!apiKey;
-const LIVE_HOST = OPTS.provider === 'openai' ? 'api.openai.com' : 'api.groq.com';
+const LIVE_HOST = { openai: 'api.openai.com', deepgram: 'api.deepgram.com' }[OPTS.provider] || 'api.groq.com';
 const LIVE_OPENAI = LIVE && OPTS.provider === 'openai';
-if (OPTS.provider === 'openai' && !apiKey) throw new Error('--provider=openai needs --key-file');
+if (OPTS.provider !== 'groq' && !apiKey) throw new Error(`--provider=${OPTS.provider} needs --key-file`);
 
 let transcript = null;
 if (!OPTS.whisper && !LIVE) {
@@ -133,7 +133,7 @@ globalThis.fetch = async (url, init) => {
   if (LIVE) {
     if (!String(url).includes(LIVE_HOST)) return realFetch(url, init);
     const sent = init?.body?.get?.('file');
-    const bytes = sent ? sent.size : 44;
+    const bytes = sent ? sent.size : (init?.body?.length ? init.body.length + 44 : 44);
     let req = init;
     if (OPTS.model) {
       const form = new FormData();
@@ -150,6 +150,9 @@ globalThis.fetch = async (url, init) => {
     const res = await realFetch(url, req);
     const body = await res.text();
     let parsed = {}; try { parsed = JSON.parse(body); } catch { /* non-JSON error body */ }
+    // Deepgram nests its result; normalise so the counters below work for all.
+    const dgAlt = parsed?.results?.channels?.[0]?.alternatives?.[0];
+    if (dgAlt) parsed = { text: dgAlt.transcript, words: dgAlt.words || [] };
     asrCalls.push({
       atMs: Date.now() - clockStart,
       windowMs: Math.round((bytes - 44) / BYTES_PER_MS),
@@ -320,8 +323,9 @@ function report() {
     const OPENAI_RATE = { 'whisper-1': 0.006, 'gpt-4o-transcribe': 0.006,
       'gpt-4o-mini-transcribe': 0.003, 'gpt-transcribe': 0.0045 };
     const cost = LIVE_OPENAI
-      ? audioMin * (OPENAI_RATE[OPTS.model || 'whisper-1'] ?? 0.006)
-      : (asrCalls.reduce((s2, c) => s2 + Math.max(10, c.windowMs / 1000), 0) / 3600) * 0.04;
+      ? audioMin * (OPENAI_RATE[OPTS.model || 'gpt-4o-mini-transcribe'] ?? 0.006)
+      : OPTS.provider === 'deepgram' ? audioMin * 0.0043
+        : (asrCalls.reduce((s2, c) => s2 + Math.max(10, c.windowMs / 1000), 0) / 3600) * 0.04;
     out(`cost                : ${asrCalls.length} calls, ${audioMin.toFixed(1)} audio-min = $${cost.toFixed(3)}`);
     out(`errors              : ${errs4xx.length}${errs4xx.length ? ' (' + [...new Set(errs4xx.map((c) => c.status))].join(', ') + ')' : ''}`);
     const p95 = [...asrCalls.map((c) => c.latencyMs)].sort((a, b) => a - b)[Math.floor(asrCalls.length * 0.95)] || 0;

@@ -385,9 +385,12 @@ export class AudioPipeline {
     const _provider = this.whisperOpts?.provider || '';
     this.isGroqMode       = _provider === 'groq';
     this.isOpenAIMode     = _provider === 'openai';
-    this.isFastProvider   = this.isGroqMode || this.isOpenAIMode;
+    this.isDeepgramMode   = _provider === 'deepgram';
+    // "Fast" means low enough latency to trust for position tracking, and word
+    // timestamps. Deepgram measured ~450ms with timestamps, same class as Groq.
+    this.isFastProvider   = this.isGroqMode || this.isOpenAIMode || this.isDeepgramMode;
     this.isHFMode         = !this.isFastProvider;
-    console.log(`[Pipeline] Constructed — provider=${_provider || 'default(hf)'}, fast=${this.isFastProvider}, groq=${this.isGroqMode}, openai=${this.isOpenAIMode}`);
+    console.log(`[Pipeline] Constructed — provider=${_provider || 'default(hf)'}, fast=${this.isFastProvider}, groq=${this.isGroqMode}, openai=${this.isOpenAIMode}, deepgram=${this.isDeepgramMode}`);
 
     this.state     = createState();
     this.active    = false;
