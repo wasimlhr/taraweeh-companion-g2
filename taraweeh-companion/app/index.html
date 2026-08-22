@@ -813,7 +813,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.11</span>
+      <span class="version" id="versionEl">v2.6.12</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1143,7 +1143,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.11';
+  const APP_VERSION = 'v2.6.12';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1501,7 +1501,10 @@ body {
 
   // ─── Settings ─────────────────────────────────────────────────────────────
   function defaultWsUrl() {
-    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+    // Same-origin for localhost, LAN (EvenHub QR), and any host that served
+    // this page. Packed .ehpk with no http(s) origin still falls back to
+    // Railway — that host is two months behind and will not lock.
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
       return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
     }
     return 'wss://taraweeh.up.railway.app/ws';
@@ -1746,6 +1749,29 @@ body {
         if (typeof log === 'function') log('Quota exceeded \u2014 recording will pause until BYOK is configured', 'err');
       } else if (s.status === 'warn') {
         setStatus(s.message || 'Approaching free-session limit', 'warn');
+      }
+    } else if (s.component === 'search') {
+      if (!S.isRecording) return;
+      if (typeof s.audioSec === 'number') {
+        var audioEl = document.getElementById('matchAudioLabel');
+        var fillEl = document.getElementById('matchAudioFill');
+        if (audioEl) audioEl.textContent = s.audioSec.toFixed(1) + 's';
+        if (fillEl) fillEl.style.width = Math.min(100, (s.audioSec / 30) * 100) + '%';
+      }
+      if (s.window) {
+        var winEl = document.getElementById('matchWindowLabel');
+        if (winEl) winEl.textContent = 'Window ' + s.window + '/5';
+      }
+      if (s.status === 'transcribing') {
+        setPill('sPillConf', 'ok', 'Match: transcribing');
+        var cands = document.getElementById('matchCands');
+        if (cands && !cands.innerHTML) {
+          cands.innerHTML = '<div class="match-cand"><div class="match-cand-header"><span class="match-cand-ref" style="color:var(--tc-2)">Transcribing\u2026</span></div></div>';
+        }
+      } else if (s.status === 'noise') {
+        setPill('sPillConf', 'warn', 'Match: no speech yet');
+      } else if (s.status === 'reset') {
+        setPill('sPillConf', 'warn', 'Match: listening');
       }
     } else if (s.component === 'audio') {
       // Audio heartbeat — keep pill alive but don't show RMS
@@ -2679,6 +2705,8 @@ body {
         setPill('sPillModel', 'warn', 'Server waking\u2026');
       }
       setPill('sPillConf', '', 'Match: --');
+    } else if (msg.type === 'backend_version') {
+      noteBackendVersion(msg.version);
     } else if (msg.type === 'pipeline_version') {
       var pv = (msg.version || 'v3').toUpperCase();
       document.getElementById('versionEl').textContent = APP_VERSION + ' ' + pv;
@@ -3166,7 +3194,7 @@ body {
         : provSel === 'deepgram' ? (S.settings.deepgramApiKey || '').trim()
         : (S.settings.groqApiKey || '').trim();
       if (!keyForProv) {
-        var pLabel = provSel === 'openai' ? 'OpenAI' : 'Groq';
+        var pLabel = provSel === 'openai' ? 'OpenAI' : provSel === 'deepgram' ? 'Deepgram' : 'Groq';
         setStatus(pLabel + ' API key required — opening settings', 'warn');
         if (typeof log === 'function') log('No ' + pLabel + ' key set — open Settings and enter one', 'warn');
         setTimeout(function () { try { showSettings(); } catch (_) {} }, 400);
@@ -3498,6 +3526,7 @@ body {
 
   window.setProvider = function (p, reinitialize) {
     p = ['groq', 'openai', 'deepgram'].indexOf(p) >= 0 ? p : 'groq';
+    var same = p === (S.settings.transcriptionProvider || 'groq');
     S.settings.transcriptionProvider = p;
     try { saveSettings(); } catch (_) {}
     // Settings view
@@ -3520,25 +3549,13 @@ body {
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
     if (dRow) dRow.style.display = (p === 'deepgram') ? '' : 'none';
     refreshModelChoices();
-    // Re-init pipeline live if recording so the switch takes immediate effect.
-    if (reinitialize !== false && S.ws && S.ws.readyState === WebSocket.OPEN) {
-      S.ws.send(JSON.stringify({
-        type: 'init',
-        sessionId: _clientSessionId,
-        audioSource: currentAudioSource(),
-        preferredSurah: parseInt(S.settings.defaultSurah || '0'),
-        lang: (S.settings.lang || '').trim() || null,
-        pipelineVersion: S.settings.pipelineVersion || 'v4',
-        fastMode: _fastMode,
-        slowMode: _slowMode,
-        practiceMode: _practiceMode,
-        taraweehMode: _taraweehMode,
-        transcriptionProvider: p,
-        transcriptionModel: S.settings.transcriptionModel || null,
-        groqApiKey: (S.settings.keyMode === 'byok' ? (S.settings.groqApiKey || '').trim() : '') || null,
-        openaiApiKey: (S.settings.keyMode === 'byok' ? (S.settings.openaiApiKey || '').trim() : '') || null,
-        deepgramApiKey: (S.settings.keyMode === 'byok' ? (S.settings.deepgramApiKey || '').trim() : '') || null,
-      }));
+    if (reinitialize === false) return;
+    // Tapping the already-selected engine must not destroy a live session.
+    // The previous path sent `init` without `start`, so the new pipeline sat
+    // idle and the display stayed at 0.0s / Window 1/5.
+    if (same && reinitialize !== true) return;
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      reinitPipeline();
       log('Provider -> ' + (p === 'deepgram' ? 'Deepgram' : p === 'openai' ? 'OpenAI' : 'Groq')
         + (S.settings.transcriptionModel ? ' (' + S.settings.transcriptionModel + ')' : ''), 'ok');
     }
@@ -3795,6 +3812,33 @@ body {
     document.getElementById('mainView').style.display = 'block';
   };
 
+  function parseAppVer(v) {
+    var p = String(v || '').replace(/^v/i, '').split('.').map(function (n) { return parseInt(n, 10) || 0; });
+    return { maj: p[0] || 0, min: p[1] || 0, pat: p[2] || 0 };
+  }
+  function appVerLt(a, b) {
+    var A = parseAppVer(a), B = parseAppVer(b);
+    if (A.maj !== B.maj) return A.maj < B.maj;
+    if (A.min !== B.min) return A.min < B.min;
+    return A.pat < B.pat;
+  }
+  function noteBackendVersion(v) {
+    var uiVer = APP_VERSION.replace(/^v/i, '');
+    if (!v) {
+      setPill('sPillModel', 'err', 'Backend outdated');
+      setStatus('Backend is outdated — matching will not lock. Open this page from the local/QR server, or deploy the latest backend.', 'err');
+      if (typeof log === 'function') log('Backend has no appVersion (likely Railway v2.6.7 from July). Search will not fire.', 'err');
+      return false;
+    }
+    if (appVerLt(v, uiVer)) {
+      setPill('sPillModel', 'warn', 'Backend v' + v);
+      setStatus('Backend v' + v + ' is older than this app (' + APP_VERSION + '). Matching may not lock.', 'warn');
+      if (typeof log === 'function') log('Backend version ' + v + ' < UI ' + APP_VERSION, 'w');
+      return false;
+    }
+    return true;
+  }
+
   function checkBackend() {
     var url = (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
     var el = document.getElementById('backendStatus');
@@ -3803,6 +3847,7 @@ body {
       el.style.color = 'var(--tc-green)';
       applyBackendModeSettings(s || {});
       updateEndpointLifecycleUI(s.endpointLifecycle || { component: 'model', status: 'unknown' });
+      noteBackendVersion(s && s.appVersion);
     }).catch(function () {
       // If realtime socket is already connected, keep status as online despite REST check hiccups.
       if (S.ws && S.ws.readyState === WebSocket.OPEN) {

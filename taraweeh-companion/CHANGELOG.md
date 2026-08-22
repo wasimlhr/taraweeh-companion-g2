@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.12 - 2026-08-22
+
+- Packed / G2 sessions no longer sit at 0.0s because they were talking to the July Railway backend.
+- Tapping Groq (already selected) no longer tears down the live pipeline without restarting it.
+- Search now updates the window timer when Groq actually fires, so a dead session is obvious.
+
 ## 2.6.11 - 2026-08-22
 
 - Choose your transcription provider and model in Settings.

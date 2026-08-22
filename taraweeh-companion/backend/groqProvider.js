@@ -13,9 +13,10 @@ const GROQ_MODEL = 'whisper-large-v3-turbo';
  * @param {Buffer} pcmBuffer    - Raw PCM S16LE 16kHz mono
  * @param {string} apiKey       - User's Groq API key (gsk_...)
  * @param {Function} [emit]     - status callback
+ * @param {{ model?: string }} [extra]
  * @returns {Promise<{text: string, words: Array, provider: 'groq'}>}
  */
-export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null) {
+export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null, extra = {}) {
   if (!apiKey) {
     throw new Error('Groq API key missing. Set it in app settings.');
   }
@@ -24,7 +25,8 @@ export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null) {
   const form = new FormData();
   const blob = new Blob([wav], { type: 'audio/wav' });
   form.append('file', blob, 'audio.wav');
-  form.append('model', GROQ_MODEL);
+  const useModel = (extra && extra.model) || GROQ_MODEL;
+  form.append('model', useModel);
   form.append('language', 'ar');
   form.append('response_format', 'verbose_json');
   form.append('timestamp_granularities[]', 'word');   // word-level timestamps for silence / repeat detection
@@ -81,7 +83,7 @@ export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null) {
     }
   }
 
-  console.log(`[Groq] ${latencyMs}ms  wav=${wav.length}B  words=${words.length}  text="${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
+  console.log(`[Groq:${useModel}] ${latencyMs}ms  wav=${wav.length}B  words=${words.length}  text="${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
   return { text, words, provider: 'groq' };
 }
 

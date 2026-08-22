@@ -53,6 +53,10 @@ try { buildMushafIndex(); } catch (e) { console.warn('[MushafIndex] build failed
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
+const APP_VERSION = (() => {
+  try { return JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')).version || ''; }
+  catch { return ''; }
+})();
 
 const app = express();
 
@@ -115,6 +119,7 @@ app.get('/api/status', (req, res) => {
     ? (ep ? 'whisper-quran (dedicated)' : 'whisper-quran-v1 (legacy HF)')
     : 'whisper-large-v3-turbo / whisper-1 (Groq / OpenAI)';
   res.json({
+    appVersion: APP_VERSION,
     groqConfigured: !!SHARED_GROQ_KEY,
     openaiConfigured: !!SHARED_OPENAI_KEY,
     sharedKeysConfigured: !!(SHARED_GROQ_KEY || SHARED_OPENAI_KEY),
@@ -325,6 +330,7 @@ wss.on('connection', (ws, req) => {
     }
     console.log(`[Init] Pace: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'} (client), mode: ${opts.taraweehMode ? 'taraweeh' : (opts.practiceMode ? 'practice' : 'taraweeh')}`);
     send({ type: 'pipeline_version', version: pipelineVersion });
+    if (APP_VERSION) send({ type: 'backend_version', version: APP_VERSION });
   }
 
   // Don't eagerly create — client sends 'init' message with settings.

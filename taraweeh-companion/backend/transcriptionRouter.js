@@ -55,7 +55,7 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
 
   // BYOK — caller-supplied key, no failover.
   if (whisperOpts && typeof whisperOpts === 'object' && whisperOpts.provider === 'groq') {
-    return transcribeWithGroq(pcmBuffer, whisperOpts.apiKey, emit);
+    return transcribeWithGroq(pcmBuffer, whisperOpts.apiKey, emit, { model: whisperOpts.model });
   }
   if (whisperOpts && typeof whisperOpts === 'object' && whisperOpts.provider === 'openai') {
     return transcribeWithOpenAI(pcmBuffer, whisperOpts.apiKey, emit, whisperOpts.model);
