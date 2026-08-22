@@ -14,7 +14,14 @@ import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
 import { findAnchor, isRefrain, getAyah } from './keywordMatcher.js';
-import { buildWhisperPrompt, stripWhisperPromptEcho } from './whisperPrompt.js';
+import { buildWhisperPrompt } from './whisperPrompt.js';
+import {
+  prepareMatcherText,
+  isBismillahOnly,
+  isPreRecitationPhrase,
+  isAmeen,
+  isNoise,
+} from './whisperClean.js';
 
 // ── Word-level corpus data (morphology + tajweed weights) ───────────────────
 const __dirname_v4 = dirname(fileURLToPath(import.meta.url));
@@ -161,46 +168,6 @@ const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS
 const BASE_DISPLAY_LEAD = 2;
 const BLOCKED_FORCE_UNBLOCK_MS = parseInt(process.env.BLOCKED_FORCE_UNBLOCK_MS || '8000', 10);
 
-// ── Noise filtering ──────────────────────────────────────────────────────────
-
-const NOISE_WORDS = new Set([
-  'موسيقى', 'تبا', 'تباً', 'هممم', 'همم', 'مممم', 'ممم',
-  'music', 'applause', 'laughter', 'silence',
-  'اشترك', 'للاشتراك',
-  'مرحبا', 'مرحباً', 'اهلا', 'أهلاً', 'اهلاً',
-  'صباح', 'مساء',
-  'شكرا', 'شكراً',
-  'نانسي', 'قنقر',  // channel/translator names (e.g. ترجمة نانسي قنقر)
-  'تلاوة',          // Whisper prompt-echo, not Quran
-]);
-const NOISE_PHRASES = [
-  'مرحبا بك', 'مرحباً بك', 'أهلا بك', 'اهلا بك',
-  'صباح الخير', 'مساء الخير', 'كيف حالك',
-  'شكرا لكم', 'ترجمه لكي', 'توقف عن الاشتراك', 'ماذا يفعلون',
-  'اشتركوا في القناة', 'اشتركوا في', 'اشترك في القناة',
-  'شكرا للمشاهدة', 'شكرا لمشاهدتكم',
-  'يا عمار',  // non-Quran: someone addressing "Ammar"
-];
-
-const ISTI_ADHA_PATTERNS = [
-  /اعوذ\s+بالله/,
-  /أعوذ\s+بالله/,
-  /اعوذ\s+ب/,
-  /الشيطان\s+الرجيم/,
-  // Bismillah handled separately by isBismillahOnly — always skip, never lock on Fatiha
-];
-
-const AMEEN_RE = /^(آمين|أمين|امين)(\s+(آمين|أمين|امين))*$/;
-function isAmeen(text) {
-  if (!text) return false;
-  return AMEEN_RE.test(text.replace(/[\u064b-\u065f\u0670]/g, '').trim());
-}
-
-function isPreRecitationPhrase(text) {
-  const stripped = text.replace(/[\u064B-\u065F\u0670]/g, '').trim();
-  return ISTI_ADHA_PATTERNS.some(p => p.test(stripped));
-}
-
 function computeRms(pcm) {
   const n = Math.floor(pcm.length / 2);
   if (n === 0) return 0;
@@ -239,47 +206,6 @@ function applyClipGuard(pcm, rms, profile) {
     out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(s * gain))), i);
   }
   return out;
-}
-
-function cleanWhisperText(text) {
-  let t = text.replace(/[\[\(].*?[\]\)]/g, '').replace(/^[\[\(]+|[\]\)]+$/g, '').replace(/\s+/g, ' ').trim();
-  t = t.replace(/^(شكرا|شكراً|ترجمة[^\s]*)\s*/g, '').trim();
-  t = stripWhisperPromptEcho(t);
-  return t;
-}
-
-const QURAN_MARKS_RE    = /[\u064B-\u065F\u0610-\u061A\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u0615\u0652\u06D9\uFE70-\uFEFF]/g;
-const BISMILLAH_NORM_RE = /^بسم\s+الله\s+الرحمن\s+الرحيم[\s\u06D9\u060C]*/;
-function stripBismillahPrefix(text) {
-  const norm = text.replace(QURAN_MARKS_RE, '').replace(/\s+/g, ' ').trim();
-  const match = norm.match(BISMILLAH_NORM_RE);
-  if (!match) return norm;
-  const remainder = norm.slice(match[0].length).trim();
-  if (remainder.length < 5) return norm;
-  console.log(`[Pipeline] Stripped bismillah prefix → "${remainder.substring(0, 60)}"`);
-  return remainder;
-}
-// Bismillah alone appears before every surah (except 9) — never lock on Fatiha from it.
-// Treat as generic: skip, advance window, wait for distinguishing content (الحمد, الم, etc).
-function isBismillahOnly(text) {
-  if (!text || !text.trim()) return false;
-  const norm = text.replace(QURAN_MARKS_RE, '').replace(/\s+/g, ' ').trim();
-  const match = norm.match(BISMILLAH_NORM_RE);
-  if (!match) return false;
-  const remainder = norm.slice(match[0].length).trim();
-  return remainder.length < 5;
-}
-
-function isNoise(text) {
-  if (!text || text.trim().length < 2) return true;
-  const n = text.replace(/[\u064B-\u065F]/g, '').trim();
-  if (!/[\u0600-\u06FF]/.test(n)) return true;
-  if (/^[a-zA-Z0-9\s.,!?]+$/.test(n)) return true;
-  if (/(.)\1{10,}/.test(n)) return true;
-  if (NOISE_PHRASES.some(p => n.startsWith(p))) return true;
-  const words = n.split(/\s+/);
-  if (words.length <= 2 && words.every(w => NOISE_WORDS.has(w))) return true;
-  return false;
 }
 
 // Whisper often garbles takbeer: أكبى/اكبي/اكبا/أكبر — match all variants.
@@ -1303,7 +1229,7 @@ export class AudioPipeline {
         return;
       }
 
-      const cleaned = stripBismillahPrefix(cleanWhisperText(text.trim()));
+      const cleaned = prepareMatcherText(text.trim());
 
       if (this.taraweehMode) {
         if (isPrayerTransition(cleaned)) {
@@ -1595,7 +1521,7 @@ export class AudioPipeline {
         }
       }
 
-      const cleaned = stripBismillahPrefix(cleanWhisperText(text.trim()));
+      const cleaned = prepareMatcherText(text.trim());
 
       if (this.taraweehMode) {
         if (isPrayerTransition(cleaned)) {

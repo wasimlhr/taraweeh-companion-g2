@@ -263,3 +263,25 @@ describe('anchor first-lock speed', () => {
     assert.equal(next.ayah, 3);
   });
 });
+
+describe('live preamble strip (isti\'adha / bismillah)', () => {
+  it('does not lock 16:98 on opening isti\'adha — keeps Ya-Sin tokens', async () => {
+    const { prepareMatcherText, isPreambleOnly } = await import('./whisperClean.js');
+    loadQuran();
+    const t = prepareMatcherText('اعوذ بالله من الشيطان الرجيم ياسين والقران الحكيم');
+    assert.equal(isPreambleOnly(t), false);
+    const next = processWhisperResult(t, createState(), {});
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 36);
+    assert.notEqual(next.surah, 16);
+    assert.notEqual(next.surah, 1);
+  });
+
+  it('treats isti\'adha-only and bismillah-only as preamble, not a verse', async () => {
+    const { prepareMatcherText, isPreambleOnly } = await import('./whisperClean.js');
+    assert.equal(isPreambleOnly(prepareMatcherText('اعوذ بالله من الشيطان الرجيم')), true);
+    assert.equal(isPreambleOnly(prepareMatcherText('بسم الله الرحمن الرحيم')), true);
+    const bismillah = processWhisperResult('بسم الله الرحمن الرحيم', createState(), {});
+    assert.equal(bismillah.mode, 'SEARCHING');
+  });
+});

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.6.15 - 2026-08-22
+
+- Simulator/app boot: `DEFAULT_SETTINGS` was missing its closing brace after `reciteMode` was added, so the page script never ran and EvenHub showed a dead shell.
+- Same-origin WebSocket on LAN/Cloud IPs (no silent Railway redirect). Bundled EvenHub SDK served at `/sdk/even_hub_sdk.js`.
+- Live pipeline strips leading isti'adha (not mid-verse 16:98) so the opening of a recitation cannot false-lock An-Nahl.
+- YouTube replay is live PCM → STT → lock/sync only. Auto-captions are not used.
+
 ## 2.6.14 - 2026-08-22
 
 - Removed quiet-boost for every source (G2, simulator, browser). 20× gain was distorting recitation — live Taraweeh logs turned `الحمد لله` into `حال الله` / `موسيقى`.

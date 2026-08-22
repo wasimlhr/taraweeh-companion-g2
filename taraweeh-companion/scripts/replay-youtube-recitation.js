@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 /**
- * Replay a YouTube recitation through AudioPipeline V4.
+ * Live-replay a recitation WAV/PCM (optionally downloaded from YouTube)
+ * through AudioPipeline V4 in realtime — the same SEARCHING → LOCKED sync loop
+ * the glasses/sim use. Not a caption dump. YouTube auto-captions are not Quranic
+ * Arabic and are never sent to the matcher.
  *
- *   node scripts/replay-youtube-recitation.js <youtube-url> [--mode taraweeh|practice] [--seconds 180]
+ *   node scripts/replay-youtube-recitation.js <youtube-url-or-wav> [--mode taraweeh|practice]
+ *       [--seconds 180] [--start 85] [--source simulator|g2|browser]
  *
- * Uses GROQ_API_KEY or SHARED_GROQ_KEY for STT. Without a key, still downloads
- * audio and scores auto-captions through the matcher (algorithm-only).
+ * `t=85s` on a YouTube URL is honoured as --start. Needs GROQ_API_KEY or
+ * SHARED_GROQ_KEY. Play the same audio into the EvenHub sim mic for a full UI test.
  */
 import { spawn } from 'child_process';
-import { createReadStream, mkdirSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { createReadStream, mkdirSync, existsSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { tmpdir } from 'os';
@@ -21,10 +25,6 @@ function arg(name, fallback) {
   const i = process.argv.indexOf(name);
   if (i === -1 || i === process.argv.length - 1) return fallback;
   return process.argv[i + 1];
-}
-
-function hasFlag(name) {
-  return process.argv.includes(name);
 }
 
 function sleep(ms) {
@@ -49,85 +49,70 @@ function groqKey() {
   return (process.env.GROQ_API_KEY || process.env.SHARED_GROQ_KEY || '').trim();
 }
 
+function parseStartSeconds(url, cli) {
+  if (cli != null && cli !== '') {
+    const n = parseTimeToken(String(cli));
+    if (n != null) return n;
+  }
+  if (!url) return 0;
+  try {
+    const u = new URL(url);
+    const t = u.searchParams.get('t') || u.searchParams.get('start') || '';
+    const fromQuery = parseTimeToken(t);
+    if (fromQuery != null) return fromQuery;
+    const hash = String(u.hash || '').match(/t=([^&]+)/);
+    if (hash) return parseTimeToken(hash[1]) || 0;
+  } catch (_) {}
+  const m = String(url).match(/[?&#]t=(\d+h)?(\d+m)?(\d+s)?/i);
+  if (m) return parseTimeToken(m[0].slice(m[0].indexOf('=') + 1)) || 0;
+  return 0;
+}
+
+function parseTimeToken(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  const m = s.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (m && (m[1] || m[2] || m[3])) {
+    return (parseInt(m[1] || '0', 10) * 3600)
+      + (parseInt(m[2] || '0', 10) * 60)
+      + parseInt(m[3] || '0', 10);
+  }
+  return null;
+}
+
 async function downloadAudio(url, workDir) {
   const template = join(workDir, 'recitation.%(ext)s');
   const yt = existsSync(YT_DLP) ? YT_DLP : 'yt-dlp';
-  console.log(`[replay] downloading ${url}`);
+  console.log(`[replay] downloading audio (not captions) ${url}`);
   await run(yt, [
     '-f', 'bestaudio/best',
     '-x', '--audio-format', 'wav',
     '--no-playlist',
-    '--write-auto-sub', '--write-sub',
-    '--sub-langs', 'ar,ar-en,en',
-    '--convert-subs', 'vtt',
     '-o', template,
     url,
   ], { env: { ...process.env, PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}` } });
 
   const wavSrc = join(workDir, 'recitation.wav');
-  const pcmOut = join(workDir, 'recitation.s16le');
   if (!existsSync(wavSrc)) throw new Error('yt-dlp did not produce recitation.wav');
-  console.log('[replay] converting to 16 kHz mono s16le');
-  await run('ffmpeg', [
-    '-y', '-i', wavSrc,
-    '-ac', '1', '-ar', '16000', '-f', 's16le', '-acodec', 'pcm_s16le',
-    pcmOut,
-  ]);
-  return { wavSrc, pcmOut, workDir };
+  return wavSrc;
 }
 
-function parseVttCues(vttText) {
-  const cues = [];
-  const blocks = String(vttText).split(/\n\n+/);
-  for (const block of blocks) {
-    const m = block.match(/(\d{2}:\d{2}:\d{2}\.\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}\.\d{3})/);
-    if (!m) continue;
-    const text = block
-      .split('\n')
-      .filter((l) => !l.includes('-->') && !/^WEBVTT/.test(l) && !/^\d+$/.test(l.trim()))
-      .join(' ')
-      .replace(/<[^>]+>/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (text) cues.push({ t0: m[1], t1: m[2], text });
-  }
-  return cues;
+async function toPcm(wavSrc, pcmOut, startSec) {
+  console.log(`[replay] 16 kHz mono s16le start=${startSec}s`);
+  const args = ['-y'];
+  if (startSec > 0) args.push('-ss', String(startSec));
+  args.push('-i', wavSrc, '-ac', '1', '-ar', '16000', '-f', 's16le', '-acodec', 'pcm_s16le', pcmOut);
+  await run('ffmpeg', args);
+  return pcmOut;
 }
 
-async function matcherPass(cues) {
-  const { loadQuran, findAnchor } = await import('../backend/keywordMatcher.js');
-  const { createState, processWhisperResult } = await import('../backend/anchorStateMachine.js');
-  loadQuran();
-  let state = createState();
-  const locks = [];
-  let window = '';
-  for (const cue of cues) {
-    window = `${window} ${cue.text}`.trim();
-    if (window.split(/\s+/).length < 3) continue;
-    const next = processWhisperResult(window, state, { preferredSurah: 0 });
-    const { matches } = findAnchor(window, 0);
-    const top = matches[0];
-    if (next.mode === 'LOCKED' && (next.surah !== state.surah || next.ayah !== state.ayah || state.mode !== 'LOCKED')) {
-      locks.push({
-        at: cue.t0,
-        verse: `${next.surah}:${next.ayah}`,
-        text: window.slice(0, 80),
-        score: top?.score,
-      });
-      console.log(`[captions] LOCK ${next.surah}:${next.ayah} @ ${cue.t0}  "${window.slice(0, 60)}"`);
-    }
-    state = next;
-    if (window.split(/\s+/).length > 24) window = cue.text;
-  }
-  return locks;
-}
-
-async function pipelinePass(pcmPath, { mode, seconds, source }) {
+async function livePipelinePass(pcmPath, { mode, seconds, source }) {
   const { AudioPipeline } = await import('../backend/audioPipelineV4.js');
   const { loadQuran } = await import('../backend/keywordMatcher.js');
   loadQuran();
   const events = [];
-  const transcripts = [];
+  let lastLock = null;
   const pipeline = new AudioPipeline({
     audioSource: source,
     whisperOpts: {
@@ -136,23 +121,23 @@ async function pipelinePass(pcmPath, { mode, seconds, source }) {
     },
     onStateUpdate: (msg) => {
       if (!msg) return;
-      if (msg.type === 'state' || msg.mode || msg.surah) {
-        events.push({ t: Date.now(), ...msg });
-      }
-      if (msg.mode === 'LOCKED' || msg.type === 'LOCKED') {
-        console.log(`[pipeline] LOCK ${msg.surah}:${msg.ayah}  ${msg.arabic || msg.english || ''}`);
+      events.push({ t: Date.now(), mode: msg.mode, surah: msg.surah, ayah: msg.ayah, type: msg.type });
+      const key = `${msg.mode || ''}:${msg.surah}:${msg.ayah}`;
+      if (msg.mode === 'LOCKED' && key !== lastLock) {
+        lastLock = key;
+        console.log(`[live] LOCK ${msg.surah}:${msg.ayah}  ${msg.arabic || msg.english || ''}`);
+      } else if (msg.mode && msg.mode !== 'LOCKED') {
+        console.log(`[live] ${msg.mode} ${msg.surah || 0}:${msg.ayah || 0}`);
       }
     },
-    onStatus: (s) => {
-      if (s?.component === 'search' || s?.type) return;
-    },
-    onError: (err) => console.error('[pipeline] error', err),
+    onStatus: () => {},
+    onError: (err) => console.error('[live] error', err),
   });
   if (mode === 'practice') pipeline.setPracticeMode(true);
   else pipeline.setTaraweehMode(true);
   pipeline.start();
 
-  const chunkBytes = 3200; // 100 ms
+  const chunkBytes = 3200; // 100 ms @ 16 kHz s16le — same cadence as sim/G2 frames
   const limitBytes = Math.floor(16000 * 2 * seconds);
   let sent = 0;
   const stream = createReadStream(pcmPath, { highWaterMark: chunkBytes });
@@ -168,52 +153,40 @@ async function pipelinePass(pcmPath, { mode, seconds, source }) {
   pipeline.stop();
   pipeline.destroy();
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-  return { events, transcripts, sentBytes: sent, elapsedSec: elapsed };
+  const locks = events.filter((e, i, a) => e.mode === 'LOCKED' && (i === 0 || a[i - 1].surah !== e.surah || a[i - 1].ayah !== e.ayah || a[i - 1].mode !== 'LOCKED'));
+  return { events, locks, sentBytes: sent, elapsedSec: elapsed };
 }
 
 async function main() {
-  const url = process.argv.find((a) => /^https?:\/\//.test(a));
-  if (!url) {
-    console.error('Usage: node scripts/replay-youtube-recitation.js <youtube-url> [--mode taraweeh|practice] [--seconds 180] [--source simulator|g2|browser]');
+  const target = process.argv.find((a) => /^https?:\/\//.test(a) || /\.(wav|pcm|s16le)$/i.test(a));
+  if (!target) {
+    console.error('Usage: node scripts/replay-youtube-recitation.js <youtube-url|wav> [--mode taraweeh|practice] [--seconds 180] [--start 85] [--source simulator|g2|browser]');
     process.exit(1);
   }
   const mode = arg('--mode', 'taraweeh');
   const seconds = parseInt(arg('--seconds', '180'), 10);
   const source = arg('--source', 'simulator');
+  const startSec = parseStartSeconds(target, arg('--start', ''));
   const workDir = join(tmpdir(), `taraweeh-yt-${Date.now()}`);
   mkdirSync(workDir, { recursive: true });
 
-  const { pcmOut, workDir: dir } = await downloadAudio(url, workDir);
-
-  const vttFiles = [];
-  try {
-    const { readdirSync } = await import('fs');
-    for (const f of readdirSync(dir)) {
-      if (f.endsWith('.vtt')) vttFiles.push(join(dir, f));
-    }
-  } catch (_) {}
-
-  const report = { url, mode, seconds, source, captionLocks: [], pipeline: null, workDir: dir };
-  if (vttFiles.length) {
-    console.log(`[replay] caption file ${vttFiles[0]}`);
-    const cues = parseVttCues(readFileSync(vttFiles[0], 'utf8'));
-    report.captionLocks = await matcherPass(cues);
-    console.log(`[replay] caption matcher locks: ${report.captionLocks.length}`);
-  } else {
-    console.log('[replay] no captions on this video — matcher-only pass skipped');
-  }
-
   if (!groqKey()) {
-    console.log('[replay] No GROQ_API_KEY / SHARED_GROQ_KEY — skip live STT pipeline pass');
-    writeFileSync(join(dir, 'report.json'), JSON.stringify(report, null, 2));
-    console.log(`[replay] report ${join(dir, 'report.json')}`);
-    return;
+    console.error('[replay] GROQ_API_KEY / SHARED_GROQ_KEY required. This is a live STT lock loop — YouTube captions are not used.');
+    process.exit(2);
   }
 
-  console.log(`[replay] pipeline ${mode} ${seconds}s source=${source}`);
-  report.pipeline = await pipelinePass(pcmOut, { mode, seconds, source });
-  writeFileSync(join(dir, 'report.json'), JSON.stringify(report, null, 2));
-  console.log(`[replay] report ${join(dir, 'report.json')}`);
+  let wavSrc = target;
+  if (/^https?:\/\//.test(target)) {
+    wavSrc = await downloadAudio(target, workDir);
+  }
+  const pcmOut = await toPcm(wavSrc, join(workDir, 'recitation.s16le'), startSec);
+
+  console.log(`[replay] live ${mode} ${seconds}s source=${source} start=${startSec}s`);
+  const pipeline = await livePipelinePass(pcmOut, { mode, seconds, source });
+  const report = { target, mode, seconds, source, startSec, pipeline, workDir };
+  writeFileSync(join(workDir, 'report.json'), JSON.stringify(report, null, 2));
+  console.log(`[replay] locks=${(pipeline.locks || []).map((l) => l.surah + ':' + l.ayah).join(' → ') || '(none)'}`);
+  console.log(`[replay] report ${join(workDir, 'report.json')}`);
 }
 
 main().catch((err) => {

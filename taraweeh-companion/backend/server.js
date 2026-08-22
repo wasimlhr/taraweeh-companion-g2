@@ -94,6 +94,20 @@ app.get('/', (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(join(rootDir, 'app', 'index.html'));
 });
+
+// Bundled EvenHub SDK — index.html imports /sdk/even_hub_sdk.js. CDN fallback
+// loads a different module realm than the simulator bridge and the app looks blank.
+const EVENHUB_SDK = [
+  join(rootDir, 'dist', 'sdk', 'even_hub_sdk.js'),
+  join(rootDir, 'node_modules', '@evenrealities', 'even_hub_sdk', 'dist', 'index.js'),
+].find((p) => existsSync(p));
+if (EVENHUB_SDK) {
+  app.get('/sdk/even_hub_sdk.js', (req, res) => {
+    res.type('application/javascript');
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(EVENHUB_SDK);
+  });
+}
 app.get('/api/status', (req, res) => {
   const ep = process.env.WHISPER_ENDPOINT_URL || '';
   const usesLegacyWhisper = PROVIDER === 'whisper' && !!(ep || HF_TOKEN);

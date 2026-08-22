@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.14</span>
+      <span class="version" id="versionEl">v2.6.15</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1156,7 +1156,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.14';
+  const APP_VERSION = 'v2.6.15';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1530,7 +1530,11 @@ body {
 
   // ─── Settings ─────────────────────────────────────────────────────────────
   function defaultWsUrl() {
-    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+    // Same-origin whenever the app was loaded over HTTP(S) — localhost, LAN IP,
+    // or this Cloud Agent host. Railway is only a fallback for packed .ehpk
+    // (no http origin). Pointing the sim at 172.x / 192.168.x used to silently
+    // talk to Railway instead of the backend that served the page.
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
       return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
     }
     return 'wss://taraweeh.up.railway.app/ws';
@@ -1552,6 +1556,7 @@ body {
     transcriptionProvider: 'groq',
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
     reciteMode: 'taraweeh',
+  };
 
   function sanitizePipelineVersion(v) {
     var normalized = String(v || '').toLowerCase().trim();
@@ -3333,16 +3338,25 @@ body {
 
     try {
       var sdk;
-      try {
-        sdk = await import('./sdk/even_hub_sdk.js');
-        log('Loaded bundled SDK', 'ok');
-      } catch (_) {
+      var sdkUrls = [
+        './sdk/even_hub_sdk.js',
+        '/sdk/even_hub_sdk.js',
+      ];
+      var loaded = false;
+      for (var si = 0; si < sdkUrls.length && !loaded; si++) {
+        try {
+          sdk = await import(sdkUrls[si]);
+          log('Loaded bundled SDK (' + sdkUrls[si] + ')', 'ok');
+          loaded = true;
+        } catch (_) {}
+      }
+      if (!loaded) {
         sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.10/dist/index.js');
         log('Loaded SDK from CDN', 'ok');
       }
       S.sdk = sdk;
       S.bridge = await new Promise(function (resolve, reject) {
-        var t = setTimeout(function () { reject(new Error('timeout 2s')); }, 2000);
+        var t = setTimeout(function () { reject(new Error('timeout 8s')); }, 8000);
         sdk.waitForEvenAppBridge().then(function (b) { clearTimeout(t); resolve(b); }, reject);
       });
       S.isG2 = true;
