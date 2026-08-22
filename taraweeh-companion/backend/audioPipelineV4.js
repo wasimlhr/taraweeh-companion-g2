@@ -1939,12 +1939,11 @@ export class AudioPipeline {
     }
 
     // ── Rule 4: Whisper ahead of display ─────────────────────────────────
-    // Gap 1–6: catch up smoothly. Consistently 1–2 behind = timer too slow; catch up at gap=1.
-    // Large gap (7+): anchor likely confused — ignore.
+    // Gap 1: nudge the timer. Gap 2+: snap, including skip-ahead jumps of 7+.
     // IMPORTANT: Don't override user's manual pacer — if they recently clicked
     // Next to catch up at their own pace, let them control it.
     const gap = confirmedAyah - this._displayAyah;
-    if (gap >= 1 && gap <= 6) {
+    if (gap >= 1) {
       const inManualCooldown = this._lastManualAdjustMs && (Date.now() - this._lastManualAdjustMs) < MANUAL_ADJUST_COOLDOWN_MS;
       if (inManualCooldown) {
         console.log(`[Pipeline] Whisper :${confirmedAyah} ahead of display :${this._displayAyah} — skipping catch-up (manual pacer active)`);
@@ -1972,11 +1971,13 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       }
-      // GROQ: snap immediately for gap ≥ 2 (user asked: only intervene when
-      // we're "way off, like 2 or 3 ayahs"). Groq is authoritative.
+      // Fast STT (Groq/OpenAI): snap immediately for gap ≥ 2, including skip-ahead.
       if (this.isFastProvider && score >= 35) {
+        const fromAyah = this._displayAyah;
         this._cancelReadAdvance();
-        console.log(`[Pipeline] Groq catch-up snap: :${this._displayAyah} → :${confirmedAyah} (gap=${gap}, conf=${score}%)`);
+        this._forwardJumpAyah = 0;
+        this._forwardJumpCount = 0;
+        console.log(`[Pipeline] Groq catch-up snap: :${fromAyah} → :${confirmedAyah} (gap=${gap}, conf=${score}%)`);
         this._displaySurah = confirmedSurah;
         this._displayAyah  = confirmedAyah;
         this._ayahStartTime = Date.now();
@@ -1984,6 +1985,30 @@ export class AudioPipeline {
           lastLockedSurah: confirmedSurah, lastLockedAyah: confirmedAyah };
         this._emitState(text, rms);
         this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
+        return;
+      }
+      if (gap > 6) {
+        if (score >= 40 || this._forwardJumpConfirmed(confirmedSurah, confirmedAyah)) {
+          const fromAyah = this._displayAyah;
+          this._forwardJumpAyah = 0;
+          this._forwardJumpCount = 0;
+          this._cancelReadAdvance();
+          this._displaySurah = confirmedSurah;
+          this._displayAyah  = confirmedAyah;
+          this._ayahStartTime = Date.now();
+          this._lockTime = this._ayahStartTime;
+          this.state = { ...this.state, surah: confirmedSurah, ayah: confirmedAyah,
+            lastLockedSurah: confirmedSurah, lastLockedAyah: confirmedAyah };
+          console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${fromAyah} — snapping (conf=${score}%)`);
+          this._emitState(text, rms);
+          this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
+          return;
+        }
+        console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${this._displayAyah} — awaiting confirmation ${this._forwardJumpCount}/${FORWARD_JUMP_CONFIRMS} (conf=${score}%)`);
+        if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
+          this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
+        }
+        this._emitState(text, rms);
         return;
       }
       // Already in smooth catch-up — don't restart; rapid Whisper results would
@@ -1996,31 +2021,6 @@ export class AudioPipeline {
       const stepMs = gap >= 4 ? 2000 : gap >= 3 ? 1600 : SMOOTH_ADVANCE_STEP_MS;
       console.log(`[Pipeline] Whisper :${confirmedAyah} ahead of display :${this._displayAyah} — catch-up (${gap} steps, ${stepMs}ms/step)`);
       this._smoothAdvanceTo(confirmedSurah, confirmedAyah, stepMs);
-    } else if (gap > 6 && (score >= 70 || this._forwardJumpConfirmed(confirmedSurah, confirmedAyah))) {
-      // Large forward gap. A single high-confidence match snaps immediately;
-      // otherwise repeated agreement stands in for confidence. Requiring score
-      // >= 70 alone stranded the display for minutes when the reciter picked up
-      // further down the surah, because a correct wide-scan match on a partial
-      // window scores well below that even when it repeats.
-      this._forwardJumpAyah = 0;
-      this._forwardJumpCount = 0;
-      this._cancelReadAdvance();
-      this._displaySurah = confirmedSurah;
-      this._displayAyah  = confirmedAyah;
-      this._ayahStartTime = Date.now();
-      this._lockTime = this._ayahStartTime;
-      this.state = { ...this.state, surah: confirmedSurah, ayah: confirmedAyah,
-        lastLockedSurah: confirmedSurah, lastLockedAyah: confirmedAyah };
-      console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${this._displayAyah} — snapping (conf=${score}%)`);
-      this._emitState(text, rms);
-      this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
-      return;
-    } else if (gap > 6) {
-      console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${this._displayAyah} — awaiting confirmation ${this._forwardJumpCount}/${FORWARD_JUMP_CONFIRMS} (conf=${score}%)`);
-      if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
-        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
-      }
-      this._emitState(text, rms);
     }
 
     // V4: Word-level tracking - learn pace and snap current word from Whisper timestamps

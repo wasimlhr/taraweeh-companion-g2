@@ -367,3 +367,61 @@ describe('live preamble strip (isti\'adha / bismillah)', () => {
     assert.equal(bismillah.mode, 'SEARCHING');
   });
 });
+
+describe('Taraweeh skip-ahead self-heal', () => {
+  loadQuran();
+
+  function lockedAt(surah, ayah) {
+    return {
+      ...createState(),
+      mode: 'LOCKED',
+      surah,
+      ayah,
+      confidence: 50,
+      _locked: true,
+      lastLockedSurah: surah,
+      lastLockedAyah: ayah,
+      ayahsSinceLock: 4,
+    };
+  }
+
+  it('hops Ya-Sin 22 → 29 when the reciter skips ahead', () => {
+    const next = processWhisperResult(
+      'إن كانت إلا صيحة واحدة فإذا هم خامدون',
+      lockedAt(36, 22),
+      { fastMode: true, isGroqMode: true },
+    );
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 36);
+    assert.equal(next.ayah, 29);
+  });
+
+  it('hops Ya-Sin 22 → 38 when the reciter jumps further down', () => {
+    const next = processWhisperResult(
+      'والشمس تجري لمستقر لها ذلك تقدير العزيز العليم',
+      lockedAt(36, 22),
+      { fastMode: true, isGroqMode: true },
+    );
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 36);
+    assert.equal(next.ayah, 38);
+  });
+
+  it('still advances one ayah when the reciter continues sequentially', () => {
+    const next = processWhisperResult(
+      'إن كانت إلا صيحة واحدة فإذا هم خامدون',
+      lockedAt(36, 28),
+      { fastMode: true, isGroqMode: true },
+    );
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 36);
+    assert.equal(next.ayah, 29);
+  });
+
+  it('does not hop on two common words while locked', () => {
+    const next = processWhisperResult('من كل', lockedAt(36, 22), { fastMode: true, isGroqMode: true });
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 36);
+    assert.equal(next.ayah, 22);
+  });
+});

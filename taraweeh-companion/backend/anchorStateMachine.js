@@ -608,6 +608,33 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
     };
   };
 
+  // Reciter skipped ahead in the same surah (Ya-Sin 22 → 29/38). Local ±5/8
+  // scan either misses it or scores it below the "wild leap" bar, then HOLDs
+  // the old ayah so RESUMING never runs. Hop when the later ayah is distinctive.
+  const isDistinctiveSkipAhead = (match) => {
+    if (!match || match.surah !== state.surah) return false;
+    const dist = match.ayah - state.ayah;
+    const mc = match.matchedWords?.length ?? 0;
+    return dist >= 3 && mc >= 3 && match.score >= 0.25;
+  };
+  const surahSkipAhead = (localMatch = null) => {
+    const { matches } = resyncInSurah(whisperText, state.surah);
+    const top = matches[0];
+    if (!isDistinctiveSkipAhead(top)) return null;
+    const localScore = localMatch?.found ? localMatch.score : 0;
+    const localAyah = localMatch?.found ? localMatch.ayah : state.ayah;
+    const localIsNear = localAyah <= state.ayah + 1;
+    const localWords = localMatch?.matchedWords?.length ?? 0;
+    const topWords = top.matchedWords?.length ?? 0;
+    if (localIsNear && localScore > 0 && top.score < localScore + 0.08 && topWords <= localWords) {
+      return null;
+    }
+    const second = matches[1];
+    const margin = second ? (top.score - second.score) * 100 : 100;
+    if (top.score < 0.40 && margin < 8) return null;
+    return top;
+  };
+
   // Helper: apply BACK_STEP_CAP — never jump more than 2 ayahs backward per cycle.
   // Forward movement is always applied in full; backward is staged to avoid jarring snaps.
   const applyBack = (match, reason) => {
@@ -688,20 +715,30 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
           ? (fwdDist <= 1 ? 0.25 : fwdDist <= 2 ? 0.40 : 0.55)
           : (fwdDist <= 1 ? 0.40 : fwdDist <= 2 ? 0.55 : 0.65);
         if (wideCheck.score < fwdMinScore) {
+          if (isDistinctiveSkipAhead(wideCheck)) {
+            return applyBack(wideCheck, 'Skip-ahead');
+          }
+          const hop = surahSkipAhead(wideCheck);
+          if (hop) return applyBack(hop, 'Skip-ahead');
+          // Do not HOLD/reset misses — that stranded the lock on the old ayah
+          // while the reciter continued further down the surah.
           console.log(`[Anchor] Forward jump ignored: :${state.ayah}→:${wideCheck.ayah} (dist=${fwdDist}, score=${wideCheck.score.toFixed(2)} < ${fwdMinScore})`);
+          const missed = (state.missedChunks || 0) + 1;
           return {
             ...state,
-            confidence: Math.max(Math.round(wideCheck.score * 100), state.confidence),
-            missedChunks: 0,
+            missedChunks: missed,
             lastKeywords: keywords,
-            _matches: [{ surah: state.surah, ayah: state.ayah, score: wideCheck.score, matchedWords: wideCheck.matchedWords }],
+            _matches: [{ surah: wideCheck.surah, ayah: wideCheck.ayah, score: wideCheck.score, matchedWords: wideCheck.matchedWords }],
             _locked: true,
           };
         }
       }
       return applyBack(wideCheck, isForward ? 'Advanced' : 'Back-corrected');
     }
-    // Still on same ayah — confirm position, reset missed count
+    // Still on same ayah — reciter may have skipped further down the surah.
+    const hopFromCurrent = surahSkipAhead(wideCheck);
+    if (hopFromCurrent) return applyBack(hopFromCurrent, 'Skip-ahead');
+    // Confirm position, reset missed count
     return {
       ...state,
       confidence: Math.round(wideCheck.score * 100),
@@ -713,7 +750,11 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
     };
   }
 
-  // 2. Wider recovery scan — catches bigger drifts from aggressive auto-advance
+  // 2. Same-surah skip-ahead — reciter jumped past the local scan window.
+  const hop = surahSkipAhead(wideCheck.found ? wideCheck : null);
+  if (hop) return applyBack(hop, 'Skip-ahead');
+
+  // 3. Wider recovery scan — catches bigger drifts from aggressive auto-advance
   if (state.ayahsSinceCheck >= SPOT_CHECK_INTERVAL || state.missedChunks >= 2) {
     const check = spotCheck(whisperText, state.surah, state.ayah, wideRadius);
     if (check.found && check.score >= wideThreshold) {
@@ -725,7 +766,7 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
     }
   }
 
-  // 3. Cross-surah detection: spotCheck found nothing in the current surah.
+  // 4. Cross-surah detection: spotCheck found nothing in the current surah.
   //    Run a global search — if Whisper clearly hears a DIFFERENT surah, break lock.
   //    BUT: when the lock is well-established (many ayahs tracked), demand a much
   //    higher bar. A single garbage Whisper result should not destroy a stable lock.

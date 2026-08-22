@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.24 - 2026-08-22
+
+- Taraweeh skip-ahead self-heal: if you jump recitation further down the same surah, lock hops to the heard ayah instead of holding the old one while the timer walks. Same-surah distinctive matches (3+ words) hop even when the local ±8 scan would have ignored them. Display snaps on gap 7+ at 35–40%, not 70%.
+
 ## 2.6.23 - 2026-08-22
 
 - Practice is not Taraweeh: lock the ayah you recite (including repeats) and stay there. Do not wait for a few ayahs or show "Auto locking" after the verse is on glasses. Pause no longer drops back to searching.
