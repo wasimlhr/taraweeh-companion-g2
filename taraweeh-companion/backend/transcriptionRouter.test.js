@@ -304,6 +304,24 @@ describe('live Groq Ya-Sin typos (Fatiha lock does not count)', () => {
     const next = processWhisperResult('الم', createState(), {});
     assert.equal(next.mode, 'SEARCHING');
   });
+
+  it('locks 36:1 on later Groq debris يجيس / ياسسين / يESSSS', () => {
+    for (const t of ['يجيس', 'ياسسين ياسسين ياسسين', 'يESSSS']) {
+      const next = processWhisperResult(t, createState(), {});
+      assert.equal(next.mode, 'LOCKED', t);
+      assert.equal(next.surah, 36, t);
+      assert.equal(next.ayah, 1, t);
+    }
+  });
+
+  it('does not collapse الله or map يوسف onto Ya-Sin', () => {
+    const allah = processWhisperResult('الله الله', createState(), {});
+    assert.equal(allah.mode, 'SEARCHING');
+    const yusuf = processWhisperResult('يوسف', createState(), {});
+    assert.notEqual(yusuf.surah, 36);
+    const hello = processWhisperResult('مرحباً مرحباً مرحباً', createState(), {});
+    assert.equal(hello.mode, 'SEARCHING');
+  });
 });
 
 describe('live preamble strip (isti\'adha / bismillah)', () => {

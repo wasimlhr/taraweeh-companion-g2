@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.19 - 2026-08-22
+
+- Matcher is more tolerant of weak Groq: collapse stutter (`ياسسين` → `يس`), map latin `S` (`يESSSS` → `يس`), unique 1-letter / ح-ه / ق-ك repairs, and 4-letter Ya-Sin-shaped OOV (`يجيس`). Known Quran words such as `الله` and `يوسف` are not rewritten.
+
 ## 2.6.18 - 2026-08-22
 
 - Live Ya-Sin lock: Groq already heard the opening (`يسي`, `ياسين والقرمان الهكيم`, `إن لك للمرسلين`) and the matcher dropped it. Spoken-form aliases, distinctive 1-word muqatta'at openers, and ه/ح + extra-letter repair now lock surah 36. Fatiha lock is not the bar.

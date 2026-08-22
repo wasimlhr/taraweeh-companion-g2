@@ -64,6 +64,49 @@ function splitWords(text) {
   return t.split(/\s+/).filter(Boolean).map(repairSpokenWord);
 }
 
+function collapseRepeatedLetters(w) {
+  return String(w).replace(/(.)\1+/g, '$1');
+}
+
+function latinSoundToArabic(w) {
+  // Live Groq: "يESSSS" → يس. Only map s/S; do not invent a full transliterator.
+  return String(w).replace(/[sS]+/g, 'س').replace(/[A-Za-z0-9]/g, '');
+}
+
+function canonicalizeSpoken(w) {
+  return SPOKEN_WORD_ALIASES[w] || MUQATTAAT_ALIASES[w] || w;
+}
+
+function isSubsequence(small, big) {
+  let i = 0;
+  for (const ch of big) {
+    if (ch === small[i]) i++;
+    if (i === small.length) return true;
+  }
+  return false;
+}
+
+function uniqueIndexHit(candidates) {
+  const hits = new Set();
+  for (const c of candidates) {
+    if (c && wordIndex.has(c)) hits.add(c);
+  }
+  if (hits.size !== 1) return null;
+  return canonicalizeSpoken([...hits][0]);
+}
+
+// OOV 4-letter Ya-Sin-shaped tokens (يجيس). Not length 3: "ياس" from يأس
+// would false-lock 36:1 on garbage chunks.
+function fuzzyDistinctiveOpener(w) {
+  for (const opener of DISTINCTIVE_ONE_WORD_OPENERS) {
+    if (opener.length !== 2) continue;
+    if (w.length !== opener.length + 2) continue;
+    if (w[0] !== opener[0] || w[w.length - 1] !== opener[1]) continue;
+    if (isSubsequence(opener, w)) return opener;
+  }
+  return null;
+}
+
 // Whisper spells out huruf muqatta'at — map them to what appears in the Quran
 const MUQATTAAT_ALIASES = {
   'ياسين': 'يس', 'يس': 'يس',
@@ -109,29 +152,41 @@ function isDistinctiveOpenerAyah(ayah, matchedWords) {
 }
 
 function repairSpokenWord(w) {
-  const aliased = SPOKEN_WORD_ALIASES[w] || MUQATTAAT_ALIASES[w];
-  if (aliased) return aliased;
-  if (ayahList.length === 0 || wordIndex.has(w)) return w;
-  // للمرسلين → المرسلين (لام + ال)
-  if (w.startsWith('لل') && w.length >= 6) {
-    const asAl = 'ال' + w.slice(2);
-    if (wordIndex.has(asAl)) return asAl;
+  // Known Quran tokens stay untouched — do not collapse "الله" → "اله".
+  const direct = canonicalizeSpoken(w);
+  if (DISTINCTIVE_ONE_WORD_OPENERS.has(direct)) return direct;
+  if (ayahList.length > 0 && wordIndex.has(direct)) return direct;
+
+  // OOV Groq debris: latin S → س, collapse stutter, then aliases.
+  // ياسسين → ياسين → يس. يESSSS → يسسسس → يس.
+  let t = canonicalizeSpoken(collapseRepeatedLetters(latinSoundToArabic(w)));
+  t = canonicalizeSpoken(collapseRepeatedLetters(t));
+  if (DISTINCTIVE_ONE_WORD_OPENERS.has(t) || (ayahList.length > 0 && wordIndex.has(t))) return t;
+  if (ayahList.length === 0) return t;
+
+  // Unique index repairs only (never pick among several Quran words).
+  if (t.startsWith('لل') && t.length >= 6) {
+    const asAl = uniqueIndexHit(['ال' + t.slice(2)]);
+    if (asAl) return asAl;
   }
-  // الهكيم → الحكيم (ه/ح confusion)
-  if (w.includes('ه')) {
-    const swapped = w.replace(/ه/g, 'ح');
-    if (wordIndex.has(swapped)) return swapped;
+  const confusable = [];
+  if (t.includes('ه')) confusable.push(t.replace(/ه/g, 'ح'));
+  if (t.includes('ح')) confusable.push(t.replace(/ح/g, 'ه'));
+  if (t.includes('ق')) confusable.push(t.replace(/ق/g, 'ك'));
+  if (t.includes('ك')) confusable.push(t.replace(/ك/g, 'ق'));
+  const swapped = uniqueIndexHit(confusable);
+  if (swapped) return swapped;
+
+  if (t.length >= 6) {
+    const deleted = [];
+    for (let i = 0; i < t.length; i++) deleted.push(t.slice(0, i) + t.slice(i + 1));
+    const hit = uniqueIndexHit(deleted);
+    if (hit) return hit;
   }
-  // والقرمان → والقران (one extra letter). Require a unique hit.
-  if (w.length >= 6) {
-    const hits = new Set();
-    for (let i = 0; i < w.length; i++) {
-      const deleted = w.slice(0, i) + w.slice(i + 1);
-      if (wordIndex.has(deleted)) hits.add(deleted);
-    }
-    if (hits.size === 1) return [...hits][0];
-  }
-  return w;
+
+  const opener = fuzzyDistinctiveOpener(t);
+  if (opener) return opener;
+  return t;
 }
 
 let ayahList = [];
