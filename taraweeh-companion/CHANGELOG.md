@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.26 - 2026-08-22
+
+- Merges the rest of PR #11: pick provider **and** model in Settings. Groq turbo stays the Groq default; OpenAI defaults to `gpt-4o-mini-transcribe` (whisper-1 still selectable for word timings); Deepgram `nova-3` / `whisper-large`. Deepgram is a fast engine (~450ms, timestamps). ElevenLabs stays an independent extra engine — saving Settings no longer rewrites it to Groq.
+- Skip-ahead hop, Practice stay-lock, empty Whisper prompt, and independent STT (no failover) are kept.
+
 ## 2.6.25 - 2026-08-22
 
 - Merges the rest of PR #11 onto this branch: re-phase the display timer from how many words of the current ayah have been heard, so lag does not carry ayah to ayah. Real-recitation benches, Groq 429 backoff check, and live OpenAI quota/header reporting come with it. Groq and OpenAI stay independent engines.

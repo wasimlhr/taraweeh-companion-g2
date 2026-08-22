@@ -319,10 +319,11 @@ export class AudioPipeline {
     this.hasFailover      = false;
     this.isGroqMode       = _provider === 'groq';
     this.isOpenAIMode     = _provider === 'openai';
+    this.isDeepgramMode   = _provider === 'deepgram';
     this.isFastProvider   = _fastSet.has(_provider);
     this.isHFMode         = !this.isFastProvider;
     this._lastPromptText  = '';
-    console.log(`[Pipeline] Constructed — provider=${_provider}, fast=${this.isFastProvider}, groqThrottle=${this.isGroqMode}`);
+    console.log(`[Pipeline] Constructed — provider=${_provider}, model=${this.whisperOpts?.model || '(default)'}, fast=${this.isFastProvider}, groqThrottle=${this.isGroqMode}`);
 
     this.state     = createState();
     this.active    = false;

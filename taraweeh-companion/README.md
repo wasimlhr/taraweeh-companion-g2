@@ -91,8 +91,8 @@ taraweeh-companion-g2/
 │   ├── verseData.js            ← Verse lookup (Arabic, transliteration, translation)
 │   ├── whisperProvider.js      ← Legacy HF/local Whisper (optional)
 │   ├── groqProvider.js         ← Groq whisper-large-v3-turbo
-│   ├── openaiProvider.js       ← OpenAI whisper-1
-│   ├── transcriptionRouter.js  ← Provider routing (Groq / OpenAI / Gemini)
+│   ├── openaiProvider.js       ← OpenAI gpt-4o-mini-transcribe / whisper-1
+│   ├── transcriptionRouter.js  ← Independent engines (Groq / OpenAI / Deepgram / ElevenLabs)
 │   ├── data/
 │   │   ├── quran-full.json     ← Full Quran text (1.7 MB, local)
 │   │   └── verses-display.json ← Transliterations + translations (1.7 MB, local)
@@ -186,9 +186,9 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 | Provider | Model | Notes |
 |----------|-------|-------|
-| **Groq** | `whisper-large-v3-turbo` | Independent engine; fast Quranic Arabic |
-| **OpenAI** | `whisper-1` | Independent engine; same matcher, own quota |
-| **Deepgram** | `nova-3` Arabic | Optional extra engine (not a backup) |
+| **Groq** | `whisper-large-v3-turbo` | Independent engine; pick turbo or `whisper-large-v3` in Settings |
+| **OpenAI** | `gpt-4o-mini-transcribe` | Independent engine; `whisper-1` still selectable for word timings |
+| **Deepgram** | `nova-3` Arabic | Independent fast engine (~450ms, timestamps); `whisper-large` also Arabic |
 | **ElevenLabs** | `scribe_v2` | Optional extra engine (not a backup) |
 
 Set `SHARED_GROQ_KEY` and/or `SHARED_OPENAI_KEY` for free/shared mode (`MAX_MIN_PER_SESSION` caps sessions, default 90 min). Pick Groq or OpenAI in the app — nothing failsover.
@@ -265,6 +265,8 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | `MODAL_KEY` / `MODAL_SECRET` | — | Legacy Modal proxy auth |
 | `SHARED_GROQ_KEY` | — | Server-held Groq key for free/shared mode |
 | `SHARED_OPENAI_KEY` | — | Server-held OpenAI key; independent engine |
+| `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-mini-transcribe` | OpenAI model. `whisper-1` is the only one returning word timings |
+| `DEEPGRAM_MODEL` | `nova-3` | Deepgram model. `whisper-large` also serves Arabic |
 | `MAX_MIN_PER_SESSION` | `90` | Shared-mode session cap (minutes) |
 | `GEMINI_API_KEY` | — | Google Gemini API key (optional non-Quran detection) |
 | `TRANSCRIPTION_PROVIDER` | `groq` | `groq` or `openai` (independent engines; optional `deepgram` / `elevenlabs`) |
@@ -290,7 +292,7 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 |---|---|
 | **Frontend** | Vanilla HTML/CSS/JS (single file), Amiri Arabic font, Even Hub SDK |
 | **Backend** | Node.js, Express, WebSocket (`ws`), ES Modules |
-| **ASR** | OpenAI Whisper via Groq (`whisper-large-v3-turbo`) and OpenAI (`whisper-1`) |
+| **ASR** | Groq turbo, OpenAI gpt-4o-mini-transcribe / whisper-1, Deepgram nova-3, ElevenLabs scribe_v2 |
 | **Quran Data** | Local JSON (quran-json format), 6,236 ayahs with Arabic text |
 | **Display Data** | Local JSON with transliterations (Sahih International) and translations |
 | **Glasses** | Even Realities G2 via `@evenrealities/even_hub_sdk` |
@@ -300,7 +302,7 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 
 ## Transcription
 
-The app uses standard **OpenAI Whisper** via **Groq** (`whisper-large-v3-turbo`) and **OpenAI** (`whisper-1`). No HuggingFace token is required.
+The app uses hosted STT independently: Groq (`whisper-large-v3-turbo`), OpenAI (`gpt-4o-mini-transcribe` or `whisper-1`), Deepgram (`nova-3`), or ElevenLabs. Pick one engine and one model in Settings. No HuggingFace token is required.
 
 ---
 

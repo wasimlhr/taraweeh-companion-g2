@@ -33,6 +33,11 @@ const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
 const ENDPOINT_ON_DEMAND_ENABLED = process.env.ENDPOINT_ON_DEMAND_ENABLED === 'true';
 const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
 const ALLOWED_AUDIO_SOURCES = new Set(['browser', 'simulator', 'g2']);
+const ALLOWED_MODELS = {
+  groq: new Set(['whisper-large-v3-turbo', 'whisper-large-v3']),
+  openai: new Set(['gpt-4o-mini-transcribe', 'gpt-transcribe', 'gpt-4o-transcribe', 'whisper-1']),
+  deepgram: new Set(['nova-3', 'whisper-large']),
+};
 const LOCAL_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
 
 let lastEndpointLifecycle = {
@@ -65,6 +70,11 @@ function sanitizeTranslationLang(lang) {
 function sanitizeAudioSource(source) {
   const normalized = String(source || '').toLowerCase().trim();
   return ALLOWED_AUDIO_SOURCES.has(normalized) ? normalized : 'g2';
+}
+
+function sanitizeModel(provider, model) {
+  const v = String(model || '').trim();
+  return ALLOWED_MODELS[provider]?.has(v) ? v : '';
 }
 
 function buildWhisperOpts() {
@@ -144,6 +154,8 @@ app.get('/api/status', (req, res) => {
     mobileOnlyMode: MOBILE_ONLY_MODE,
     probeOnInit: process.env.WHISPER_PROBE_ON_INIT !== 'false',
     allowedPipelines: ['v3', 'v4'],
+    allowedProviders: [...STT_ENGINES, 'auto'],
+    allowedModels: Object.fromEntries(Object.entries(ALLOWED_MODELS).map(([k, v]) => [k, [...v]])),
     translationSource: 'local-bundled',
     allowedTranslationLangs: ['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv'],
     endpointLifecycle: lastEndpointLifecycle,
@@ -302,6 +314,7 @@ wss.on('connection', (ws, req) => {
     const clientProvider = allowedProviders.has(opts?.transcriptionProvider)
       ? opts.transcriptionProvider
       : 'groq';
+    const clientModel = sanitizeModel(clientProvider, opts?.transcriptionModel);
     const groqKey = (typeof opts?.groqApiKey === 'string') ? opts.groqApiKey.trim() : '';
     const openaiKey = (typeof opts?.openaiApiKey === 'string') ? opts.openaiApiKey.trim() : '';
     const deepgramKey = (typeof opts?.deepgramApiKey === 'string') ? opts.deepgramApiKey.trim() : '';
@@ -317,14 +330,15 @@ wss.on('connection', (ws, req) => {
       deepgramApiKey: deepgramKey,
       elevenlabsApiKey: elevenlabsKey,
       sharedMode: useSharedMode,
+      model: clientModel || undefined,
     };
 
     if (useSharedMode) {
       const shared = sharedKeyAvailability();
-      console.log(`[Init] SHARED independent engine — requested=${clientProvider} groq=${shared.groq} openai=${shared.openai}`);
+      console.log(`[Init] SHARED independent engine — requested=${clientProvider} model=${clientModel || '(default)'} groq=${shared.groq} openai=${shared.openai}`);
       send({ type: 'sys_status', component: 'model', status: 'ready', provider: clientProvider === 'auto' ? 'groq' : clientProvider, byok: false });
     } else if (hasByok) {
-      console.log(`[Init] BYOK independent engine provider=${clientProvider}`);
+      console.log(`[Init] BYOK independent engine provider=${clientProvider} model=${clientModel || '(default)'}`);
       send({ type: 'sys_status', component: 'model', status: 'ready', provider: clientProvider === 'auto' ? 'groq' : clientProvider, byok: true });
     } else {
       console.log('[Init] No API key and no shared keys configured — transcribe will fail');

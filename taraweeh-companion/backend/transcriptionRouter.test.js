@@ -178,6 +178,87 @@ describe('transcribe is independent', () => {
     }
   });
 
+  it('OpenAI uses the requested model and json for gpt-*', async () => {
+    const seen = { model: '', format: '', timestamps: false };
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mock.fn(async (url, init) => {
+      assert.match(String(url), /api\.openai\.com/);
+      const body = init.body;
+      seen.model = body.get('model');
+      seen.format = body.get('response_format');
+      seen.timestamps = body.getAll('timestamp_granularities[]').length > 0;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => '' },
+        json: async () => ({ text: 'قل هو الله احد', words: [] }),
+      };
+    });
+    try {
+      const result = await transcribe(Buffer.alloc(3200), {
+        provider: 'openai',
+        openaiApiKey: 'sk_test',
+        model: 'gpt-4o-mini-transcribe',
+      });
+      assert.equal(result.provider, 'openai');
+      assert.equal(seen.model, 'gpt-4o-mini-transcribe');
+      assert.equal(seen.format, 'json');
+      assert.equal(seen.timestamps, false);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('Groq uses extra.model when set', async () => {
+    let model = '';
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mock.fn(async (url, init) => {
+      assert.match(String(url), /api\.groq\.com/);
+      model = init.body.get('model');
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => '' },
+        json: async () => ({ text: 'الحمد لله', words: [] }),
+      };
+    });
+    try {
+      await transcribe(Buffer.alloc(3200), {
+        provider: 'groq',
+        groqApiKey: 'gsk_test',
+        model: 'whisper-large-v3',
+      });
+      assert.equal(model, 'whisper-large-v3');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('Deepgram includes the selected model in the listen URL', async () => {
+    let hit = '';
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mock.fn(async (url) => {
+      hit = String(url);
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => '' },
+        json: async () => ({ results: { channels: [{ alternatives: [{ transcript: 'قل هو الله احد', words: [] }] }] } }),
+      };
+    });
+    try {
+      await transcribe(Buffer.alloc(3200), {
+        provider: 'deepgram',
+        deepgramApiKey: 'dg_test',
+        model: 'whisper-large',
+      });
+      assert.match(hit, /api\.deepgram\.com\/v1\/listen/);
+      assert.match(hit, /model=whisper-large/);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   it('compareProviders returns per-engine results without chaining', async () => {
     const origFetch = globalThis.fetch;
     globalThis.fetch = mock.fn(async (url) => {

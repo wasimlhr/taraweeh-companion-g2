@@ -125,7 +125,7 @@ cd backend && npm install && cd ..
 Create a `.env` file in `taraweeh-companion/backend/`:
 
 ```env
-# Shared keys for free mode (Auto failsover on rate limits)
+# Shared keys for free mode (each engine is independent — pick one in Settings)
 SHARED_GROQ_KEY=gsk_your_groq_key_here
 SHARED_DEEPGRAM_KEY=your_deepgram_key_here
 SHARED_ELEVENLABS_KEY=your_elevenlabs_key_here
@@ -188,48 +188,45 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 ### Rate limits and cost
 
-Groq's free tier for `whisper-large-v3-turbo` allows **20 requests/min, 2,000/day, 7,200 audio-seconds/hour**, and bills a **10-second minimum per request**. The pipeline spot-checks the reciter's position roughly every 5 seconds with a 6-second window, so under continuous recitation:
+All figures below are measured against the live APIs, reading each provider's own `x-ratelimit` response headers.
 
-| | measured | free-tier cap |
-|---|---|---|
-| requests/min | ~12 | 20 |
-| requests per 90-min session | ~1,080 | 2,000/day |
-| audio-seconds/hour | ~7,200 | 7,200 |
+Groq's free tier for `whisper-large-v3-turbo` is **20 requests/min, 2,000 requests/day, 7,200 audio-seconds/hour**. The 10-second minimum applies to **billing**, not to the rate-limit counter: a 6-second window draws exactly 6 audio-seconds from the bucket, and the bucket refills at 2 audio-seconds per wall-clock second.
 
-Requests per minute are inside the cap, but **audio-seconds/hour sits right at it**, so a continuous session on a free Groq key can expect 429s around the one-hour mark. The pipeline backs off on 429 honouring `Retry-After` and resumes on its own (verified by `scripts/check-rate-limit-handling.js`). Real Taraweeh also includes ruku, sujud and pauses where no transcription happens, so actual usage is lower than this continuous-recitation figure.
+The pipeline spot-checks roughly every 5 seconds with a 6-second window, so under continuous recitation:
 
-Because of the 10-second minimum, roughly 40% of that quota is padding on 6-second windows. Sending longer windows less often was measured and is **not** a good trade — accuracy falls off sharply:
-
-| window / interval | audio-sec/hour | first 429 | within ±1 ayah |
+| | measured | cap | usage |
 |---|---|---|---|
-| 6s / 5s (default) | 7,200 (100%) | ~60 min | **99.8%** |
-| 10s / 6s | 6,275 (87%) | ~69 min | 94.7% |
-| 10s / 7.5s | 4,968 (69%) | ~87 min | 83.1% |
+| requests/min | ~12 | 20 | 60% |
+| audio-seconds drawn/sec | 1.18 | 2.00 refill | **59% of sustainable** |
+| requests per 90-min session | ~1,080 | 2,000/day | **54%** |
 
-To buy headroom at a known accuracy cost, raise `GROQ_LOCKED_MIN_INTERVAL_MS`.
+Audio-seconds are **not** the binding limit. The real constraint is **2,000 requests/day**, about one 90-minute session per key per day. The 20 RPM cap is easy to trip if anything else shares the key.
 
-**OpenAI has no practical rate-limit problem** when it is the engine you selected. Measured against the live `whisper-1` endpoint on a real recitation, the API's own `x-ratelimit` headers reported **2,499 of 2,500 requests remaining** while the pipeline ran at 15 rpm — about 0.6% of the cap. Latency is higher than Groq (median 1.25s, p95 2.26s versus ~350ms), but every call stayed inside the pipeline's 3s stale-result threshold: 0 of 69 were dropped, and tracking held at **99.2% within one ayah**. Groq and OpenAI are independent engines — pick one in settings; neither is a backup for the other.
+When 429s do occur the pipeline honours `Retry-After`, backs off, surfaces the limit, and resumes (verified by `scripts/check-rate-limit-handling.js`). Real Taraweeh includes ruku, sujud and pauses, so actual usage is below these continuous-recitation figures. Groq and OpenAI are independent engines — pick one in Settings; neither is a backup for the other.
 
-Choosing a provider for a full session:
+### Groq vs OpenAI — measured head to head
 
-| provider | rpm | cost / 90-min session | cost / 30 nights | latency | limit |
-|---|---|---|---|---|---|
-| Groq free (turbo) | 12 | free | free | ~350ms | **rate-limited at ~60 min** |
-| Groq paid (turbo) | 12 | ~$0.07 | ~$2.16 | ~350ms | none in practice |
-| OpenAI (`whisper-1`) | 15 | ~$0.81 | ~$24.30 | ~1.25s | none in practice |
+Tracking accuracy is a tie; everything else favours Groq.
 
-Groq's paid tier is cheaper and faster when a key is available. OpenAI is the right pick if Groq sign-ups are closed — it is measurably accurate and does not rate-limit, just slower and dearer.
+| | Groq `whisper-large-v3-turbo` | OpenAI `whisper-1` | OpenAI `gpt-4o-mini-transcribe` | Deepgram `nova-3` |
+|---|---|---|---|---|
+| tracking, within ±1 ayah | **99.2%** | **99.2%** | 98.7% | 97.7% |
+| median latency | **343ms** | 1,249ms | 436ms | 454ms |
+| word timestamps | yes | yes | no | yes |
+| cost / 90-min session | **~$0.12** | ~$0.81 | ~$0.41 | ~$0.58 |
+
+`whisper-large-v3-turbo` is **not** available on OpenAI's API (HTTP 404). Groq serves turbo; OpenAI does not. OpenAI's default in Settings is `gpt-4o-mini-transcribe` (~3× faster and half the price of `whisper-1`). `whisper-1` stays selectable as the only OpenAI model that returns word timings — the `gpt-4o-*` models reject `verbose_json` with HTTP 400. The display timer re-phases from transcript text, so losing timestamps still tracks.
 
 ### 2. Transcription providers
 
-| Provider | Model | Notes |
+Pick one engine and one model in **Settings**. Each engine must lock verses on its own.
+
+| Provider | Default model | Notes |
 |----------|-------|-------|
-| **Auto** (default) | failover chain | Groq → Deepgram → ElevenLabs → OpenAI; skips rate-limited engines |
-| **Groq** | `whisper-large-v3-turbo` | Usually best on Quran recitation; free tier ~20 RPM |
-| **Deepgram** | `nova-3` Arabic | Fast spoken Arabic; good when Groq is capped |
-| **ElevenLabs** | `scribe_v2` | 90+ languages, word timestamps |
-| **OpenAI** | `whisper-1` | Slower, more reliable quota |
-| **BYOK** | any of the above | Paste keys in Settings; Auto failsover across the keys you paste |
+| **Groq** | `whisper-large-v3-turbo` | Fastest and cheapest; 20 rpm / 2,000/day |
+| **OpenAI** | `gpt-4o-mini-transcribe` | No practical rate limit; `whisper-1` still selectable |
+| **Deepgram** | `nova-3` | ~450ms with word timings; `whisper-large` also Arabic |
+| **ElevenLabs** | `scribe_v2` | Optional extra engine, not a backup |
 
 Set any `SHARED_*_KEY` on the server for free/shared mode. Sessions are capped at `MAX_MIN_PER_SESSION` minutes (default 90). Use **Settings → Compare providers** to see which engine hears a short recitation best.
 
@@ -240,7 +237,9 @@ Set any `SHARED_*_KEY` on the server for free/shared mode. Sessions are capped a
 | `SHARED_GROQ_KEY` | For shared mode | [Groq API key](https://console.groq.com/keys) |
 | `SHARED_DEEPGRAM_KEY` | Recommended | [Deepgram API key](https://console.deepgram.com/) |
 | `SHARED_ELEVENLABS_KEY` | Recommended | [ElevenLabs API key](https://elevenlabs.io/app/settings/api-keys) |
-| `SHARED_OPENAI_KEY` | Recommended | [OpenAI API key](https://platform.openai.com/api-keys) |
+| `SHARED_OPENAI_KEY` | Recommended | [OpenAI API key](https://platform.openai.com/api-keys) — independent of Groq |
+| `OPENAI_TRANSCRIBE_MODEL` | No | Default OpenAI model (`gpt-4o-mini-transcribe`). `whisper-1` is the only one returning word timings |
+| `DEEPGRAM_MODEL` | No | Default Deepgram model (`nova-3`). `whisper-large` also serves Arabic |
 | `MAX_MIN_PER_SESSION` | No | Shared-mode session cap in minutes (default `90`) |
 | `GEMINI_API_KEY` | No | Optional non-Quran detection |
 | `PORT` | No | Default 3001 |
@@ -302,10 +301,12 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | Variable | Default | Description |
 |---|---|---|
 | `SHARED_GROQ_KEY` | — | Server-held Groq key for free/shared mode |
-| `SHARED_OPENAI_KEY` | — | Server-held OpenAI key; failover when Groq 429s |
+| `SHARED_OPENAI_KEY` | — | Server-held OpenAI key; independent engine |
+| `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-mini-transcribe` | OpenAI model. `whisper-1` is the only one returning word timings |
+| `DEEPGRAM_MODEL` | `nova-3` | Deepgram model. `whisper-large` also serves Arabic |
 | `MAX_MIN_PER_SESSION` | `90` | Shared-mode session cap (minutes) |
 | `GEMINI_API_KEY` | — | Google Gemini API key (optional non-Quran detection) |
-| `TRANSCRIPTION_PROVIDER` | `groq` | `groq`, `openai`, `gemini`, or legacy `whisper` |
+| `TRANSCRIPTION_PROVIDER` | `groq` | Independent engine: `groq`, `openai`, `deepgram`, `elevenlabs` |
 | `PORT` | `3001` | HTTP server port |
 | `HTTPS_PORT` | `3443` | HTTPS server port |
 | `READ_ADVANCE_CONFIDENCE` | `40` | Minimum confidence (%) for timer-based advance |
@@ -354,12 +355,12 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 
 ## Transcription
 
-The app can use several hosted STT engines. **Auto** (default) tries them in order and skips anyone who is rate-limited:
+The app uses hosted STT engines independently — pick one in Settings; nothing is a backup.
 
-- **Groq** — `whisper-large-v3-turbo` (usually strongest on Quran recitation; free-tier RPM limits)
-- **Deepgram** — `nova-3` Arabic (fast spoken Arabic)
-- **ElevenLabs** — `scribe_v2` (90+ languages, word timestamps)
-- **OpenAI** — `whisper-1` (slower, more stable quota)
+- **Groq** — `whisper-large-v3-turbo` (default) or `whisper-large-v3`
+- **OpenAI** — `gpt-4o-mini-transcribe` (default) or `whisper-1` / `gpt-transcribe` / `gpt-4o-transcribe`
+- **Deepgram** — `nova-3` (default) or hosted `whisper-large`
+- **ElevenLabs** — `scribe_v2` (optional extra engine)
 
 Arabic text is passed to the local keyword matcher against the full Quran corpus. Use **Settings → Compare providers** with a 4-second recitation to see which engine hears you best.
 

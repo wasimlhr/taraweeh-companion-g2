@@ -80,7 +80,7 @@ async function callProvider(name, pcmBuffer, apiKey, emit, extra = {}) {
     case 'groq':
       return transcribeWithGroq(pcmBuffer, apiKey, emit, extra);
     case 'deepgram':
-      return transcribeWithDeepgram(pcmBuffer, apiKey, emit);
+      return transcribeWithDeepgram(pcmBuffer, apiKey, emit, extra);
     case 'elevenlabs':
       return transcribeWithElevenLabs(pcmBuffer, apiKey, emit);
     case 'openai':
@@ -116,6 +116,7 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
 
   const extra = {};
   if (opts.prompt) extra.prompt = opts.prompt;
+  if (opts.model) extra.model = opts.model;
   return callProvider(name, pcmBuffer, apiKey, emit, extra);
 }
 

@@ -1,6 +1,6 @@
 /**
- * OpenAI Whisper API provider — sends WAV audio to OpenAI's whisper-1 endpoint.
- * No RPM-level rate limits on standard tiers; pay-per-use (~$0.006/min audio).
+ * OpenAI transcription API — default gpt-4o-mini-transcribe (faster, cheaper).
+ * whisper-1 is the only OpenAI model that returns word timestamps.
  *
  * Docs: https://platform.openai.com/docs/api-reference/audio/createTranscription
  */
@@ -8,13 +8,14 @@ import { pcmToWav } from './pcmToWav.js';
 import { httpError } from './httpRetry.js';
 
 const OPENAI_URL = 'https://api.openai.com/v1/audio/transcriptions';
-const OPENAI_MODEL = 'whisper-1';
+const OPENAI_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe';
+const supportsTimestamps = (model) => !/^gpt-/.test(model);
 
 /**
  * @param {Buffer} pcmBuffer    - Raw PCM S16LE 16kHz mono
  * @param {string} apiKey       - User's OpenAI API key (sk-...)
  * @param {Function} [emit]     - status callback
- * @param {{ prompt?: string }} [extra]
+ * @param {{ prompt?: string, model?: string }} [extra]
  * @returns {Promise<{text: string, words: Array, provider: 'openai'}>}
  */
 export async function transcribeWithOpenAI(pcmBuffer, apiKey, emit = null, extra = {}) {
@@ -26,11 +27,15 @@ export async function transcribeWithOpenAI(pcmBuffer, apiKey, emit = null, extra
   const form = new FormData();
   const blob = new Blob([wav], { type: 'audio/wav' });
   form.append('file', blob, 'audio.wav');
-  form.append('model', OPENAI_MODEL);
+  const useModel = extra.model || OPENAI_MODEL;
+  const wantTimestamps = supportsTimestamps(useModel);
+  form.append('model', useModel);
   form.append('language', 'ar');
-  form.append('response_format', 'verbose_json');
-  form.append('timestamp_granularities[]', 'word');
-  form.append('timestamp_granularities[]', 'segment');
+  form.append('response_format', wantTimestamps ? 'verbose_json' : 'json');
+  if (wantTimestamps) {
+    form.append('timestamp_granularities[]', 'word');
+    form.append('timestamp_granularities[]', 'segment');
+  }
   form.append('temperature', '0');
   if (extra.prompt) form.append('prompt', extra.prompt);
 
@@ -70,6 +75,6 @@ export async function transcribeWithOpenAI(pcmBuffer, apiKey, emit = null, extra
     }
   }
 
-  console.log(`[OpenAI] ${latencyMs}ms  wav=${wav.length}B  words=${words.length}  text="${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
+  console.log(`[OpenAI:${useModel}] ${latencyMs}ms  wav=${wav.length}B  words=${words.length}  text="${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
   return { text, words, provider: 'openai' };
 }

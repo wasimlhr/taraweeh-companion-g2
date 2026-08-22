@@ -1,34 +1,49 @@
 /**
  * Deepgram Nova-3 Arabic STT — pre-recorded listen API.
+ * Arabic is served by `nova-3` (with `language=ar`) and by Deepgram's hosted
+ * `whisper-large`; `nova-2` and `base` reject Arabic outright.
+ *
  * Docs: https://developers.deepgram.com/docs/models-languages-overview
  */
-import { pcmToWav } from './pcmToWav.js';
 import { httpError } from './httpRetry.js';
 
-const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen?model=nova-3&language=ar&smart_format=true&punctuate=false&utterances=false';
+const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen';
+const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || 'nova-3';
 
 /**
- * @param {Buffer} pcmBuffer
+ * @param {Buffer} pcmBuffer - Raw PCM S16LE 16kHz mono
  * @param {string} apiKey
  * @param {Function} [emit]
+ * @param {{ model?: string }} [extra]
  * @returns {Promise<{text: string, words: Array, provider: 'deepgram'}>}
  */
-export async function transcribeWithDeepgram(pcmBuffer, apiKey, emit = null) {
+export async function transcribeWithDeepgram(pcmBuffer, apiKey, emit = null, extra = {}) {
   if (!apiKey) {
     throw new Error('Deepgram API key missing. Set it in app settings or SHARED_DEEPGRAM_KEY.');
   }
 
-  const wav = pcmToWav(pcmBuffer, 16000);
+  const useModel = extra.model || DEEPGRAM_MODEL;
+  // Raw PCM avoids building a WAV header on every request.
+  const params = new URLSearchParams({
+    model: useModel,
+    language: 'ar',
+    encoding: 'linear16',
+    sample_rate: '16000',
+    channels: '1',
+    punctuate: 'false',
+    smart_format: 'false',
+  });
+
   emit?.({ component: 'model', status: 'pending', provider: 'deepgram' });
 
   const t0 = Date.now();
-  const res = await fetch(DEEPGRAM_URL, {
+  const res = await fetch(`${DEEPGRAM_URL}?${params}`, {
     method: 'POST',
     headers: {
       Authorization: `Token ${apiKey}`,
-      'Content-Type': 'audio/wav',
+      'Content-Type': 'audio/raw',
     },
-    body: wav,
+    body: pcmBuffer,
   });
 
   if (!res.ok) {
@@ -60,7 +75,7 @@ export async function transcribeWithDeepgram(pcmBuffer, apiKey, emit = null) {
     }
   }
 
-  console.log(`[Deepgram] ${latencyMs}ms  wav=${wav.length}B  words=${words.length}  text="${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
+  console.log(`[Deepgram:${useModel}] ${latencyMs}ms  pcm=${pcmBuffer.length}B  words=${words.length}  text="${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
   return { text, words, provider: 'deepgram' };
 }
 

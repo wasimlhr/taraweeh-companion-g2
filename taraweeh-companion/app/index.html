@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.25</span>
+      <span class="version" id="versionEl">v2.6.26</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1061,10 +1061,15 @@ body {
         </div>
         <span class="s-hint" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
           Each engine is independent — pick one and it must lock verses on its own.<br>
-          <b>Groq</b> <code>whisper-large-v3-turbo</code> — fast Quranic Arabic.<br>
-          <b>OpenAI</b> <code>whisper-1</code> — same matcher, its own key and quota.<br>
-          <b>Deepgram</b> / <b>ElevenLabs</b> — optional extra engines, not backups.
+          <b>Groq</b> turbo — fastest (~350ms) with word timings. Sign-ups may be closed.<br>
+          <b>OpenAI</b> default is <code>gpt-4o-mini-transcribe</code> (~450ms). Pick <code>whisper-1</code> if you want timestamps.<br>
+          <b>Deepgram</b> nova-3 — ~450ms with word timings. <b>ElevenLabs</b> is an extra engine, not a backup.
         </span>
+        <div id="transcribeModelRow">
+          <label class="s-label" for="settingTranscribeModel">Model</label>
+          <select id="settingTranscribeModel" onchange="setTranscribeModel(this.value)"></select>
+          <span class="s-hint" id="modelHint" style="font-size:11px;display:block;margin:6px 0 10px;line-height:1.5"></span>
+        </div>
         <div id="groqKeyRow">
           <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
@@ -1156,7 +1161,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.25';
+  const APP_VERSION = 'v2.6.26';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1554,6 +1559,7 @@ body {
     deepgramApiKey: '',
     elevenlabsApiKey: '',
     transcriptionProvider: 'groq',
+    transcriptionModel: '',         // per-provider model; '' = provider default
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
     reciteMode: 'taraweeh',
   };
@@ -1573,6 +1579,7 @@ body {
     var byok = S.settings.keyMode === 'byok';
     return {
       transcriptionProvider: sanitizeProvider(S.settings.transcriptionProvider),
+      transcriptionModel: S.settings.transcriptionModel || '',
       groqApiKey: byok ? (S.settings.groqApiKey || '').trim() : '',
       openaiApiKey: byok ? (S.settings.openaiApiKey || '').trim() : '',
       deepgramApiKey: byok ? (S.settings.deepgramApiKey || '').trim() : '',
@@ -3483,6 +3490,61 @@ body {
     log('Key mode: ' + (m === 'shared' ? 'Free (shared)' : 'My own key'), 'ok');
   };
 
+  // Mirrors ALLOWED_MODELS in server.js. Notes are measured, not marketing.
+  var TRANSCRIBE_MODELS = {
+    groq: [
+      { id: 'whisper-large-v3-turbo', label: 'whisper-large-v3-turbo (default)',
+        note: 'Fastest measured: ~350ms, word timings, ~$0.12 per 90min session.' },
+      { id: 'whisper-large-v3', label: 'whisper-large-v3',
+        note: 'Slightly lower error rate than turbo, ~3x the price.' },
+    ],
+    openai: [
+      { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe (default)',
+        note: '~450ms and half the price of whisper-1. No word timings; the timer re-phases from text.' },
+      { id: 'gpt-transcribe', label: 'gpt-transcribe',
+        note: "OpenAI's newer default. ~465ms, no word timings." },
+      { id: 'gpt-4o-transcribe', label: 'gpt-4o-transcribe',
+        note: '~1.4s, no word timings. Higher accuracy claim than mini.' },
+      { id: 'whisper-1', label: 'whisper-1 (legacy)',
+        note: 'The only OpenAI model returning word timings, but ~1.25s and dearest.' },
+    ],
+    deepgram: [
+      { id: 'nova-3', label: 'nova-3 (default)',
+        note: "~450ms with word timings. Deepgram's own Arabic model." },
+      { id: 'whisper-large', label: 'whisper-large',
+        note: 'Deepgram-hosted Whisper. Similar latency, Whisper transcripts.' },
+    ],
+  };
+
+  function refreshModelChoices() {
+    var p = sanitizeProvider(S.settings.transcriptionProvider);
+    var list = TRANSCRIBE_MODELS[p] || [];
+    var sel = document.getElementById('settingTranscribeModel');
+    var hint = document.getElementById('modelHint');
+    var row = document.getElementById('transcribeModelRow');
+    if (row) row.style.display = list.length ? '' : 'none';
+    if (!sel) return;
+    var ids = list.map(function (m) { return m.id; });
+    if (list.length && ids.indexOf(S.settings.transcriptionModel) < 0) {
+      S.settings.transcriptionModel = list[0].id;
+    }
+    if (!list.length) S.settings.transcriptionModel = '';
+    sel.innerHTML = list.map(function (m) {
+      return '<option value="' + m.id + '"' + (m.id === S.settings.transcriptionModel ? ' selected' : '') + '>' + m.label + '</option>';
+    }).join('');
+    var cur = list.filter(function (m) { return m.id === S.settings.transcriptionModel; })[0];
+    if (hint) hint.textContent = cur ? cur.note : '';
+  }
+  window.refreshModelChoices = refreshModelChoices;
+
+  window.setTranscribeModel = function (id) {
+    S.settings.transcriptionModel = id || '';
+    saveSettings();
+    refreshModelChoices();
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
+    log('Model → ' + (id || 'default'), 'ok');
+  };
+
   window.setProvider = function (p, reinitialize) {
     p = sanitizeProvider(p);
     S.settings.transcriptionProvider = p;
@@ -3507,9 +3569,11 @@ body {
     if (dRow) dRow.style.display = (p === 'deepgram') ? '' : 'none';
     if (eRow) eRow.style.display = (p === 'elevenlabs') ? '' : 'none';
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
+    refreshModelChoices();
     if (reinitialize !== false && S.ws && S.ws.readyState === WebSocket.OPEN) {
       reinitPipeline();
-      log('Provider → ' + providerLabel(p), 'ok');
+      log('Provider → ' + providerLabel(p)
+        + (S.settings.transcriptionModel ? ' (' + S.settings.transcriptionModel + ')' : ''), 'ok');
     }
   };
 
@@ -3781,18 +3845,11 @@ body {
     S.settings.deepgramApiKey = dgEl ? (dgEl.value || '').trim() : (S.settings.deepgramApiKey || '');
     var elEl = document.getElementById('settingElevenKey');
     S.settings.elevenlabsApiKey = elEl ? (elEl.value || '').trim() : (S.settings.elevenlabsApiKey || '');
-    var activeProv = 'groq';
-    var provBtnIds = {
-      groq: 'btnProviderGroq',
-      openai: 'btnProviderOpenAI',
-      deepgram: 'btnProviderDeepgram',
-      elevenlabs: 'btnProviderEleven',
-    };
-    STT_PROVIDERS.forEach(function (name) {
-      var btn = document.getElementById(provBtnIds[name]);
-      if (btn && btn.classList.contains('active')) activeProv = name;
-    });
-    S.settings.transcriptionProvider = sanitizeProvider(activeProv);
+    var modelEl = document.getElementById('settingTranscribeModel');
+    if (modelEl && modelEl.value) S.settings.transcriptionModel = modelEl.value;
+    // setProvider() is the source of truth. Re-deriving from button DOM dropped
+    // any engine the save path did not name (Deepgram / ElevenLabs).
+    S.settings.transcriptionProvider = sanitizeProvider(S.settings.transcriptionProvider);
     S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')
       ? 'transliteration' : 'transliteration';
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
