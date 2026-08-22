@@ -19,6 +19,7 @@ import {
   SAMPLE_RATE, TICK_MS, buildTimeline, makeVoicedAt, makeTruthAt, makePcm,
   installGroqStub, loadPipeline, silenceConsole,
 } from './lib/recitation-harness.js';
+import { quotaReport } from './lib/quota.js';
 
 const argv = process.argv.slice(2);
 const arg = (n, d) => {
@@ -195,20 +196,27 @@ function report() {
   const n = errs.length || 1;
   const pct = (v) => `${((v / n) * 100).toFixed(1)}%`;
 
-  // Longest continuous stretch out of sync, and where it started.
-  let worst = { runMs: 0, atMs: 0, err: 0 };
-  let runStart = -1;
-  for (let i = 0; i <= errs.length; i++) {
-    const bad = i < errs.length && errs[i] !== 0;
-    if (bad && runStart < 0) runStart = i;
-    if (!bad && runStart >= 0) {
-      const runMs = (i - runStart) * SAMPLE_EVERY_MS;
-      if (runMs > worst.runMs) {
-        worst = { runMs, atMs: tracked[runStart].atMs, err: errs[runStart] };
+  // Longest continuous run where the error breaches a tolerance. A one-ayah
+  // offset is acceptable in use, so the tolerance=1 figure describes a real
+  // failure; tolerance=0 is reported for reference.
+  const longestRunBeyond = (tol) => {
+    let worst = { runMs: 0, atMs: 0, err: 0 };
+    let runStart = -1;
+    for (let i = 0; i <= errs.length; i++) {
+      const e = i < errs.length ? errs[i] : 0;
+      const bad = i < errs.length && (e === 'surah' || Math.abs(e) > tol);
+      if (bad && runStart < 0) runStart = i;
+      if (!bad && runStart >= 0) {
+        const runMs = (i - runStart) * SAMPLE_EVERY_MS;
+        if (runMs > worst.runMs) worst = { runMs, atMs: tracked[runStart].atMs, err: errs[runStart] };
+        runStart = -1;
       }
-      runStart = -1;
     }
-  }
+    return worst;
+  };
+  const worst = longestRunBeyond(0);
+  const worstBeyond1 = longestRunBeyond(1);
+  const outside1 = errs.filter((e) => e === 'surah' || (typeof e === 'number' && Math.abs(e) > 1)).length;
 
   out('');
   out('='.repeat(78));
@@ -217,12 +225,15 @@ function report() {
   out('='.repeat(78));
   out(`first lock at       : ${firstLockIdx < 0 ? 'NEVER' : `${(samples[firstLockIdx].atMs / 1000).toFixed(1)}s`}`);
   out(`ASR calls           : ${calls.length} (${(calls.length / (totalMs / 60000)).toFixed(1)} per min)`);
+  quotaReport(out, calls, totalMs);
   out(`IN SYNC (exact)     : ${pct(exact)}`);
   out(`within +/-1 ayah    : ${pct(within1)}`);
   out(`display AHEAD       : ${pct(ahead.length)}${ahead.length ? ` (max +${Math.max(...ahead)})` : ''}`);
   out(`display BEHIND      : ${pct(behind.length)}${behind.length ? ` (max ${Math.min(...behind)})` : ''}`);
   out(`wrong surah         : ${pct(wrongSurah)}`);
-  out(`worst out-of-sync   : ${(worst.runMs / 1000).toFixed(1)}s starting at ${(worst.atMs / 1000).toFixed(1)}s (err=${worst.err})`);
+  out(`OUTSIDE +/-1        : ${pct(outside1)}   <- the failure case`);
+  out(`longest beyond +/-1 : ${(worstBeyond1.runMs / 1000).toFixed(1)}s${worstBeyond1.runMs ? ` starting at ${(worstBeyond1.atMs / 1000).toFixed(1)}s` : ''}`);
+  out(`longest not-exact   : ${(worst.runMs / 1000).toFixed(1)}s starting at ${(worst.atMs / 1000).toFixed(1)}s (err=${worst.err})`);
 
   if (OPTS.timeline) {
     out('');

@@ -15,7 +15,7 @@ OUT="${OUT:-/tmp/syncbench}"
 BASELINE="${BASELINE:-5bccb84^}"
 EXTRA="${EXTRA:---taraweeh}"
 BASELINE_FILE="backend/.bench-baseline-pipeline.js"
-fields='first lock|ASR calls|IN SYNC|within|AHEAD|BEHIND|wrong surah|worst'
+fields='first lock|ASR calls|IN SYNC|within|AHEAD|BEHIND|wrong surah|OUTSIDE|longest'
 
 mkdir -p "$OUT"
 

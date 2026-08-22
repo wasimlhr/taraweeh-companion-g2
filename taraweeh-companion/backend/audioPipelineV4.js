@@ -13,7 +13,7 @@ import { transcribe } from './transcriptionRouter.js';
 import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah } from './anchorStateMachine.js';
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
-import { findAnchor, isRefrain, getAyah, spotCheck } from './keywordMatcher.js';
+import { findAnchor, isRefrain, getAyah, spotCheck, ayahWordsCovered } from './keywordMatcher.js';
 
 // ── Word-level corpus data (morphology + tajweed weights) ───────────────────
 const __dirname_v4 = dirname(fileURLToPath(import.meta.url));
@@ -168,6 +168,11 @@ const FORWARD_JUMP_DRIFT = parseInt(process.env.FORWARD_JUMP_DRIFT || '4', 10);
 // the end of it. That pause is additive, so a timer multiplier cannot represent
 // it: the same cushion that fits 1.2s breaths races ahead on 4s ones. Learn it
 // separately and add it.
+// Re-phasing the display timer against the reciter's word position inside the
+// current ayah. REPHASE_MIN_WORDS=0 disables it.
+const REPHASE_MIN_WORDS = parseInt(process.env.REPHASE_MIN_WORDS || '2', 10);
+const REPHASE_TOLERANCE_MS = parseInt(process.env.REPHASE_TOLERANCE_MS || '900', 10);
+const REPHASE_FLOOR_MS = parseInt(process.env.REPHASE_FLOOR_MS || '400', 10);
 const PAUSE_EST_START_MS = parseInt(process.env.PAUSE_EST_START_MS || '900', 10);
 const PAUSE_EST_MAX_MS = parseInt(process.env.PAUSE_EST_MAX_MS || '6000', 10);
 // Hold the display while the mic hears nothing. Above a normal inter-word gap so
@@ -1959,6 +1964,7 @@ export class AudioPipeline {
           return;
         }
         console.log(`[Pipeline] Whisper ${realMatch ? 'confirms' : 'noise→'} :${confirmedAyah} (${Math.round(remaining/1000)}s left, streak=${this._sameAyahStreak})`);
+        if (realMatch && this._rephaseFromWordPosition(text, remaining, score)) return;
       } else {
         console.log(`[Pipeline] Whisper ${realMatch ? 'confirms' : 'noise→'} :${confirmedAyah} (streak=${this._sameAyahStreak})`);
         if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
@@ -2363,6 +2369,36 @@ export class AudioPipeline {
     this._forwardJumpCount = consistent ? this._forwardJumpCount + 1 : 1;
     this._forwardJumpAyah = ayah;
     return this._forwardJumpCount >= FORWARD_JUMP_CONFIRMS;
+  }
+
+  /**
+   * Re-phase the running timer against where the reciter actually is inside the
+   * current ayah.
+   *
+   * A timer whose duration is correct still preserves whatever lag it started
+   * with: if the display entered this ayah two seconds late it will leave it two
+   * seconds late, and the next ayah inherits that. Real-recitation traces showed
+   * exactly this — Whisper reporting one ayah ahead on nearly every check, the
+   * display nudged forward, then falling behind again immediately.
+   *
+   * Whisper already tells us which words of this ayah have been recited, so
+   * schedule the time the *rest* of it needs instead of a whole ayah again.
+   * Returns true if it rescheduled.
+   */
+  _rephaseFromWordPosition(text, remainingMs, score) {
+    if (REPHASE_MIN_WORDS <= 0 || !this._measuredMsPerWord) return false;
+    const { covered, total } = ayahWordsCovered(this._displaySurah, this._displayAyah, text);
+    if (!total || covered < REPHASE_MIN_WORDS) return false;
+    const left = Math.max(0, total - covered);
+    const want = Math.round(left * this._measuredMsPerWord + this._measuredPauseMs);
+    // Only act on a meaningful disagreement, so this does not fight the timer
+    // every single check.
+    if (Math.abs(want - remainingMs) < REPHASE_TOLERANCE_MS) return false;
+    console.log(`[Pipeline] Re-phase :${this._displayAyah} — heard ${covered}/${total} words, ${Math.round(remainingMs)}ms scheduled but ${want}ms of ayah left`);
+    this._cancelReadAdvance();
+    this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, 1.0, Math.max(REPHASE_FLOOR_MS, want));
+    this._emitState(text, null);
+    return true;
   }
 
   _isDisplayCapped() {

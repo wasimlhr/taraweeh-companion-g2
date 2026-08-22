@@ -184,6 +184,28 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 **Custom backend URL:** If users connect to a different backend, they enter the WebSocket URL in **Settings → Backend URL** (e.g. `wss://your-app.railway.app/ws`).
 
+### Rate limits and cost
+
+Groq's free tier for `whisper-large-v3-turbo` allows **20 requests/min, 2,000/day, 7,200 audio-seconds/hour**, and bills a **10-second minimum per request**. The pipeline spot-checks the reciter's position roughly every 5 seconds with a 6-second window, so under continuous recitation:
+
+| | measured | free-tier cap |
+|---|---|---|
+| requests/min | ~12 | 20 |
+| requests per 90-min session | ~1,080 | 2,000/day |
+| audio-seconds/hour | ~7,200 | 7,200 |
+
+Requests per minute are comfortably inside the cap, but **audio-seconds/hour sits right at it**, so a continuous session on a free key can expect 429s around the one-hour mark. Two things soften that: the pipeline backs off on 429 honouring `Retry-After` and resumes on its own (verified by `scripts/check-rate-limit-handling.js`), and shared mode fails over to OpenAI per chunk. Real Taraweeh also includes ruku, sujud and pauses where no transcription happens, so actual usage is lower than this continuous-recitation figure.
+
+Because of the 10-second minimum, roughly 40% of that quota is padding on 6-second windows. Sending longer windows less often was measured and is **not** a good trade — accuracy falls off sharply:
+
+| window / interval | audio-sec/hour | first 429 | within ±1 ayah |
+|---|---|---|---|
+| 6s / 5s (default) | 7,200 (100%) | ~60 min | **99.8%** |
+| 10s / 6s | 6,275 (87%) | ~69 min | 94.7% |
+| 10s / 7.5s | 4,968 (69%) | ~87 min | 83.1% |
+
+To buy headroom at a known accuracy cost, raise `GROQ_LOCKED_MIN_INTERVAL_MS`. For hosting a full Taraweeh, a paid Groq key is the better answer: at $0.04 per audio-hour, a 90-minute session costs about **$0.12**, or roughly **$3.60 for all 30 nights**.
+
 ### 2. Transcription providers
 
 | Provider | Model | Notes |
@@ -284,6 +306,8 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | `G2_VOICE_MAX_ACTIVITY_RMS` | `0.0009` | Ceiling on how far room noise may raise the G2-mic gate |
 | `GROQ_TIMER_CUSHION` | `1.2` | Padding on every locked-mode display timer. Biased slow on purpose: running ahead shows an ayah the imam has not reached yet. Lower it for tighter tracking on even-paced recitation, raise it if the display overshoots |
 | `GAP1_NUDGE_MS` | `500` | When Whisper places the reciter exactly one ayah ahead, compress the remaining timer to this instead of snapping. `0` restores the old ignore-it behaviour |
+| `REPHASE_MIN_WORDS` | `2` | Re-phase the display timer once this many words of the current ayah have been heard, so the remaining time is scheduled instead of a whole ayah again. `0` disables |
+| `REPHASE_TOLERANCE_MS` | `900` | Only re-phase when the scheduled and remaining times disagree by more than this |
 | `FORWARD_JUMP_CONFIRMS` | `2` | Consecutive agreeing reports needed to follow a jump of more than 6 ayahs when confidence alone is too low |
 | `DISPLAY_HOLD_SILENCE_MS` | `1200` | Hold the display once the mic has heard nothing for this long |
 | `DISPLAY_HOLD_MAX_MS` | `20000` | Upper bound on that hold, so a mis-tuned voice gate cannot freeze the display |

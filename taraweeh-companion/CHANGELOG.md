@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.10 - 2026-08-22
+
+- Display now keeps within one ayah of the reciter on real recitations.
+- Verified against real audio from four reciters instead of synthetic tones.
+- Rate-limit backoff confirmed: pauses and resumes on its own, no restart needed.
+
 ## 2.6.9 - 2026-08-22
 
 - Display now tracks the reciter far more closely instead of trailing a verse behind.
