@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.13</span>
+      <span class="version" id="versionEl">v2.6.14</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1156,7 +1156,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.13';
+  const APP_VERSION = 'v2.6.14';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2873,8 +2873,23 @@ body {
 
   var MAX_ACCUM_SAMPLES = 16000 * 5;  // cap at 5s to prevent burst on reconnect
 
+  var SIMULATOR_CAPTURE_GAIN = 8; // PC mic through EvenHub sim arrives ~0.002 RMS
+
+  function applyInt16Gain(u8, gain) {
+    var src = new Int16Array(u8.buffer, u8.byteOffset, Math.floor(u8.byteLength / 2));
+    var out = new Int16Array(src.length);
+    for (var i = 0; i < src.length; i++) {
+      var v = Math.round(src[i] * gain);
+      out[i] = v > 32767 ? 32767 : (v < -32768 ? -32768 : v);
+    }
+    return new Uint8Array(out.buffer);
+  }
+
   function sendPcm(u8) {
     if (!S.isRecording) return;   // ignore mic until user clicks Start
+    if (currentAudioSource() === 'simulator') {
+      u8 = applyInt16Gain(u8, SIMULATOR_CAPTURE_GAIN);
+    }
     if (S.isG2) updateWave(rmsInt16(u8));
     if (S.mode === 'PAUSED') return;
     var now = Date.now();
@@ -2888,7 +2903,7 @@ body {
     // ── Stage 1 log: mic is capturing ─────────────────────────────────────────
     if (_pcmChunkCount === 0) {
       var source = currentAudioSource();
-      var src = source === 'g2' ? 'G2 mic' : (source === 'simulator' ? 'simulator mic' : 'browser mic');
+      var src = source === 'g2' ? 'G2 mic' : (source === 'simulator' ? 'simulator mic ×8 (PC mic)' : 'browser mic');
       log('\u25cf Stage 1 \u2014 ' + src + ' capturing (' + u8.byteLength + 'B/frame)', 'ok');
       setPill('sPillConf', 'ok', 'Match: listening');
     }
@@ -3004,7 +3019,11 @@ body {
         var src = S.audioContext.createMediaStreamSource(stream);
         S.scriptProcessor = S.audioContext.createScriptProcessor(4096, 1, 1);
         src.connect(S.scriptProcessor);
-        S.scriptProcessor.connect(S.audioContext.destination);
+        // Keep the processor alive without playing the mic (echo garbles STT).
+        var mute = S.audioContext.createGain();
+        mute.gain.value = 0;
+        S.scriptProcessor.connect(mute);
+        mute.connect(S.audioContext.destination);
         log('Browser mic open, sr=' + S.audioContext.sampleRate, 'ok');
 
         S.scriptProcessor.onaudioprocess = function (e) {

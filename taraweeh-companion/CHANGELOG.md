@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.14 - 2026-08-22
+
+- Removed quiet-boost for every source (G2, simulator, browser). 20× gain was distorting recitation — live Taraweeh logs turned `الحمد لله` into `حال الله` / `موسيقى`.
+- G2 PCM is sent as-is. PC mic through the EvenHub simulator gets a limited 8× capture gain (clip, not a 20× boost) so Groq can hear it.
+- Browser mic graph is muted so the PC speaker does not echo into STT.
+
 ## 2.6.13 - 2026-08-22
 
 - Simulator search no longer 20×-boosts quiet noise into Groq. That was producing `موسيقى` / `ترجمة نانسي قنقر` instead of Fatiha.

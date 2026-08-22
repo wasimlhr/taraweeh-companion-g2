@@ -80,18 +80,18 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
     lockedVoiceGateFactor: parseFloat(process.env.BROWSER_LOCKED_VOICE_GATE_FACTOR || '0.75'),
     quietBoostThreshold: parseFloat(process.env.BROWSER_QUIET_BOOST_THRESHOLD || '0.025'),
     quietBoostTarget: parseFloat(process.env.BROWSER_QUIET_BOOST_TARGET || '0.08'),
-    maxBoostGain: parseFloat(process.env.BROWSER_MAX_BOOST_GAIN || '8'),
+    maxBoostGain: parseFloat(process.env.BROWSER_MAX_BOOST_GAIN || '1'),
   }),
   simulator: Object.freeze({
     source: 'simulator',
     removeDcOffset: true,
-    voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.005'),
-    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.020'),
+    voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.0022'),
+    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.010'),
     voiceNoiseMultiplier: parseFloat(process.env.SIMULATOR_VOICE_NOISE_MULTIPLIER || '1.5'),
     lockedVoiceGateFactor: parseFloat(process.env.SIMULATOR_LOCKED_VOICE_GATE_FACTOR || '0.8'),
     quietBoostThreshold: parseFloat(process.env.SIMULATOR_QUIET_BOOST_THRESHOLD || '0.015'),
     quietBoostTarget: parseFloat(process.env.SIMULATOR_QUIET_BOOST_TARGET || '0.08'),
-    maxBoostGain: parseFloat(process.env.SIMULATOR_MAX_BOOST_GAIN || '2'),
+    maxBoostGain: parseFloat(process.env.SIMULATOR_MAX_BOOST_GAIN || '1'),
   }),
   g2: Object.freeze({
     source: 'g2',
@@ -102,7 +102,7 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
     lockedVoiceGateFactor: parseFloat(process.env.G2_LOCKED_VOICE_GATE_FACTOR || '0.75'),
     quietBoostThreshold: parseFloat(process.env.G2_QUIET_BOOST_THRESHOLD || '0.010'),
     quietBoostTarget: parseFloat(process.env.G2_QUIET_BOOST_TARGET || '0.06'),
-    maxBoostGain: parseFloat(process.env.G2_MAX_BOOST_GAIN || '24'),
+    maxBoostGain: parseFloat(process.env.G2_MAX_BOOST_GAIN || '1'),
   }),
 });
 
@@ -226,18 +226,12 @@ function removeDcOffset(pcm) {
 
 const CLIP_THRESHOLD = parseFloat(process.env.CLIP_THRESHOLD || '0.10');
 const CLIP_TARGET    = parseFloat(process.env.CLIP_TARGET    || '0.04');
-function applyClipGuard(pcm, rms, profile, opts = {}) {
-  const quietBoost = opts.quietBoost !== false;
-  let gain = 1;
-  if (quietBoost && rms > 0 && rms < profile.quietBoostThreshold) {
-    gain = Math.min(profile.maxBoostGain, profile.quietBoostTarget / rms);
-    console.log(`[Pipeline] ${profile.source} quiet boost: rms=${rms.toFixed(4)} -> ${profile.quietBoostTarget} (gain=${gain.toFixed(1)})`);
-  } else if (rms > CLIP_THRESHOLD) {
-    gain = CLIP_TARGET / rms;
-    console.log(`[Pipeline] Audio normalize: rms=${rms.toFixed(3)} -> ${CLIP_TARGET} (gain=${gain.toFixed(3)})`);
-  } else {
-    return pcm;
-  }
+function applyClipGuard(pcm, rms, profile) {
+  // Never quiet-boost. 20× gain on G2 and PC-mic/sim audio distorts recitation
+  // into Whisper hallucinations (موسيقى, اشتركوا في القناة, حال الله).
+  if (!(rms > CLIP_THRESHOLD)) return pcm;
+  const gain = CLIP_TARGET / rms;
+  console.log(`[Pipeline] Audio normalize: rms=${rms.toFixed(3)} -> ${CLIP_TARGET} (gain=${gain.toFixed(3)})`);
   const out = Buffer.alloc(pcm.length);
   const n = Math.floor(pcm.length / 2);
   for (let i = 0; i < n * 2; i += 2) {
@@ -492,7 +486,7 @@ export class AudioPipeline {
     this._lastDetectedVoiceAt = 0;
     this._cappedRecoveryChecks = 0;
     const profile = this._audioProfile;
-    console.log(`[Pipeline] Audio profile=${normalized} gate=${profile.voiceMinActivityRms}-${profile.voiceMaxActivityRms} noise*${profile.voiceNoiseMultiplier} boost<${profile.quietBoostThreshold}`);
+    console.log(`[Pipeline] Audio profile=${normalized} gate=${profile.voiceMinActivityRms}-${profile.voiceMaxActivityRms} noise*${profile.voiceNoiseMultiplier} (no quiet-boost)`);
     this.onStatus({ type: 'audio_profile', component: 'audio', status: 'ready', source: normalized });
   }
 
@@ -1281,12 +1275,6 @@ export class AudioPipeline {
     const searchChunk = Buffer.from(sendSlice);
     const sendMs = Math.round(searchChunk.length / BYTES_PER_MS);
     const rms = computeRms(searchChunk);
-    const profile = this._audioProfile || AUDIO_SOURCE_PROFILES.g2;
-    if (rms < profile.voiceMinActivityRms) {
-      console.log(`[Pipeline] No verse yet (rms=${rms.toFixed(4)} gate=${profile.voiceMinActivityRms}) — not searching`);
-      this.processing = false;
-      return;
-    }
     this._lastSearchCall = now;
     this._searchVoicedMs = 0;
     this._searchLastVoiceAt = 0;
@@ -1299,9 +1287,7 @@ export class AudioPipeline {
       let text = '';
       let words = [];  // V4: Word timestamps from Whisper
       try {
-        const audioToSend = applyClipGuard(searchChunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2, {
-          quietBoost: false,
-        });
+        const audioToSend = applyClipGuard(searchChunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2);
         this._applyWhisperPrompt();
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
@@ -1579,9 +1565,7 @@ export class AudioPipeline {
       let words = [];  // V4: Word timestamps from Whisper
       let resultAgeMs = 0;
       try {
-        const audioToSend = applyClipGuard(chunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2, {
-          quietBoost: !this.practiceMode,
-        });
+        const audioToSend = applyClipGuard(chunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2);
         this._applyWhisperPrompt();
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
