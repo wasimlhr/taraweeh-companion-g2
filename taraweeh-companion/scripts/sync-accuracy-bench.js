@@ -32,6 +32,20 @@ const SCENARIOS = {
     what: 'even pace, normal breaths — the baseline case',
     steps: [{ recite: [67, 1, 14] }],
   },
+  // Reciter-style cases: every imam paces differently, and the pipeline has to
+  // learn each one rather than assume a house style.
+  'slow-murattal': {
+    what: 'slow murattal imam, 0.85 wps with 3s breaths',
+    steps: [{ recite: [67, 1, 10], wps: 0.85, pauseMs: 3000 }],
+  },
+  'very-slow': {
+    what: 'very slow, heavily drawn out — 0.7 wps with 5s breaths',
+    steps: [{ recite: [67, 1, 8], wps: 0.7, pauseMs: 5000 }],
+  },
+  'fast-khatam': {
+    what: 'khatam-night pace, 2.8 wps with 0.4s breaths',
+    steps: [{ recite: [2, 1, 24], wps: 2.8, pauseMs: 400 }],
+  },
   'pace-swing': {
     what: 'reciter slows to 1.0 wps then speeds to 2.6 wps',
     steps: [
@@ -92,6 +106,9 @@ const OPTS = {
   noiseRms: parseFloat(arg('noise', '0.0004')),
   latency: parseInt(arg('latency', '350'), 10),
   taraweeh: argv.includes('--taraweeh'),
+  practice: argv.includes('--practice'),
+  fast: argv.includes('--fast'),
+  slow: argv.includes('--slow'),
   verbose: argv.includes('--verbose'),
   timeline: argv.includes('--timeline'),
   quiet: argv.includes('--quiet'),
@@ -122,7 +139,10 @@ const pipeline = new AudioPipeline({
   onStatus: () => {},
   onError: () => {},
 });
+if (OPTS.fast) pipeline.setFastMode(true);
+if (OPTS.slow) pipeline.setSlowMode(true);
 if (OPTS.taraweeh) pipeline.setTaraweehMode(true);
+if (OPTS.practice) pipeline.setPracticeMode(true);
 
 const samples = [];
 pipeline.start();

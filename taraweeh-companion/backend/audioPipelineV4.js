@@ -2489,7 +2489,12 @@ export class AudioPipeline {
     // Fast mode drops the floor more aggressively: 1s on ≤4-word ayahs, 1.5s otherwise.
     // This matters for khatam-night juz-30 racing where 2.5s floors stall the display.
     const fastFloor = wordCount <= 4 ? 1000 : 1500;
-    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : (this.fastMode ? fastFloor : shortAyahFloor));
+    // A floor longer than the ayah itself is pure lag. Once pace is measured we
+    // know how long this ayah takes, so never stretch past that — a khatam-pace
+    // ayah can genuinely be shorter than the 2.5s default floor.
+    const fixedFloor = this.slowMode ? 6000 : (this.fastMode ? fastFloor : shortAyahFloor);
+    const floorMs = Math.max(afterPauseMinMs,
+      paceLearned && !this.slowMode ? Math.min(fixedFloor, rawMs) : fixedFloor);
     const baseDurationMs = Math.max(rawMs, floorMs);
     // Per-word-count ceilings prevent short ayahs getting taraweeh-absurd timers
     // even when learned pace drifts slow. Taraweeh imams typically take:
@@ -2513,6 +2518,11 @@ export class AudioPipeline {
     // position instead of racing 1 ayah ahead on slow recitations. Groq will
     // snap us forward if we truly fall behind. Skip entirely in fast mode —
     // fast reciters need the opposite (shorter, not padded).
+    // Kept flat on purpose. Scaling this by word pace was tried and measured
+    // worse: two imams can share a word pace and differ entirely in how long
+    // they pause, and pause length is already modelled additively above. Tying
+    // the cushion to words-per-second made long-breath recitation overshoot
+    // (74.9% -> 25.3% exact) while barely helping khatam pace.
     if (this.isGroqMode && !this.fastMode && GROQ_TIMER_CUSHION !== 1) {
       durationMs = Math.min(Math.round(durationMs * GROQ_TIMER_CUSHION), READ_ADVANCE_MAX_MS);
     }
