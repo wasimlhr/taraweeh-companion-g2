@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { pcmToWav } from './pcmToWav.js';
 import { parseRetryAfterMs, isRetryableStatus, httpError } from './httpRetry.js';
 import { collectKeys, resolveProvider, transcribe, compareProviders, STT_ENGINES } from './transcriptionRouter.js';
-import { buildWhisperPrompt, QURAN_WHISPER_PROMPT } from './whisperPrompt.js';
+import { buildWhisperPrompt, stripWhisperPromptEcho } from './whisperPrompt.js';
 import { loadQuran } from './keywordMatcher.js';
 import { createState, processWhisperResult } from './anchorStateMachine.js';
 
@@ -37,11 +37,16 @@ describe('httpRetry', () => {
 });
 
 describe('whisperPrompt', () => {
-  it('starts with Quranic recitation bias and appends last transcript', () => {
+  it('uses last transcript only — does not quote Fatiha or تلاوة', () => {
     const prompt = buildWhisperPrompt({ lastTranscript: 'الحمد لله رب العالمين' });
-    assert.ok(prompt.startsWith(QURAN_WHISPER_PROMPT.slice(0, 12)));
-    assert.ok(prompt.includes('الحمد لله رب العالمين'));
-    assert.ok(prompt.length <= 400);
+    assert.equal(prompt, 'الحمد لله رب العالمين');
+    assert.equal(prompt.includes('تلاوة'), false);
+    assert.equal(buildWhisperPrompt({}), '');
+  });
+  it('strips Groq prompt-echo so quiet audio cannot lock Fatiha', () => {
+    assert.equal(stripWhisperPromptEcho('تلاوة. بسم الله الرحمن الرحيم.'), 'بسم الله الرحمن الرحيم.');
+    assert.equal(stripWhisperPromptEcho('تلاوة.'), '');
+    assert.equal(stripWhisperPromptEcho('القرآن الكريم. تلاوة. بسم الله الرحمن الرحيم.'), 'بسم الله الرحمن الرحيم.');
   });
 });
 
@@ -236,5 +241,14 @@ describe('anchor first-lock speed', () => {
     assert.equal(jumped.mode, 'LOCKED');
     assert.equal(jumped.surah, 112);
     assert.equal(jumped.ayah, 1);
+  });
+
+  it('Practice stays locked on empty/noise transcripts (no auto-unlock)', () => {
+    const locked = processWhisperResult('الحمد لله رب العالمين', createState(), { practiceMode: true });
+    assert.equal(locked.mode, 'LOCKED');
+    const still = processWhisperResult('', locked, { practiceMode: true });
+    assert.equal(still.mode, 'LOCKED');
+    assert.equal(still.surah, 1);
+    assert.equal(still.ayah, 2);
   });
 });

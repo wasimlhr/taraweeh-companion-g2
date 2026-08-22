@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.11 - 2026-08-22
+
+- Practice stays on the matched verse. A 2.5s quiet gap (typical on the simulator) no longer drops back to Searching.
+- Stop quoting Fatiha / "تلاوة" in the Whisper prompt — Groq was echoing that as the transcript and false-locking 1:1.
+
 ## 2.6.10 - 2026-08-22
 
 - Clarified the two recitation modes: **Taraweeh** locks then auto-advances with the prayer; **Practice** only matches the verse you recite and stays there (no auto-forward).

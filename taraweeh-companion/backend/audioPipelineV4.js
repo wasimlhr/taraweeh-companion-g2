@@ -14,7 +14,7 @@ import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
 import { findAnchor, isRefrain, getAyah } from './keywordMatcher.js';
-import { buildWhisperPrompt } from './whisperPrompt.js';
+import { buildWhisperPrompt, stripWhisperPromptEcho } from './whisperPrompt.js';
 
 // ── Word-level corpus data (morphology + tajweed weights) ───────────────────
 const __dirname_v4 = dirname(fileURLToPath(import.meta.url));
@@ -66,10 +66,6 @@ const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '2500', 10);
 const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '2500', 10);
 const SEARCH_SEND_BYTES = Math.floor(BYTES_PER_MS * SEARCH_SEND_MS);
 const SEARCH_PREROLL_BYTES = Math.floor(BYTES_PER_MS * SEARCH_PREROLL_MS);
-// Practice: pause after a shown verse → next recitation is a fresh global search (surah jumps).
-const PRACTICE_FRESH_SILENCE_MS = parseInt(process.env.PRACTICE_FRESH_SILENCE_MS || '2500', 10);
-const PRACTICE_FRESH_MIN_HOLD_MS = parseInt(process.env.PRACTICE_FRESH_MIN_HOLD_MS || '1200', 10);
-const PRACTICE_FRESH_SEARCH_MS = parseInt(process.env.PRACTICE_FRESH_SEARCH_MS || '2000', 10);
 
 const AUDIO_SOURCE_PROFILES = Object.freeze({
   browser: Object.freeze({
@@ -172,6 +168,7 @@ const NOISE_WORDS = new Set([
   'صباح', 'مساء',
   'شكرا', 'شكراً',
   'نانسي', 'قنقر',  // channel/translator names (e.g. ترجمة نانسي قنقر)
+  'تلاوة',          // Whisper prompt-echo, not Quran
 ]);
 const NOISE_PHRASES = [
   'مرحبا بك', 'مرحباً بك', 'أهلا بك', 'اهلا بك',
@@ -249,6 +246,7 @@ function applyClipGuard(pcm, rms, profile) {
 function cleanWhisperText(text) {
   let t = text.replace(/[\[\(].*?[\]\)]/g, '').replace(/^[\[\(]+|[\]\)]+$/g, '').replace(/\s+/g, ' ').trim();
   t = t.replace(/^(شكرا|شكراً|ترجمة[^\s]*)\s*/g, '').trim();
+  t = stripWhisperPromptEcho(t);
   return t;
 }
 
@@ -781,51 +779,6 @@ export class AudioPipeline {
     this._userSearchingDisplay = false;
   }
 
-  // After a matched verse + pause, listen for the next recited verse.
-  // Do not keep the previous ayah's audio or transcripts — mixing them is why
-  // Practice re-locked the old verse instead of matching what you just recited.
-  _enterPracticeFreshSearch() {
-    if (!this.practiceMode || this.state.mode !== 'LOCKED') return;
-    console.log(`[Pipeline] Practice fresh run — listening for next verse (was ${this._displaySurah}:${this._displayAyah})`);
-    this._cancelReadAdvance();
-    this._practiceFreshRun = true;
-    this._practiceLastMatchMs = 0;
-    this._userSearchingDisplay = true;
-    this.state = { ...createState(), mode: 'SEARCHING', lastLockedSurah: 0, lastLockedAyah: 0 };
-    this._whisperSurah = 0;
-    this._whisperAyah  = 0;
-    this._lastHeardWordMs = 0;
-    this._lastTexts = [];
-    this._lastSearchTexts = [];
-    this._lastPromptText = '';
-    this._lockedInFlight = 0;
-    this._lockedLastAppliedSeq = 0;
-    this._lockedVoicedMs = 0;
-    this._lockedLastVoiceAt = 0;
-    this._searchWinIdx = 0;
-    this._searchGen = (this._searchGen || 0) + 1;
-    const tail = this._lockedBuf.length > SEARCH_PREROLL_BYTES
-      ? this._lockedBuf.subarray(this._lockedBuf.length - SEARCH_PREROLL_BYTES)
-      : this._lockedBuf;
-    this._searchBuf = Buffer.from(tail);
-    this._lockedBuf = Buffer.alloc(0);
-    this._searchVoicedMs = 0;
-    this._searchLastVoiceAt = 0;
-    this._emitState(null, null);
-  }
-
-  _maybePracticeFreshRun() {
-    if (!this.practiceMode || this.state.mode !== 'LOCKED' || !this._practiceLastMatchMs) return;
-    const heldMs = Date.now() - this._practiceLastMatchMs;
-    if (heldMs < PRACTICE_FRESH_MIN_HOLD_MS) return;
-    // Silence since this verse was matched — ignore stale timestamps from pre-lock audio.
-    const silenceAnchor = Math.max(this._practiceLastMatchMs, this._lastHeardWordMs || 0);
-    const wordSilence = Date.now() - silenceAnchor;
-    if (wordSilence >= PRACTICE_FRESH_SILENCE_MS) {
-      this._enterPracticeFreshSearch();
-    }
-  }
-
   _tryPracticeSnapFromMatches(anchorResult, words = []) {
     if (anchorResult._locked) {
       this._snapPracticeVerse(anchorResult.surah, anchorResult.ayah, anchorResult.confidence, words);
@@ -1101,8 +1054,6 @@ export class AudioPipeline {
 
   ingest(pcmData) {
     if (!this.active) return;
-
-    this._maybePracticeFreshRun();
 
     const now = Date.now();
     const profile = this._audioProfile || AUDIO_SOURCE_PROFILES.g2;
