@@ -732,6 +732,11 @@ body {
   text-align: center;
   letter-spacing: var(--track-tight);
   user-select: none;
+  /* Three-up groups leave each label about a third of the card, so keep longer
+     provider names on one line rather than breaking mid-word. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .mv-toggle-btn:active { transform: scale(0.98); }
 .mv-toggle-btn.active {
@@ -939,6 +944,7 @@ body {
     <div class="mv-toggle-group" role="group" aria-label="Transcription provider">
       <button type="button" class="mv-toggle-btn active" id="btnProviderGroqMain" onclick="setProvider('groq')">Groq</button>
       <button type="button" class="mv-toggle-btn" id="btnProviderOpenAIMain" onclick="setProvider('openai')">OpenAI</button>
+      <button type="button" class="mv-toggle-btn" id="btnProviderDeepgramMain" onclick="setProvider('deepgram')">Deepgram</button>
     </div>
   </div>
 
@@ -3489,11 +3495,12 @@ body {
     if (gBtn) gBtn.classList.toggle('active', p === 'groq');
     if (oBtn) oBtn.classList.toggle('active', p === 'openai');
     if (dBtn) dBtn.classList.toggle('active', p === 'deepgram');
-    // Main view has no Deepgram button; light neither when Deepgram is picked.
     var gBtnM = document.getElementById('btnProviderGroqMain');
     var oBtnM = document.getElementById('btnProviderOpenAIMain');
+    var dBtnM = document.getElementById('btnProviderDeepgramMain');
     if (gBtnM) gBtnM.classList.toggle('active', p === 'groq');
     if (oBtnM) oBtnM.classList.toggle('active', p === 'openai');
+    if (dBtnM) dBtnM.classList.toggle('active', p === 'deepgram');
     var gRow = document.getElementById('groqKeyRow');
     var oRow = document.getElementById('openaiKeyRow');
     var dRow = document.getElementById('deepgramKeyRow');
