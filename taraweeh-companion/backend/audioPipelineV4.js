@@ -58,8 +58,21 @@ const SEARCH_SEND_MS = parseInt(process.env.SEARCH_SEND_MS || '12000', 10);
 const SEARCH_PREROLL_MS = parseInt(process.env.SEARCH_PREROLL_MS || '1000', 10);
 
 const VOICE_MIN_ACTIVE_MS = parseInt(process.env.VOICE_MIN_ACTIVE_MS || '500', 10);
-const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '2500', 10);
-const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '4000', 10);
+// Must comfortably exceed a between-ayah breath, or the search buffer and window
+// ladder get thrown away mid-recitation and the first lock never converges.
+const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '5000', 10);
+// Paces search retries once the buffer already exceeds the next window target.
+// 4s starved the retry ladder; 2s keeps a cold search responsive while holding
+// the worst-case burst near Groq's 20 RPM free tier.
+const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '2000', 10);
+// Safety valve: the voice gate is an optimisation, never the sole reason we stop
+// transcribing. If audio keeps arriving while SEARCHING but the gate has not
+// opened, search anyway and let the transcriber judge whether it is speech.
+const SEARCH_VOICE_GATE_BYPASS_MS = parseInt(process.env.SEARCH_VOICE_GATE_BYPASS_MS || '6000', 10);
+// "Is the mic producing anything at all", far below any speech level. Deliberately
+// independent of the per-profile voice gate: buffering must keep working even if
+// that gate is mis-tuned, otherwise the safety valve above never gets any audio.
+const SIGNAL_PRESENT_RMS = parseFloat(process.env.SIGNAL_PRESENT_RMS || '0.0003');
 const SEARCH_SEND_BYTES = Math.floor(BYTES_PER_MS * SEARCH_SEND_MS);
 const SEARCH_PREROLL_BYTES = Math.floor(BYTES_PER_MS * SEARCH_PREROLL_MS);
 // Practice: pause after a shown verse → next recitation is a fresh global search (surah jumps).
@@ -67,12 +80,20 @@ const PRACTICE_FRESH_SILENCE_MS = parseInt(process.env.PRACTICE_FRESH_SILENCE_MS
 const PRACTICE_FRESH_MIN_HOLD_MS = parseInt(process.env.PRACTICE_FRESH_MIN_HOLD_MS || '1200', 10);
 const PRACTICE_FRESH_SEARCH_MS = parseInt(process.env.PRACTICE_FRESH_SEARCH_MS || '2000', 10);
 
+// voiceMinActivityRms is a per-85ms-chunk floor, so it sits well under the
+// 0.002–0.015 whole-chunk range a phone or G2 mic produces during recitation:
+// consonants and word gaps dip far below the level of the surrounding ayah.
+// voiceMaxActivityRms caps how far room noise may push the gate up, and stays
+// below the quiet end of that range on purpose. A single RMS threshold cannot
+// both reject loud rooms and still hear the quietest reciter, so the ceiling is
+// tuned to never climb into speech: in a noisy room the gate simply stops
+// filtering (the pre-2.6.7 behaviour) instead of silencing the reciter.
 const AUDIO_SOURCE_PROFILES = Object.freeze({
   browser: Object.freeze({
     source: 'browser',
     removeDcOffset: true,
-    voiceMinActivityRms: parseFloat(process.env.BROWSER_VOICE_MIN_ACTIVITY_RMS || '0.004'),
-    voiceMaxActivityRms: parseFloat(process.env.BROWSER_VOICE_MAX_ACTIVITY_RMS || '0.025'),
+    voiceMinActivityRms: parseFloat(process.env.BROWSER_VOICE_MIN_ACTIVITY_RMS || '0.0012'),
+    voiceMaxActivityRms: parseFloat(process.env.BROWSER_VOICE_MAX_ACTIVITY_RMS || '0.0022'),
     voiceNoiseMultiplier: parseFloat(process.env.BROWSER_VOICE_NOISE_MULTIPLIER || '1.8'),
     lockedVoiceGateFactor: parseFloat(process.env.BROWSER_LOCKED_VOICE_GATE_FACTOR || '0.75'),
     quietBoostThreshold: parseFloat(process.env.BROWSER_QUIET_BOOST_THRESHOLD || '0.025'),
@@ -82,8 +103,8 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
   simulator: Object.freeze({
     source: 'simulator',
     removeDcOffset: true,
-    voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.0022'),
-    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.010'),
+    voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.0008'),
+    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.0015'),
     voiceNoiseMultiplier: parseFloat(process.env.SIMULATOR_VOICE_NOISE_MULTIPLIER || '1.5'),
     lockedVoiceGateFactor: parseFloat(process.env.SIMULATOR_LOCKED_VOICE_GATE_FACTOR || '0.8'),
     quietBoostThreshold: parseFloat(process.env.SIMULATOR_QUIET_BOOST_THRESHOLD || '0.015'),
@@ -93,8 +114,8 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
   g2: Object.freeze({
     source: 'g2',
     removeDcOffset: true,
-    voiceMinActivityRms: parseFloat(process.env.G2_VOICE_MIN_ACTIVITY_RMS || '0.0008'),
-    voiceMaxActivityRms: parseFloat(process.env.G2_VOICE_MAX_ACTIVITY_RMS || '0.006'),
+    voiceMinActivityRms: parseFloat(process.env.G2_VOICE_MIN_ACTIVITY_RMS || '0.0004'),
+    voiceMaxActivityRms: parseFloat(process.env.G2_VOICE_MAX_ACTIVITY_RMS || '0.0009'),
     voiceNoiseMultiplier: parseFloat(process.env.G2_VOICE_NOISE_MULTIPLIER || '1.35'),
     lockedVoiceGateFactor: parseFloat(process.env.G2_LOCKED_VOICE_GATE_FACTOR || '0.75'),
     quietBoostThreshold: parseFloat(process.env.G2_QUIET_BOOST_THRESHOLD || '0.010'),
@@ -120,6 +141,7 @@ const LOCKED_MIN_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MIN_MS);
 const LOCKED_MAX_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MAX_MS);
 const LOCKED_SEND_BYTES = Math.floor(BYTES_PER_MS * LOCKED_SEND_MS);
 const LOCKED_MAX_INFLIGHT = parseInt(process.env.LOCKED_MAX_INFLIGHT || '2', 10);
+const GROQ_LOCKED_MIN_INTERVAL_MS = parseInt(process.env.GROQ_LOCKED_MIN_INTERVAL_MS || '5000', 10);
 const LOCKED_RESULT_STALE_MS = parseInt(process.env.LOCKED_RESULT_STALE_MS || '3000', 10);
 const CAPPED_RECOVERY_MAX_CHECKS = parseInt(process.env.CAPPED_RECOVERY_MAX_CHECKS || '2', 10);
 const CAPPED_RECOVERY_RECENT_VOICE_MS = parseInt(process.env.CAPPED_RECOVERY_RECENT_VOICE_MS || '15000', 10);
@@ -358,6 +380,8 @@ export class AudioPipeline {
     this._lastSearchTexts = [];  // last 2–3 chunk texts for combined matching
     this._searchVoicedMs = 0;
     this._searchLastVoiceAt = 0;
+    this._searchHasSignal = false;
+    this._forceNextSearch = false;
     this._lastSearchCall = 0;
     this._timerHeartbeatRef = null;  // periodic emit so frontend countdown never disappears
 
@@ -517,9 +541,11 @@ export class AudioPipeline {
       this._rakatCount = 0;
       this._expectFatiha = false;
     } else if (this.state.mode === 'SEARCHING') {
-      // A session may start mid-recitation. Search globally until the prayer
-      // position detector observes a transition that specifically expects Fatiha.
-      this._expectFatiha = false;
+      // Imam always opens with Fatiha, so prime the express lock from the first
+      // rakat. A session that starts mid-recitation is still safe: the express
+      // path needs a strong Fatiha score, and anchorStateMachine falls back to a
+      // global search whenever the preferred surah finds nothing.
+      this._expectFatiha = true;
     }
     console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}${this._expectFatiha ? ' (expectFatiha=true)' : ''}`);
     this.onStatus({ type: 'taraweeh_mode', enabled: this.taraweehMode,
@@ -633,6 +659,8 @@ export class AudioPipeline {
     this._lastDetectedVoiceAt = 0;
     this._cappedRecoveryChecks = 0;
     this._preRecitSkips = 0;
+    this._lastSearchCall = 0;   // a restart must not inherit the previous run's throttle
+    this._noiseFloorRms = 0;
     this._resetSearchBuf();
     console.log(`[Pipeline] Started (last known: ${prevSurah}:${prevAyah || 0})`);
   }
@@ -777,7 +805,12 @@ export class AudioPipeline {
     if (this._lockedBuf.length > 0) {
       this._searchBuf = Buffer.concat([this._searchBuf, this._lockedBuf]);
       this._lockedBuf = Buffer.alloc(0);
+      this._searchHasSignal = true;   // carried locked audio is recitation, don't trim it
     }
+    // This runs after a deliberate pause, so the voice gate is closed by
+    // construction. Without the override the search below is always dropped and
+    // the fresh-run snap never happens.
+    this._forceNextSearch = true;
     this._emitState(null, null);
     const bufMs = this._searchBuf.length / BYTES_PER_MS;
     if (bufMs >= PRACTICE_FRESH_SEARCH_MS && !this.processing) {
@@ -1084,9 +1117,10 @@ export class AudioPipeline {
     const processedPcm = profile.removeDcOffset ? removeDcOffset(pcmData) : pcmData;
     const rms = computeRms(processedPcm);
     const pcmMs = processedPcm.length / BYTES_PER_MS;
-    if (this._noiseFloorRms <= 0) {
-      this._noiseFloorRms = Math.min(rms, profile.voiceMinActivityRms / profile.voiceNoiseMultiplier);
-    }
+    // Seed the floor from what the mic actually reports. Seeding it from
+    // voiceMinActivityRms instead pins the gate at that constant forever, since
+    // the floor can then only ever decay away from it.
+    if (this._noiseFloorRms <= 0) this._noiseFloorRms = Math.max(1e-6, rms);
     const activityGate = Math.max(profile.voiceMinActivityRms,
       Math.min(profile.voiceMaxActivityRms, this._noiseFloorRms * profile.voiceNoiseMultiplier));
     const lockedTracking = this.state.mode === 'LOCKED' || this.state.mode === 'PAUSED';
@@ -1095,8 +1129,12 @@ export class AudioPipeline {
       : activityGate;
     const hasVoice = rms > detectionGate;
     if (hasVoice) this._lastDetectedVoiceAt = now;
-    if (!hasVoice && rms <= this._noiseFloorRms * 1.1) {
-      this._noiseFloorRms = this._noiseFloorRms * 0.98 + rms * 0.02;
+    // Chase the quietest recent level: drop fast so a loud opening does not keep
+    // the gate high, creep up slowly so a noisy room can still raise it.
+    if (rms < this._noiseFloorRms) {
+      this._noiseFloorRms = this._noiseFloorRms * 0.8 + rms * 0.2;
+    } else if (!hasVoice) {
+      this._noiseFloorRms = this._noiseFloorRms * 0.995 + rms * 0.005;
     }
 
     if (now - this._lastAudioStatusMs >= 3000) {
@@ -1127,9 +1165,13 @@ export class AudioPipeline {
       this._searchVoicedMs += pcmMs;
       this._searchLastVoiceAt = now;
     }
+    if (rms > SIGNAL_PRESENT_RMS) this._searchHasSignal = true;
 
     this._searchBuf = Buffer.concat([this._searchBuf, processedPcm]);
-    if (this._searchVoicedMs === 0 && this._searchBuf.length > SEARCH_PREROLL_BYTES) {
+    // Trim to a short pre-roll only while the mic has been silent for this whole
+    // run. Keying this off _searchVoicedMs discards the accumulated buffer after
+    // every transcription, because sending resets that counter to zero.
+    if (!this._searchHasSignal && this._searchBuf.length > SEARCH_PREROLL_BYTES) {
       this._searchBuf = this._searchBuf.subarray(this._searchBuf.length - SEARCH_PREROLL_BYTES);
     }
 
@@ -1142,23 +1184,33 @@ export class AudioPipeline {
     }
 
     const targetMs = SEARCH_WINDOWS_MS[this._searchWinIdx];
-    const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
-      && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
-    const providerGapOk = !this.isGroqMode || !this._lastSearchCall
-      || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
-    if (bufMs >= targetMs && freshVoice && providerGapOk && !this.processing) {
+    if (bufMs >= targetMs && this._searchGateOpen(now) && !this.processing) {
       this._processSearchChunk();
     }
+  }
+
+  // Search is allowed when speech was recently detected, or — as a safety valve —
+  // when audio has been buffering for a while without the gate ever opening.
+  // A mis-tuned gate must never be able to stop transcription outright.
+  _searchGateOpen(now = Date.now()) {
+    if (this.isGroqMode && this._lastSearchCall
+        && now - this._lastSearchCall < GROQ_SEARCH_MIN_INTERVAL_MS) return false;
+    if (this._forceNextSearch) return true;
+    const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
+      && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
+    if (freshVoice) return true;
+    const sinceLastSearch = this._lastSearchCall ? now - this._lastSearchCall : Infinity;
+    return sinceLastSearch >= SEARCH_VOICE_GATE_BYPASS_MS;
   }
 
   _maybeProcessLockedBufferedChunk() {
     if (!this.active) return false;
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
     if (this._isRateLimited()) return false;
-    // Groq uses non-overlapping 6s checks (10 RPM max). OpenAI keeps the
-    // faster default, but both providers require newly detected speech.
+    // Groq free tier caps at 20 RPM → 5s spot checks / 1 in-flight. OpenAI has no
+    // practical RPM cap → faster default. Both prefer newly detected speech.
     const maxInFlight = this.isGroqMode ? 1 : LOCKED_MAX_INFLIGHT;
-    const minIntervalMs = this.isGroqMode ? Math.max(6000, LOCKED_SEND_MS) : LOCKED_MIN_MS;
+    const minIntervalMs = this.isGroqMode ? GROQ_LOCKED_MIN_INTERVAL_MS : LOCKED_MIN_MS;
     if (this._lockedInFlight >= maxInFlight || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
     const freshVoice = this._lockedVoicedMs >= VOICE_MIN_ACTIVE_MS
@@ -1249,6 +1301,8 @@ export class AudioPipeline {
     this._lastSearchTexts = [];
     this._searchVoicedMs = 0;
     this._searchLastVoiceAt = 0;
+    this._searchHasSignal = false;
+    this._forceNextSearch = false;
     this.processing    = false;
     this._searchGen    = (this._searchGen || 0) + 1;
   }
@@ -1268,14 +1322,11 @@ export class AudioPipeline {
     }
 
     const now = Date.now();
-    const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
-      && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
-    const providerGapOk = !this.isGroqMode || !this._lastSearchCall
-      || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
-    if (!freshVoice || !providerGapOk) {
+    if (!this._searchGateOpen(now)) {
       this.processing = false;
       return;
     }
+    this._forceNextSearch = false;
 
     // Preserve cumulative context during initial locking. A short first result
     // may contain only a generic Quran prefix; the next call must still include
@@ -1523,12 +1574,7 @@ export class AudioPipeline {
       this.processing = false;
       const bufMs2 = this._searchBuf.length / BYTES_PER_MS;
       const nextTarget = SEARCH_WINDOWS_MS[this._searchWinIdx];
-      const now = Date.now();
-      const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
-        && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
-      const providerGapOk = !this.isGroqMode || !this._lastSearchCall
-        || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
-      if (nextTarget && bufMs2 >= nextTarget && freshVoice && providerGapOk
+      if (nextTarget && bufMs2 >= nextTarget && this._searchGateOpen()
           && this.state.mode !== 'LOCKED') {
         setTimeout(() => {
           if (!this.processing && this.state.mode !== 'LOCKED' && this.active) {
