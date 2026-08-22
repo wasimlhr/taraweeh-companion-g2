@@ -90,10 +90,15 @@ function updateEndpointLifecycle(status, source = 'runtime') {
   };
 }
 
-app.get('/', (req, res) => {
+function sendAppHtml(req, res) {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(join(rootDir, 'app', 'index.html'));
-});
+}
+
+app.get('/', sendAppHtml);
+// EvenHub reads app.json (entrypoint: index.html) and requests /index.html
+// next to it. Missing this route makes a hard-reload in the local sim blank.
+app.get('/index.html', sendAppHtml);
 
 // Bundled EvenHub SDK — index.html imports /sdk/even_hub_sdk.js. CDN fallback
 // loads a different module realm than the simulator bridge and the app looks blank.
@@ -101,12 +106,19 @@ const EVENHUB_SDK = [
   join(rootDir, 'dist', 'sdk', 'even_hub_sdk.js'),
   join(rootDir, 'node_modules', '@evenrealities', 'even_hub_sdk', 'dist', 'index.js'),
 ].find((p) => existsSync(p));
+function sendEvenHubSdk(req, res) {
+  if (!EVENHUB_SDK) {
+    res.status(404).type('text/plain').send('EvenHub SDK not installed');
+    return;
+  }
+  res.type('application/javascript');
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(EVENHUB_SDK);
+}
 if (EVENHUB_SDK) {
-  app.get('/sdk/even_hub_sdk.js', (req, res) => {
-    res.type('application/javascript');
-    res.set('Cache-Control', 'no-store');
-    res.sendFile(EVENHUB_SDK);
-  });
+  app.get('/sdk/even_hub_sdk.js', sendEvenHubSdk);
+  // Page is also served at /app/index.html; relative ./sdk/... must not 404.
+  app.get('/app/sdk/even_hub_sdk.js', sendEvenHubSdk);
 }
 app.get('/api/status', (req, res) => {
   const ep = process.env.WHISPER_ENDPOINT_URL || '';

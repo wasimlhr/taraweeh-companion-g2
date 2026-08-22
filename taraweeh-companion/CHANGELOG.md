@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.22 - 2026-08-22
+
+- Local EvenHub sim was blank after a hard-reload: `app.json` entrypoint `index.html` 404'd at `/index.html`, and `/app/sdk/even_hub_sdk.js` 404'd so the SDK fell through to CDN (blank WebView). Both paths now serve the app/SDK.
+
 ## 2.6.21 - 2026-08-22
 
 - 90% is a lock. Live OpenAI Ya-Sin (`والقرآن الحكيم` + garbled 36:3) sat at Auto locking 1/2 wins with score 0.90 / coverage 100% / 36:2. A 2-word ayah is not asked for a 3rd word, and 80%+ with real coverage locks on the first hit.
