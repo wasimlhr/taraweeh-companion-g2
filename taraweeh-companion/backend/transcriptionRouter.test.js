@@ -282,6 +282,19 @@ describe('live Groq Ya-Sin typos (Fatiha lock does not count)', () => {
     assert.equal(next.ayah, 1);
   });
 
+  it('locks Ya-Sin 36:2 at 90% on the live OpenAI string — 1/2 wins is already a lock', () => {
+    // Live v2.6.20 log: score=0.90 cov=100% matched=[والقران, الحكيم], then
+    // garbled 36:3 tokens added 37:133 and Pending 1/2 wins. 90% is a lock.
+    const next = processWhisperResult(
+      'والقرآن الحكيم إِنَّا أَكْرِكَ لَمِنَ الْمُرُسَلِينَ',
+      createState(),
+      {},
+    );
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 36);
+    assert.equal(next.ayah, 2);
+  });
+
   it('locks Ya-Sin 36:3 on Groq إن لك للمرسلين', () => {
     const next = processWhisperResult('إن لك للمرسلين', createState(), {});
     assert.equal(next.mode, 'LOCKED');

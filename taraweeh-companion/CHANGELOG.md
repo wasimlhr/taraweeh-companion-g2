@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.21 - 2026-08-22
+
+- 90% is a lock. Live OpenAI Ya-Sin (`والقرآن الحكيم` + garbled 36:3) sat at Auto locking 1/2 wins with score 0.90 / coverage 100% / 36:2. A 2-word ayah is not asked for a 3rd word, and 80%+ with real coverage locks on the first hit.
+
 ## 2.6.20 - 2026-08-22
 
 - Merges PR #11 (quiet-mic first lock, display sync, benches, Al-Hashr/translation coverage) onto this branch's matcher, EvenHub sim path, and empty Whisper prompt.

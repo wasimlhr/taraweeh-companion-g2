@@ -388,6 +388,7 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
       score: boostedScore, rawScore: score,
       f1, idfScore, coverage,
       arabic: a.text, matchedWords,
+      totalWords: a.canonicalWordCount,
       seqBoosted: inSeqRange,
       muqattaatOpener: distinctiveOpener,
     });

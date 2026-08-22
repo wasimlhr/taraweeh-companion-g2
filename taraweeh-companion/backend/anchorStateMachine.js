@@ -193,7 +193,9 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // Adjacent ayahs in the same surah are one recitation window, not competitors.
   // Live Ya-Sin: 36:1 (يس) + 36:2 (والقرآن الحكيم) used to cut margin from 97 → 48
   // and block the 2-word high-margin lock that 2.6.7 already had on a lone 36:2.
-  const isSameWindow = (a, b) => a && b && a.surah === b.surah && Math.abs(a.ayah - b.ayah) <= 2;
+  const isSameWindow = (a, b) => a && b
+    && Number(a.surah) === Number(b.surah)
+    && Math.abs(Number(a.ayah) - Number(b.ayah)) <= 2;
   const competing = matches.find((m) => m !== top && !isSameWindow(m, top));
 
   // Use raw score for margin so the sequential boost doesn't inflate it
@@ -255,6 +257,12 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   const isBismillahAmbiguous = top.surah === 1 && top.ayah === 1 && !taraweehExpectFatiha;
 
   const matchedWordCount = top.matchedWords?.length ?? 0;
+  // Never demand more words than the ayah actually has. 36:2 is two words
+  // (والقرآن الحكيم); a 100% hit still failed LOCK_MIN_WORDS=3 and sat at 1/2 wins.
+  const ayahWordCount = top.totalWords
+    || (coverage > 0 ? Math.round(matchedWordCount / Math.max(coverage, 0.01)) : 0)
+    || matchedWordCount;
+  const ayahWordFloor = Math.min(LOCK_MIN_WORDS, Math.max(2, ayahWordCount || LOCK_MIN_WORDS));
   // Fatiha (surah 1) has genuinely short ayahs (1:3 = 2 words, 1:4 = 3 words).
   // Allow 2-word matches for Fatiha since it's the most recited surah.
   // When taraweehExpectFatiha, include ayah 1 too (bismillah guard is skipped).
@@ -264,12 +272,12 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   //  2. Sequential context after surah completion: short ayahs (An-Naziaat style) with 2 wins
   //  3. Fatiha (surah 1): genuinely short ayahs, most common surah
   //  4. Taraweeh expects Fatiha: we KNOW it's coming, 2 words is plenty
-  //  5. Otherwise: standard LOCK_MIN_WORDS=3
+  //  5. Otherwise: standard LOCK_MIN_WORDS=3, capped at the ayah's own length
   const minWords = (margin >= 50)
     ? 2
     : (surahJustCompleted && wins >= 2 && margin >= 10) ? 2
     : isFatihaCandidate ? 2
-    : LOCK_MIN_WORDS;
+    : ayahWordFloor;
   const hasEnoughWords   = matchedWordCount >= minWords;
 
   // Prefix-ambiguity guard: if ALL matched words of the top candidate also appear in the
@@ -322,9 +330,10 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // Prefix-ambiguous blocks lock unless it's a refrain (identical repeated verse).
   const prefixBlocksLock = isPrefixAmbiguous && !refrainBypass;
 
-  // Fast-lock: unmistakably high confidence — require 3+ words (not 2) to avoid generic-word locks
+  // Fast-lock: unmistakably high confidence. Word floor is the ayah length so a
+  // perfect 2-word verse (36:2) is not asked for a 3rd word that does not exist.
   const isFastLock = top.score >= FAST_LOCK_SCORE && margin >= 30
-    && matchedWordCount >= LOCK_MIN_WORDS
+    && matchedWordCount >= ayahWordFloor
     && (!isUnexpectedSurah || wins >= 2)
     && !isBismillahAmbiguous   // bismillah alone never fast-locks
     && !prefixBlocksLock;      // ambiguous prefix never fast-locks (refrain bypass ok)
@@ -344,7 +353,10 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // After Fatiha (surah 1), relax to 2 words at margin ≥ 25 — the imam picks any surah
   // so we have zero sequential context and need to lock fast on whatever Whisper hears.
   // Ordinary high-margin (25-49) in other contexts still needs LOCK_MIN_WORDS=3.
-  const highMarginMinWords = (margin >= 50 || (margin >= 25 && (postFatiha || isFatihaCandidate))) ? 2 : LOCK_MIN_WORDS;
+  const highMarginMinWords = Math.min(
+    ayahWordFloor,
+    (margin >= 50 || (margin >= 25 && (postFatiha || isFatihaCandidate))) ? 2 : LOCK_MIN_WORDS,
+  );
   const isHighMarginLock = margin >= 25 && top.score >= 0.40 && coverage >= covThreshold
     && matchedWordCount >= highMarginMinWords
     && !isUnexpectedSurah      // don't allow high-margin cross-surah hop
@@ -428,6 +440,16 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && matchedWordCount >= 2
     && wins >= 1;
 
+  // 80%+ on 2+ words with real coverage is a lock. Live OpenAI Ya-Sin sat at
+  // "Auto locking 1/2 wins" at 90%/100% because garbled 36:3 tokens added a
+  // weak 37:133 competitor and the 3-word gate refused a 2-word ayah.
+  const isStrongScoreLock = top.score >= 0.80
+    && coverage >= 0.50
+    && matchedWordCount >= 2
+    && wins >= 1
+    && !isBismillahAmbiguous
+    && !prefixBlocksLock;
+
   // Distinctive 1-word openers (يس / طه / كهيعص / المص / المر). Groq's first
   // Ya-Sin chunk is often just "يسي" — the 2-word gate would drop a real lock.
   const isMuqattaatOpenerLock = !!top.muqattaatOpener
@@ -437,9 +459,10 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && !isBismillahAmbiguous
     && !prefixBlocksLock;
 
-  if (isFastLock || isSingleWinLock || isHighMarginLock || isConsistentLock || isHighScoreLock || isSeqLock || isSeqCarryLock || isSameSurahLock || isRefrainLock || isTaraweehFatihaLock || isMuqattaatOpenerLock) {
+  if (isFastLock || isSingleWinLock || isHighMarginLock || isConsistentLock || isHighScoreLock || isSeqLock || isSeqCarryLock || isSameSurahLock || isRefrainLock || isTaraweehFatihaLock || isMuqattaatOpenerLock || isStrongScoreLock) {
     const reason = isTaraweehFatihaLock ? `taraweeh-fatiha-lock score=${top.score.toFixed(2)} (express)`
                  : isMuqattaatOpenerLock ? `muqattaat-opener-lock score=${top.score.toFixed(2)}`
+                 : isStrongScoreLock ? `strong-score-lock score=${top.score.toFixed(2)} cov=${(coverage*100).toFixed(0)}%`
                  : isFastLock       ? `fast-lock score=${top.score.toFixed(2)}`
                  : isSingleWinLock  ? `single-win score=${top.score.toFixed(2)} margin=${margin.toFixed(1)}`
                  : isHighMarginLock ? `margin-lock margin=${margin.toFixed(1)} score=${top.score.toFixed(2)}`
@@ -472,7 +495,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     _matches: matches.slice(0, 3),
     _locked: false,
     _wins: wins,
-    _pendingMatch: { surah: top.surah, ayah: top.ayah },
+    _pendingMatch: { surah: top.surah, ayah: top.ayah, score: top.score },
     lastKeywords: keywords,
   };
 }
