@@ -186,17 +186,23 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 ### Rate limits and cost
 
-Groq's free tier for `whisper-large-v3-turbo` allows **20 requests/min, 2,000/day, 7,200 audio-seconds/hour**, and bills a **10-second minimum per request**. The pipeline spot-checks the reciter's position roughly every 5 seconds with a 6-second window, so under continuous recitation:
+All figures below are measured against the live APIs, reading each provider's own `x-ratelimit` response headers rather than trusting documentation.
 
-| | measured | free-tier cap |
-|---|---|---|
-| requests/min | ~12 | 20 |
-| requests per 90-min session | ~1,080 | 2,000/day |
-| audio-seconds/hour | ~7,200 | 7,200 |
+Groq's free tier for `whisper-large-v3-turbo` is **20 requests/min, 2,000 requests/day, 7,200 audio-seconds/hour**. The 10-second minimum applies to **billing**, not to the rate-limit counter: a 6-second window draws exactly 6 audio-seconds from the bucket, and the bucket refills continuously at 2 audio-seconds per wall-clock second.
 
-Requests per minute are comfortably inside the cap, but **audio-seconds/hour sits right at it**, so a continuous session on a free key can expect 429s around the one-hour mark. Two things soften that: the pipeline backs off on 429 honouring `Retry-After` and resumes on its own (verified by `scripts/check-rate-limit-handling.js`), and shared mode fails over to OpenAI per chunk. Real Taraweeh also includes ruku, sujud and pauses where no transcription happens, so actual usage is lower than this continuous-recitation figure.
+The pipeline spot-checks roughly every 5 seconds with a 6-second window, so under continuous recitation:
 
-Because of the 10-second minimum, roughly 40% of that quota is padding on 6-second windows. Sending longer windows less often was measured and is **not** a good trade — accuracy falls off sharply:
+| | measured | cap | usage |
+|---|---|---|---|
+| requests/min | ~12 | 20 | 60% |
+| audio-seconds drawn/sec | 1.18 | 2.00 refill | **59% of sustainable** |
+| requests per 90-min session | ~1,080 | 2,000/day | **54%** |
+
+So audio-seconds are **not** the binding limit — the pipeline draws well under the refill rate and never exhausts the bucket. The real constraint is **2,000 requests/day**, which allows about one 90-minute session per day per key. The 20 RPM cap is also easy to trip if anything else shares the key: running a second consumer alongside the pipeline pushed it over and produced 429s, which dropped tracking from 99.2% to 79.6% within one ayah until the backoff settled.
+
+When 429s do occur the pipeline handles them: it honours `Retry-After`, backs off, surfaces the limit, resumes unaided and keeps tracking (verified by `scripts/check-rate-limit-handling.js`). Shared mode also fails over to OpenAI per chunk. Real Taraweeh includes ruku, sujud and pauses where the voice gate suppresses transcription, so actual usage is below these continuous-recitation figures.
+
+Sending longer windows less often was measured and is **not** a good trade — accuracy falls off sharply:
 
 | window / interval | audio-sec/hour | first 429 | within ±1 ayah |
 |---|---|---|---|
@@ -206,17 +212,26 @@ Because of the 10-second minimum, roughly 40% of that quota is padding on 6-seco
 
 To buy headroom at a known accuracy cost, raise `GROQ_LOCKED_MIN_INTERVAL_MS`.
 
-**OpenAI has no practical rate-limit problem.** Measured against the live `whisper-1` endpoint on a real recitation, the API's own `x-ratelimit` headers reported **2,499 of 2,500 requests remaining** while the pipeline ran at 15 rpm — about 0.6% of the cap. Latency is higher than Groq (median 1.25s, p95 2.26s versus ~350ms), but every call stayed inside the pipeline's 3s stale-result threshold: 0 of 69 were dropped, and tracking held at **99.2% within one ayah**.
+### Groq vs OpenAI — measured head to head
 
-Choosing a provider for a full session:
+Both providers were run on identical real recitations. **Tracking accuracy is a tie**; everything else favours Groq.
 
-| provider | rpm | cost / 90-min session | cost / 30 nights | latency | limit |
-|---|---|---|---|---|---|
-| Groq free (turbo) | 12 | free | free | ~350ms | **rate-limited at ~60 min** |
-| Groq paid (turbo) | 12 | ~$0.07 | ~$2.16 | ~350ms | none in practice |
-| OpenAI (`whisper-1`) | 15 | ~$0.81 | ~$24.30 | ~1.25s | none in practice |
+| | Groq `whisper-large-v3-turbo` | OpenAI `whisper-1` |
+|---|---|---|
+| tracking, An-Naba 275s (within ±1 ayah) | **99.2%** | **99.2%** |
+| median latency | **343ms** | 1,249ms |
+| p95 latency | **1,442ms** | 2,260ms |
+| cost, same 275s recitation | **$0.006** | $0.042 |
+| cost / 90-min session | **~$0.07** | ~$0.81 |
+| cost / 30 nights | **~$2.16** | ~$24.30 |
+| rate limit | 20 rpm, 2,000/day (54% per session) | 2,500 rpm (**0.6% used**) |
+| word timestamps | yes | yes |
 
-Groq's paid tier is roughly 10× cheaper and 3× faster, so it is the better primary when available. OpenAI is the right failover, and the right primary if Groq sign-ups are closed — it is measurably accurate and never rate-limits, just slower and dearer.
+On isolated 6-second windows scored through the app's matcher (`scripts/compare-asr-providers.js`), OpenAI hit slightly more often — 74% vs 67% over 27 windows, a two-window difference that is within noise — but Groq matched with **noticeably higher confidence** when it did hit, median score 0.68 vs 0.49. Confidence matters here because the anchor state machine gates on score thresholds. End to end the two are indistinguishable.
+
+**Use Groq as primary**: same accuracy, 3.6× faster, 7× cheaper, higher match confidence. Its one real constraint is 2,000 requests/day, about one long session per key per day, and the 20 rpm cap which nothing else should share.
+
+**Use OpenAI as failover or primary if Groq access is a problem**: measurably just as accurate for tracking and effectively never rate-limited, at ~10× the cost and ~3× the latency. Its latency still sits inside the pipeline's 3s stale-result threshold — 0 of 69 calls were dropped.
 
 ### 2. Transcription providers
 
