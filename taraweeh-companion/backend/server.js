@@ -53,6 +53,10 @@ try { buildMushafIndex(); } catch (e) { console.warn('[MushafIndex] build failed
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
+const APP_VERSION = (() => {
+  try { return JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')).version || ''; }
+  catch { return ''; }
+})();
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -138,6 +142,7 @@ app.get('/api/status', (req, res) => {
     ? (ep ? 'whisper-quran (dedicated)' : 'whisper-quran-v1 (legacy HF)')
     : 'independent engines: groq / openai (optional deepgram / elevenlabs)';
   res.json({
+    appVersion: APP_VERSION,
     groqConfigured: shared.groq,
     openaiConfigured: shared.openai,
     deepgramConfigured: shared.deepgram,
@@ -333,21 +338,26 @@ wss.on('connection', (ws, req) => {
       model: clientModel || undefined,
     };
 
-    if (useSharedMode) {
-      const shared = sharedKeyAvailability();
-      console.log(`[Init] SHARED independent engine — requested=${clientProvider} model=${clientModel || '(default)'} groq=${shared.groq} openai=${shared.openai}`);
-      send({ type: 'sys_status', component: 'model', status: 'ready', provider: clientProvider === 'auto' ? 'groq' : clientProvider, byok: false });
-    } else if (hasByok) {
-      console.log(`[Init] BYOK independent engine provider=${clientProvider} model=${clientModel || '(default)'}`);
-      send({ type: 'sys_status', component: 'model', status: 'ready', provider: clientProvider === 'auto' ? 'groq' : clientProvider, byok: true });
+    const selected = clientProvider === 'auto' ? 'groq' : clientProvider;
+    const selectedKey = selected === 'groq' ? (groqKey || (useSharedMode ? SHARED_GROQ_KEY : ''))
+      : selected === 'openai' ? (openaiKey || (useSharedMode ? SHARED_OPENAI_KEY : ''))
+      : selected === 'deepgram' ? (deepgramKey || (useSharedMode ? SHARED_DEEPGRAM_KEY : ''))
+      : selected === 'elevenlabs' ? (elevenlabsKey || (useSharedMode ? SHARED_ELEVENLABS_KEY : ''))
+      : '';
+    if (selectedKey) {
+      console.log(`[Init] ${useSharedMode ? 'SHARED' : 'BYOK'} engine provider=${selected} model=${clientModel || '(default)'}`);
+      send({ type: 'sys_status', component: 'model', status: 'ready', provider: selected, byok: !useSharedMode });
     } else {
-      console.log(`[Init] No API key and no shared keys configured (provider=${clientProvider}) — transcribe will fail`);
+      // 2.6.26 reported Ready for whichever button was lit even when that
+      // engine had no key. Search then threw on every chunk with no pill
+      // change, so the panel sat at 0.0s / Window 1/5.
+      console.log(`[Init] No ${selected} key (byok=${hasByok} shared=${useSharedMode}) — transcribe will fail`);
       send({
         type: 'sys_status',
         component: 'model',
         status: 'error',
-        provider: clientProvider,
-        message: 'API key required (Groq, OpenAI, Deepgram or ElevenLabs)',
+        provider: selected,
+        message: `${selected} API key required`,
       });
     }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
@@ -386,6 +396,7 @@ wss.on('connection', (ws, req) => {
     }
     console.log(`[Init] Pace: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'} (client), mode: ${opts.practiceMode ? 'practice' : 'taraweeh'}`);
     send({ type: 'pipeline_version', version: pipelineVersion });
+    if (APP_VERSION) send({ type: 'backend_version', version: APP_VERSION });
   }
 
   // Don't eagerly create — client sends 'init' message with settings.

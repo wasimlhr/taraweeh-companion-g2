@@ -1724,16 +1724,16 @@ body {
           // (Keep whatever state the pill was in.)
           break;
         case 'ready':
-          setPill('sPillModel', 'ok', 'Ready · ' + providerLabel(s.provider || _modelProvider || 'groq'));
+          setPill('sPillModel', 'ok', s.provider
+            ? ('Ready · ' + providerLabel(s.provider))
+            : 'Ready');
           document.getElementById('sPillEndpoint').style.display = 'none';
           if (!S.isRecording) setStatus('Ready to listen — tap Start Listening', 'result');
           break;
         case 'fallback':
-          // Backend is supposed to honour the user's selected provider strictly.
-          // If we ever see a fallback status, make it loud so the bug is obvious.
           _modelProvider = 'fallback';
-          setPill('sPillModel', 'err', 'Wrong provider — fallback');
-          setStatus('Backend fell back to public HF — your selected provider is not being used', 'err');
+          setPill('sPillModel', 'err', 'Backup engine');
+          setStatus('Selected engine unavailable — using the backup transcriber', 'err');
           break;
         case 'error':
           var provLbl = providerLabel(s.provider || _modelProvider || 'groq');
@@ -1742,7 +1742,7 @@ body {
             var waitS = Math.ceil(s.retryAfterMs / 1000);
             setPill('sPillModel', 'warn', provLbl + ': rate limit — ' + waitS + 's');
             setStatus(provLbl + ' rate-limited, retry in ' + waitS + 's', 'result');
-          } else if (s.httpStatus === 401 || s.httpStatus === 403 || /invalid.*key|unauthoriz|forbidden/i.test(s.message || '')) {
+          } else if (s.httpStatus === 401 || s.httpStatus === 403 || /invalid.*key|unauthoriz|forbidden|key missing|key required/i.test(s.message || '')) {
             setPill('sPillModel', 'err', provLbl + ': bad API key');
             setStatus(provLbl + ' API key invalid — open Settings to fix', 'err');
           } else {
@@ -1775,6 +1775,29 @@ body {
         if (typeof log === 'function') log('Quota exceeded \u2014 recording will pause until BYOK is configured', 'err');
       } else if (s.status === 'warn') {
         setStatus(s.message || 'Approaching free-session limit', 'warn');
+      }
+    } else if (s.component === 'search') {
+      if (!S.isRecording) return;
+      if (typeof s.audioSec === 'number') {
+        var audioEl = document.getElementById('matchAudioLabel');
+        var fillEl = document.getElementById('matchAudioFill');
+        if (audioEl) audioEl.textContent = s.audioSec.toFixed(1) + 's';
+        if (fillEl) fillEl.style.width = Math.min(100, (s.audioSec / 30) * 100) + '%';
+      }
+      if (s.window) {
+        var winEl = document.getElementById('matchWindowLabel');
+        if (winEl) winEl.textContent = 'Window ' + s.window + '/5';
+      }
+      if (s.status === 'transcribing') {
+        setPill('sPillConf', 'ok', 'Match: transcribing');
+        var cands = document.getElementById('matchCands');
+        if (cands && !cands.innerHTML) {
+          cands.innerHTML = '<div class="match-cand"><div class="match-cand-header"><span class="match-cand-ref" style="color:var(--tc-2)">Transcribing\u2026</span></div></div>';
+        }
+      } else if (s.status === 'noise') {
+        setPill('sPillConf', 'warn', 'Match: no speech yet');
+      } else if (s.status === 'reset') {
+        setPill('sPillConf', 'warn', 'Match: listening');
       }
     } else if (s.component === 'audio') {
       // Audio heartbeat — keep pill alive but don't show RMS
@@ -2711,6 +2734,13 @@ body {
         setPill('sPillModel', 'warn', 'Server waking\u2026');
       }
       setPill('sPillConf', '', 'Match: --');
+    } else if (msg.type === 'backend_version') {
+      var uiVer = APP_VERSION.replace(/^v/i, '');
+      var beVer = String(msg.version || '').replace(/^v/i, '');
+      if (beVer && beVer !== uiVer) {
+        setStatus('Version mismatch — UI ' + APP_VERSION + ', backend v' + beVer, 'err');
+        if (typeof log === 'function') log('Version mismatch UI=' + APP_VERSION + ' backend=' + beVer, 'err');
+      }
     } else if (msg.type === 'pipeline_version') {
       var pv = (msg.version || 'v3').toUpperCase();
       document.getElementById('versionEl').textContent = APP_VERSION + ' ' + pv;
@@ -3550,6 +3580,7 @@ body {
 
   window.setProvider = function (p, reinitialize) {
     p = sanitizeProvider(p);
+    var same = p === sanitizeProvider(S.settings.transcriptionProvider);
     S.settings.transcriptionProvider = p;
     try { saveSettings(); } catch (_) {}
     var ids = {
@@ -3573,7 +3604,9 @@ body {
     if (eRow) eRow.style.display = (p === 'elevenlabs') ? '' : 'none';
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
     refreshModelChoices();
-    if (reinitialize !== false && S.ws && S.ws.readyState === WebSocket.OPEN) {
+    if (reinitialize === false) return;
+    if (same && reinitialize !== true) return;
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       reinitPipeline();
       log('Provider → ' + providerLabel(p)
         + (S.settings.transcriptionModel ? ' (' + S.settings.transcriptionModel + ')' : ''), 'ok');
@@ -3818,7 +3851,6 @@ body {
     var fePill = document.getElementById('sPillEndpoint');
     if (fePill) fePill.style.display = 'none';
     _modelProvider = provider;
-    setPill('sPillModel', 'ok', 'Ready · ' + providerLabel(provider));
     S.ws.send(JSON.stringify(Object.assign({
       type: 'init',
       sessionId: _clientSessionId,
