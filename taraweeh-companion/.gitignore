@@ -20,6 +20,9 @@ training/__pycache__/
 backend/debug_*.pcm
 backend/debug_*.wav
 
+# Baseline pipeline copy materialised by scripts/run-lock-bench.sh
+backend/.bench-baseline-pipeline.js
+
 # Build artifacts
 *.tar.gz
 tar-extract/

@@ -13,7 +13,7 @@ import { transcribe, collectKeys, resolveProvider } from './transcriptionRouter.
 import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah } from './anchorStateMachine.js';
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
-import { findAnchor, isRefrain, getAyah } from './keywordMatcher.js';
+import { findAnchor, isRefrain, getAyah, spotCheck } from './keywordMatcher.js';
 import {
   prepareMatcherText,
   isBismillahOnly,
@@ -66,18 +66,42 @@ const SEARCH_SEND_MS = parseInt(process.env.SEARCH_SEND_MS || '12000', 10);
 const SEARCH_PREROLL_MS = parseInt(process.env.SEARCH_PREROLL_MS || '1000', 10);
 
 const VOICE_MIN_ACTIVE_MS = parseInt(process.env.VOICE_MIN_ACTIVE_MS || '500', 10);
-const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '2500', 10);
-const PRACTICE_VOICE_HANGOVER_MS = parseInt(process.env.PRACTICE_VOICE_HANGOVER_MS || '2500', 10);
-const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '4000', 10);
+// Must comfortably exceed a between-ayah breath, or the search buffer and window
+// ladder get thrown away mid-recitation and the first lock never converges.
+const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '5000', 10);
+// Paces search retries once the buffer already exceeds the next window target.
+// 4s starved the retry ladder; 2s keeps a cold search responsive while holding
+// the worst-case burst near Groq's 20 RPM free tier.
+const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '2000', 10);
+// Safety valve: the voice gate is an optimisation, never the sole reason we stop
+// transcribing. If audio keeps arriving while SEARCHING but the gate has not
+// opened, search anyway and let the transcriber judge whether it is speech.
+const SEARCH_VOICE_GATE_BYPASS_MS = parseInt(process.env.SEARCH_VOICE_GATE_BYPASS_MS || '6000', 10);
+// "Is the mic producing anything at all", far below any speech level. Deliberately
+// independent of the per-profile voice gate: buffering must keep working even if
+// that gate is mis-tuned, otherwise the safety valve above never gets any audio.
+const SIGNAL_PRESENT_RMS = parseFloat(process.env.SIGNAL_PRESENT_RMS || '0.0003');
 const SEARCH_SEND_BYTES = Math.floor(BYTES_PER_MS * SEARCH_SEND_MS);
 const SEARCH_PREROLL_BYTES = Math.floor(BYTES_PER_MS * SEARCH_PREROLL_MS);
+// Practice: pause after a shown verse → next recitation is a fresh global search (surah jumps).
+const PRACTICE_FRESH_SILENCE_MS = parseInt(process.env.PRACTICE_FRESH_SILENCE_MS || '2500', 10);
+const PRACTICE_FRESH_MIN_HOLD_MS = parseInt(process.env.PRACTICE_FRESH_MIN_HOLD_MS || '1200', 10);
+const PRACTICE_FRESH_SEARCH_MS = parseInt(process.env.PRACTICE_FRESH_SEARCH_MS || '2000', 10);
 
+// voiceMinActivityRms is a per-85ms-chunk floor, so it sits well under the
+// 0.002–0.015 whole-chunk range a phone or G2 mic produces during recitation:
+// consonants and word gaps dip far below the level of the surrounding ayah.
+// voiceMaxActivityRms caps how far room noise may push the gate up, and stays
+// below the quiet end of that range on purpose. A single RMS threshold cannot
+// both reject loud rooms and still hear the quietest reciter, so the ceiling is
+// tuned to never climb into speech: in a noisy room the gate simply stops
+// filtering (the pre-2.6.7 behaviour) instead of silencing the reciter.
 const AUDIO_SOURCE_PROFILES = Object.freeze({
   browser: Object.freeze({
     source: 'browser',
     removeDcOffset: true,
-    voiceMinActivityRms: parseFloat(process.env.BROWSER_VOICE_MIN_ACTIVITY_RMS || '0.004'),
-    voiceMaxActivityRms: parseFloat(process.env.BROWSER_VOICE_MAX_ACTIVITY_RMS || '0.025'),
+    voiceMinActivityRms: parseFloat(process.env.BROWSER_VOICE_MIN_ACTIVITY_RMS || '0.0012'),
+    voiceMaxActivityRms: parseFloat(process.env.BROWSER_VOICE_MAX_ACTIVITY_RMS || '0.0022'),
     voiceNoiseMultiplier: parseFloat(process.env.BROWSER_VOICE_NOISE_MULTIPLIER || '1.8'),
     lockedVoiceGateFactor: parseFloat(process.env.BROWSER_LOCKED_VOICE_GATE_FACTOR || '0.75'),
     quietBoostThreshold: parseFloat(process.env.BROWSER_QUIET_BOOST_THRESHOLD || '0.025'),
@@ -87,8 +111,8 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
   simulator: Object.freeze({
     source: 'simulator',
     removeDcOffset: true,
-    voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.0022'),
-    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.010'),
+    voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.0008'),
+    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.0015'),
     voiceNoiseMultiplier: parseFloat(process.env.SIMULATOR_VOICE_NOISE_MULTIPLIER || '1.5'),
     lockedVoiceGateFactor: parseFloat(process.env.SIMULATOR_LOCKED_VOICE_GATE_FACTOR || '0.8'),
     quietBoostThreshold: parseFloat(process.env.SIMULATOR_QUIET_BOOST_THRESHOLD || '0.015'),
@@ -98,8 +122,8 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
   g2: Object.freeze({
     source: 'g2',
     removeDcOffset: true,
-    voiceMinActivityRms: parseFloat(process.env.G2_VOICE_MIN_ACTIVITY_RMS || '0.0008'),
-    voiceMaxActivityRms: parseFloat(process.env.G2_VOICE_MAX_ACTIVITY_RMS || '0.006'),
+    voiceMinActivityRms: parseFloat(process.env.G2_VOICE_MIN_ACTIVITY_RMS || '0.0004'),
+    voiceMaxActivityRms: parseFloat(process.env.G2_VOICE_MAX_ACTIVITY_RMS || '0.0009'),
     voiceNoiseMultiplier: parseFloat(process.env.G2_VOICE_NOISE_MULTIPLIER || '1.35'),
     lockedVoiceGateFactor: parseFloat(process.env.G2_LOCKED_VOICE_GATE_FACTOR || '0.75'),
     quietBoostThreshold: parseFloat(process.env.G2_QUIET_BOOST_THRESHOLD || '0.010'),
@@ -113,12 +137,10 @@ function normalizeAudioSource(source) {
   return Object.prototype.hasOwnProperty.call(AUDIO_SOURCE_PROFILES, normalized) ? normalized : 'g2';
 }
 
-// Locked: send a 6s tail at least every ~3.2s. Groq stays 1-in-flight at 3.5s
-// (~17 RPM) so free-tier 20 RPM is not the bottleneck — matching is.
+// Use 3s chunks continuously (same as search start) — faster feedback, consistent logic
 const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '4000', 10);
 const LOCKED_MAX_MS    = parseInt(process.env.LOCKED_MAX_MS    || '10000', 10);
 const LOCKED_SEND_MS   = parseInt(process.env.LOCKED_SEND_MS   || '6000', 10);
-const GROQ_LOCKED_MIN_INTERVAL_MS = parseInt(process.env.GROQ_LOCKED_MIN_INTERVAL_MS || '6000', 10);
 // 3s chunks → 4 misses = 12s (too fast). 12 misses ≈ 36s, similar to 10s chunks × 4.
 // 2s chunks → 16 misses ≈ 32s before resuming (same effective time as 12 × 3s)
 const MISSED_BEFORE_RESUMING_V3 = parseInt(process.env.MISSED_BEFORE_RESUMING_V3 || '16', 10);
@@ -127,6 +149,39 @@ const LOCKED_MIN_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MIN_MS);
 const LOCKED_MAX_BYTES = Math.floor(BYTES_PER_MS * LOCKED_MAX_MS);
 const LOCKED_SEND_BYTES = Math.floor(BYTES_PER_MS * LOCKED_SEND_MS);
 const LOCKED_MAX_INFLIGHT = parseInt(process.env.LOCKED_MAX_INFLIGHT || '2', 10);
+const GROQ_LOCKED_MIN_INTERVAL_MS = parseInt(process.env.GROQ_LOCKED_MIN_INTERVAL_MS || '5000', 10);
+// Leading-edge tracking. The matcher scores a whole 6s window, so whichever ayah
+// contributed the most words wins — normally the earlier one. That makes every
+// confirmation report where the reciter *was* near the middle of the window, and
+// the display trails by roughly half a window forever. These bound a second,
+// narrower match over just the newest words, which is where the reciter is now.
+const LEADING_EDGE_TAIL_MS = parseInt(process.env.LEADING_EDGE_TAIL_MS || '2600', 10);
+const LEADING_EDGE_MIN_WORDS = parseInt(process.env.LEADING_EDGE_MIN_WORDS || '3', 10);
+const LEADING_EDGE_MIN_SCORE = parseFloat(process.env.LEADING_EDGE_MIN_SCORE || '0.45');
+const LEADING_EDGE_MAX_ADVANCE = parseInt(process.env.LEADING_EDGE_MAX_ADVANCE || '3', 10);
+// Padding on every locked-mode timer. Deliberately biased slow: a display that
+// runs ahead shows an ayah the imam has not reached yet, which is worse than
+// trailing by one. 1 = no padding. Measured across the sync bench, dropping this
+// below ~1.15 buys accuracy on steady recitation but overshoots on slow, long-
+// breath recitation, so it stays conservative until tuned on real recordings.
+const GROQ_TIMER_CUSHION = parseFloat(process.env.GROQ_TIMER_CUSHION || '1.2');
+// Whisper says the reciter is exactly one ayah past the display. Rather than
+// snapping (jittery) or ignoring it (the display then stays behind for the rest
+// of the ayah), compress the remaining timer to this so it closes the gap
+// smoothly. 0 restores the old ignore-gap-of-one behaviour.
+const GAP1_NUDGE_MS = parseInt(process.env.GAP1_NUDGE_MS || '500', 10);
+const FORWARD_JUMP_CONFIRMS = parseInt(process.env.FORWARD_JUMP_CONFIRMS || '2', 10);
+const FORWARD_JUMP_DRIFT = parseInt(process.env.FORWARD_JUMP_DRIFT || '4', 10);
+// An ayah's on-screen life is speech time PLUS the breath the reciter takes at
+// the end of it. That pause is additive, so a timer multiplier cannot represent
+// it: the same cushion that fits 1.2s breaths races ahead on 4s ones. Learn it
+// separately and add it.
+const PAUSE_EST_START_MS = parseInt(process.env.PAUSE_EST_START_MS || '900', 10);
+const PAUSE_EST_MAX_MS = parseInt(process.env.PAUSE_EST_MAX_MS || '6000', 10);
+// Hold the display while the mic hears nothing. Above a normal inter-word gap so
+// it does not trip mid-ayah, and bounded so it can never freeze the display.
+const DISPLAY_HOLD_SILENCE_MS = parseInt(process.env.DISPLAY_HOLD_SILENCE_MS || '1200', 10);
+const DISPLAY_HOLD_MAX_MS = parseInt(process.env.DISPLAY_HOLD_MAX_MS || '20000', 10);
 const LOCKED_RESULT_STALE_MS = parseInt(process.env.LOCKED_RESULT_STALE_MS || '3000', 10);
 const CAPPED_RECOVERY_MAX_CHECKS = parseInt(process.env.CAPPED_RECOVERY_MAX_CHECKS || '2', 10);
 const CAPPED_RECOVERY_RECENT_VOICE_MS = parseInt(process.env.CAPPED_RECOVERY_RECENT_VOICE_MS || '15000', 10);
@@ -292,6 +347,8 @@ export class AudioPipeline {
     this._lastSearchTexts = [];  // last 2–3 chunk texts for combined matching
     this._searchVoicedMs = 0;
     this._searchLastVoiceAt = 0;
+    this._searchHasSignal = false;
+    this._forceNextSearch = false;
     this._lastSearchCall = 0;
     this._timerHeartbeatRef = null;  // periodic emit so frontend countdown never disappears
 
@@ -351,6 +408,10 @@ export class AudioPipeline {
     this._measuredMsPerWord = 0;   // 0 = no data yet, use default
     this._msPerWordSamples  = [];  // last 6 samples for rolling average
     this._whisperClockSamples = 0; // count of Whisper clock measurements (no manual data)
+    this._wordPaceSamples = 0;     // count of pace measurements from word timestamps
+    this._measuredPauseMs = PAUSE_EST_START_MS;  // learned end-of-ayah breath
+    this._forwardJumpAyah = 0;     // far-ahead candidate awaiting a second sighting
+    this._forwardJumpCount = 0;
 
     // Pace tracking: rolling window of recent WPS samples for trend detection
     this._paceHistory    = [];   // [{wps, ts}] — last 8 measurements
@@ -451,9 +512,11 @@ export class AudioPipeline {
       this._rakatCount = 0;
       this._expectFatiha = false;
     } else if (this.state.mode === 'SEARCHING') {
-      // A session may start mid-recitation. Search globally until the prayer
-      // position detector observes a transition that specifically expects Fatiha.
-      this._expectFatiha = false;
+      // Imam always opens with Fatiha, so prime the express lock from the first
+      // rakat. A session that starts mid-recitation is still safe: the express
+      // path needs a strong Fatiha score, and anchorStateMachine falls back to a
+      // global search whenever the preferred surah finds nothing.
+      this._expectFatiha = true;
     }
     console.log(`[Pipeline] Taraweeh mode ${this.taraweehMode ? 'ON' : 'OFF'}${this._expectFatiha ? ' (expectFatiha=true)' : ''}`);
     this.onStatus({ type: 'taraweeh_mode', enabled: this.taraweehMode,
@@ -581,6 +644,8 @@ export class AudioPipeline {
     this._lastDetectedVoiceAt = 0;
     this._cappedRecoveryChecks = 0;
     this._preRecitSkips = 0;
+    this._lastSearchCall = 0;   // a restart must not inherit the previous run's throttle
+    this._noiseFloorRms = 0;
     this._resetSearchBuf();
     console.log(`[Pipeline] Started (last known: ${prevSurah}:${prevAyah || 0})`);
   }
@@ -702,6 +767,56 @@ export class AudioPipeline {
     this._practiceFreshRun = false;
     this._lastHeardWordMs = Date.now(); // silence clock starts at match — not pre-lock audio
     this._userSearchingDisplay = false;
+  }
+
+  // After a matched verse + pause, re-enter global search for surah-to-surah jumps.
+  _enterPracticeFreshSearch() {
+    if (!this.practiceMode || this.state.mode !== 'LOCKED') return;
+    console.log(`[Pipeline] Practice fresh run — listening for next verse (was ${this._displaySurah}:${this._displayAyah})`);
+    this._cancelReadAdvance();
+    this._practiceFreshRun = true;
+    this._practiceLastMatchMs = 0;
+    this._userSearchingDisplay = true;
+    this.state = { ...createState(), mode: 'SEARCHING', lastLockedSurah: 0, lastLockedAyah: 0 };
+    this._whisperSurah = 0;
+    this._whisperAyah  = 0;
+    this._lastHeardWordMs = 0;
+    this._lastTexts = [];
+    this._lockedInFlight = 0;
+    this._lockedLastAppliedSeq = 0;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
+    this._searchWinIdx = 0;
+    if (this._lockedBuf.length > 0) {
+      this._searchBuf = Buffer.concat([this._searchBuf, this._lockedBuf]);
+      this._lockedBuf = Buffer.alloc(0);
+      this._searchHasSignal = true;   // carried locked audio is recitation, don't trim it
+    }
+    // This runs after a deliberate pause, so the voice gate is closed by
+    // construction. Without the override the search below is always dropped and
+    // the fresh-run snap never happens.
+    this._forceNextSearch = true;
+    this._emitState(null, null);
+    const bufMs = this._searchBuf.length / BYTES_PER_MS;
+    if (bufMs >= PRACTICE_FRESH_SEARCH_MS && !this.processing) {
+      setTimeout(() => {
+        if (this.active && this.state.mode === 'SEARCHING' && !this.processing) {
+          this._processSearchChunk();
+        }
+      }, 0);
+    }
+  }
+
+  _maybePracticeFreshRun() {
+    if (!this.practiceMode || this.state.mode !== 'LOCKED' || !this._practiceLastMatchMs) return;
+    const heldMs = Date.now() - this._practiceLastMatchMs;
+    if (heldMs < PRACTICE_FRESH_MIN_HOLD_MS) return;
+    // Silence since this verse was matched — ignore stale timestamps from pre-lock audio.
+    const silenceAnchor = Math.max(this._practiceLastMatchMs, this._lastHeardWordMs || 0);
+    const wordSilence = Date.now() - silenceAnchor;
+    if (wordSilence >= PRACTICE_FRESH_SILENCE_MS) {
+      this._enterPracticeFreshSearch();
+    }
   }
 
   _tryPracticeSnapFromMatches(anchorResult, words = []) {
@@ -976,7 +1091,7 @@ export class AudioPipeline {
   }
 
   _voiceHangoverMs() {
-    return this.practiceMode ? PRACTICE_VOICE_HANGOVER_MS : VOICE_HANGOVER_MS;
+    return VOICE_HANGOVER_MS;
   }
 
   _hasSearchVerse(now = Date.now()) {
@@ -996,14 +1111,17 @@ export class AudioPipeline {
   ingest(pcmData) {
     if (!this.active) return;
 
+    this._maybePracticeFreshRun();
+
     const now = Date.now();
     const profile = this._audioProfile || AUDIO_SOURCE_PROFILES.g2;
     const processedPcm = profile.removeDcOffset ? removeDcOffset(pcmData) : pcmData;
     const rms = computeRms(processedPcm);
     const pcmMs = processedPcm.length / BYTES_PER_MS;
-    if (this._noiseFloorRms <= 0) {
-      this._noiseFloorRms = Math.min(rms, profile.voiceMinActivityRms / profile.voiceNoiseMultiplier);
-    }
+    // Seed the floor from what the mic actually reports. Seeding it from
+    // voiceMinActivityRms instead pins the gate at that constant forever, since
+    // the floor can then only ever decay away from it.
+    if (this._noiseFloorRms <= 0) this._noiseFloorRms = Math.max(1e-6, rms);
     const activityGate = Math.max(profile.voiceMinActivityRms,
       Math.min(profile.voiceMaxActivityRms, this._noiseFloorRms * profile.voiceNoiseMultiplier));
     const lockedTracking = this.state.mode === 'LOCKED' || this.state.mode === 'PAUSED';
@@ -1012,8 +1130,12 @@ export class AudioPipeline {
       : activityGate;
     const hasVoice = rms > detectionGate;
     if (hasVoice) this._lastDetectedVoiceAt = now;
-    if (!hasVoice && rms <= this._noiseFloorRms * 1.1) {
-      this._noiseFloorRms = this._noiseFloorRms * 0.98 + rms * 0.02;
+    // Chase the quietest recent level: drop fast so a loud opening does not keep
+    // the gate high, creep up slowly so a noisy room can still raise it.
+    if (rms < this._noiseFloorRms) {
+      this._noiseFloorRms = this._noiseFloorRms * 0.8 + rms * 0.2;
+    } else if (!hasVoice) {
+      this._noiseFloorRms = this._noiseFloorRms * 0.995 + rms * 0.005;
     }
 
     if (now - this._lastAudioStatusMs >= 3000) {
@@ -1044,9 +1166,13 @@ export class AudioPipeline {
       this._searchVoicedMs += pcmMs;
       this._searchLastVoiceAt = now;
     }
+    if (rms > SIGNAL_PRESENT_RMS) this._searchHasSignal = true;
 
     this._searchBuf = Buffer.concat([this._searchBuf, processedPcm]);
-    if (this._searchVoicedMs === 0 && this._searchBuf.length > SEARCH_PREROLL_BYTES) {
+    // Trim to a short pre-roll only while the mic has been silent for this whole
+    // run. Keying this off _searchVoicedMs discards the accumulated buffer after
+    // every transcription, because sending resets that counter to zero.
+    if (!this._searchHasSignal && this._searchBuf.length > SEARCH_PREROLL_BYTES) {
       this._searchBuf = this._searchBuf.subarray(this._searchBuf.length - SEARCH_PREROLL_BYTES);
     }
 
@@ -1059,21 +1185,33 @@ export class AudioPipeline {
     }
 
     const targetMs = SEARCH_WINDOWS_MS[this._searchWinIdx];
-    const freshVoice = this._hasSearchVerse(now);
-    const providerGapOk = !this.isGroqMode || !this._lastSearchCall
-      || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
-    if (bufMs >= targetMs && freshVoice && providerGapOk && !this.processing) {
+    if (bufMs >= targetMs && this._searchGateOpen(now) && !this.processing) {
       this._processSearchChunk();
     }
+  }
+
+  // Search is allowed when speech was recently detected, or — as a safety valve —
+  // when audio has been buffering for a while without the gate ever opening.
+  // A mis-tuned gate must never be able to stop transcription outright.
+  _searchGateOpen(now = Date.now()) {
+    if (this.isGroqMode && this._lastSearchCall
+        && now - this._lastSearchCall < GROQ_SEARCH_MIN_INTERVAL_MS) return false;
+    if (this._forceNextSearch) return true;
+    const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
+      && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
+    if (freshVoice) return true;
+    const sinceLastSearch = this._lastSearchCall ? now - this._lastSearchCall : Infinity;
+    return sinceLastSearch >= SEARCH_VOICE_GATE_BYPASS_MS;
   }
 
   _maybeProcessLockedBufferedChunk() {
     if (!this.active) return false;
     if (this.state.mode !== 'LOCKED' && this.state.mode !== 'PAUSED') return false;
     if (this._isRateLimited()) return false;
-    // Groq: 1 in-flight at ~3.5s ≈ 17 RPM (under free-tier 20). OpenAI can overlap.
+    // Groq free tier caps at 20 RPM → 5s spot checks / 1 in-flight. OpenAI has no
+    // practical RPM cap → faster default. Both prefer newly detected speech.
     const maxInFlight = this.isGroqMode ? 1 : LOCKED_MAX_INFLIGHT;
-    const minIntervalMs = this.isGroqMode ? Math.max(GROQ_LOCKED_MIN_INTERVAL_MS, LOCKED_SEND_MS) : LOCKED_MIN_MS;
+    const minIntervalMs = this.isGroqMode ? GROQ_LOCKED_MIN_INTERVAL_MS : LOCKED_MIN_MS;
     if (this._lockedInFlight >= maxInFlight || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
     const freshVoice = this._hasLockedVerse(now);
@@ -1164,6 +1302,8 @@ export class AudioPipeline {
     this._lastSearchTexts = [];
     this._searchVoicedMs = 0;
     this._searchLastVoiceAt = 0;
+    this._searchHasSignal = false;
+    this._forceNextSearch = false;
     this.processing    = false;
     this._searchGen    = (this._searchGen || 0) + 1;
   }
@@ -1183,13 +1323,11 @@ export class AudioPipeline {
     }
 
     const now = Date.now();
-    const freshVoice = this._hasSearchVerse(now);
-    const providerGapOk = !this.isGroqMode || !this._lastSearchCall
-      || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
-    if (!freshVoice || !providerGapOk) {
+    if (!this._searchGateOpen(now)) {
       this.processing = false;
       return;
     }
+    this._forceNextSearch = false;
 
     // Preserve cumulative context during initial locking. A short first result
     // may contain only a generic Quran prefix; the next call must still include
@@ -1435,11 +1573,7 @@ export class AudioPipeline {
       this.processing = false;
       const bufMs2 = this._searchBuf.length / BYTES_PER_MS;
       const nextTarget = SEARCH_WINDOWS_MS[this._searchWinIdx];
-      const now = Date.now();
-      const freshVoice = this._hasSearchVerse(now);
-      const providerGapOk = !this.isGroqMode || !this._lastSearchCall
-        || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
-      if (nextTarget && bufMs2 >= nextTarget && freshVoice && providerGapOk
+      if (nextTarget && bufMs2 >= nextTarget && this._searchGateOpen()
           && this.state.mode !== 'LOCKED') {
         setTimeout(() => {
           if (!this.processing && this.state.mode !== 'LOCKED' && this.active) {
@@ -1617,10 +1751,15 @@ export class AudioPipeline {
         // anchor to a position the display already passed — clamp it so the
         // next spotCheck scans near the display, not way behind.
         let finalResult = anchorResult;
+        const edge = this._leadingEdgeAyah(anchorResult.surah, anchorResult.ayah, words);
+        if (edge) {
+          console.log(`[Pipeline] Leading edge: window matched :${anchorResult.ayah} but newest ${edge.tailWords} words are :${edge.ayah} (score=${edge.score.toFixed(2)}) — tracking :${edge.ayah}`);
+          finalResult = { ...finalResult, ayah: edge.ayah, lastLockedAyah: edge.ayah };
+        }
         if (!this.practiceMode) {
           const minAnchorAyah = Math.max(1, this._displayAyah - 2);
-          if (anchorResult.surah === this._displaySurah && anchorResult.ayah < minAnchorAyah) {
-            finalResult = { ...anchorResult, ayah: minAnchorAyah };
+          if (finalResult.surah === this._displaySurah && finalResult.ayah < minAnchorAyah) {
+            finalResult = { ...finalResult, ayah: minAnchorAyah };
           }
         }
         this.state = finalResult;
@@ -1811,12 +1950,21 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       }
-      // Gap 1: don't touch the display. Whisper is 6s lagged — 1 ayah off is
-      // within normal live-tracking latency and usually resolves as the reciter
-      // continues. Snapping forward on gap=1 was causing visible jitter when
-      // combined with the timer's natural advance. Keep the existing timer and
-      // let it expire on its own.
+      // Gap 1: snapping here caused visible jitter, but ignoring it entirely left
+      // the display a full ayah behind until its own timer happened to expire —
+      // which is most of why tracking trailed the reciter. Compress the remaining
+      // time instead: the display closes the gap within a second, and it still
+      // arrives as a normal advance rather than a jump.
       if (gap === 1) {
+        if (GAP1_NUDGE_MS > 0 && this.isFastProvider && realMatch && score >= 35
+            && this._displayAdvanceTimer && this._timerStartedAt) {
+          const remaining = Math.max(0, this._nextAdvanceMs - (Date.now() - this._timerStartedAt));
+          if (remaining > GAP1_NUDGE_MS) {
+            console.log(`[Pipeline] Gap-1 nudge: Whisper :${confirmedAyah} vs display :${this._displayAyah} — ${Math.round(remaining)}ms left, advancing in ${GAP1_NUDGE_MS}ms`);
+            this._cancelReadAdvance();
+            this._scheduleReadAdvance(score, 0, 1.0, GAP1_NUDGE_MS);
+          }
+        }
         this._emitState(text, rms);
         return;
       }
@@ -1844,8 +1992,14 @@ export class AudioPipeline {
       const stepMs = gap >= 4 ? 2000 : gap >= 3 ? 1600 : SMOOTH_ADVANCE_STEP_MS;
       console.log(`[Pipeline] Whisper :${confirmedAyah} ahead of display :${this._displayAyah} — catch-up (${gap} steps, ${stepMs}ms/step)`);
       this._smoothAdvanceTo(confirmedSurah, confirmedAyah, stepMs);
-    } else if (gap > 6 && gap <= 15 && score >= 70) {
-      // Large forward gap with high confidence — snap immediately
+    } else if (gap > 6 && (score >= 70 || this._forwardJumpConfirmed(confirmedSurah, confirmedAyah))) {
+      // Large forward gap. A single high-confidence match snaps immediately;
+      // otherwise repeated agreement stands in for confidence. Requiring score
+      // >= 70 alone stranded the display for minutes when the reciter picked up
+      // further down the surah, because a correct wide-scan match on a partial
+      // window scores well below that even when it repeats.
+      this._forwardJumpAyah = 0;
+      this._forwardJumpCount = 0;
       this._cancelReadAdvance();
       this._displaySurah = confirmedSurah;
       this._displayAyah  = confirmedAyah;
@@ -1858,7 +2012,7 @@ export class AudioPipeline {
       this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, CORRECTED_DURATION_FACTOR);
       return;
     } else if (gap > 6) {
-      console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${this._displayAyah} — anchor confused, ignoring (conf=${score}%)`);
+      console.log(`[Pipeline] Whisper :${confirmedAyah} jumped ${gap} ahead of display :${this._displayAyah} — awaiting confirmation ${this._forwardJumpCount}/${FORWARD_JUMP_CONFIRMS} (conf=${score}%)`);
       if (!this._displayAdvanceTimer && !this._smoothAdvanceTimer) {
         this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
       }
@@ -1923,15 +2077,34 @@ export class AudioPipeline {
         //  - Manual samples exist + HF mode: keep manual (historical behaviour —
         //    HF clock is noisier and user's manual taps are more trustworthy).
         const whisperMsPerWord = Math.round(1000 / this._measuredWps);
-        const shouldSync = this._msPerWordSamples.length === 0 || this.isFastProvider;
+        // This clock divides words by the gap between CONFIRMATIONS, which is
+        // quantised to the spot-check interval and includes breaths, so it reads
+        // far slower than the reciter actually speaks. Word timestamps measure
+        // speaking rate directly, so once we have those, never let this override
+        // them — doing so is what stretched every timer and made the display lag.
+        const haveWordPace = (this._wordPaceSamples || 0) > 0;
+        const shouldSync = !haveWordPace
+          && (this._msPerWordSamples.length === 0 || this.isFastProvider);
         if (shouldSync) {
           this._measuredMsPerWord = whisperMsPerWord;
           this._whisperClockSamples++;
         }
         const syncTag = shouldSync
           ? (this._msPerWordSamples.length > 0 ? ' [Groq override: synced]' : '')
-          : ` [manual pace kept: ${this._measuredMsPerWord}ms/w]`;
+          : ` [${haveWordPace ? 'word-timestamp' : 'manual'} pace kept: ${this._measuredMsPerWord}ms/w]`;
         console.log(`[Pipeline] Whisper clock: ${totalWords}w in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps (${whisperMsPerWord}ms/w)${syncTag}`);
+
+        // Whatever this interval contained beyond the words themselves was the
+        // reciter breathing. That is the one thing the confirmation clock does
+        // measure well, and the timer needs it as an additive term.
+        const ayahsAdvanced = toAyah - fromAyah;
+        if (haveWordPace && ayahsAdvanced >= 1 && ayahsAdvanced <= 3) {
+          const speechMs = totalWords * this._measuredMsPerWord;
+          const perAyahPause = (elapsedMs - speechMs) / ayahsAdvanced;
+          const clamped = Math.max(0, Math.min(PAUSE_EST_MAX_MS, perAyahPause));
+          this._measuredPauseMs = Math.round(this._measuredPauseMs * 0.7 + clamped * 0.3);
+          console.log(`[Pipeline] Ayah pause: ${Math.round(perAyahPause)}ms observed over ${ayahsAdvanced} ayah(s) → ${this._measuredPauseMs}ms`);
+        }
 
         this._updatePace(clampedWps, now);
       }
@@ -1952,43 +2125,48 @@ export class AudioPipeline {
 
   // V4: Learn pace from word-level timestamps
   _learnWordPaceFromTimestamps() {
-    if (this._wordTimestamps.length === 0) return;
+    if (this._wordTimestamps.length < 2) return;
 
-    // Calculate actual pace from word durations. Filter malformed entries
-    // (negative or zero durations, NaN, absurdly long >5s words) — a single
-    // bad Whisper frame would otherwise poison _measuredMsPerWord with NaN
-    // and break every subsequent timer calculation.
-    const durations = this._wordTimestamps
-      .map(w => {
-        const start = typeof w.start === 'number' ? w.start : (Array.isArray(w.timestamp) ? w.timestamp[0] : 0);
-        const end = typeof w.end === 'number' ? w.end : (Array.isArray(w.timestamp) ? w.timestamp[1] : start + 0.5);
-        return (end - start) * 1000;
-      })
-      .filter(d => Number.isFinite(d) && d > 0 && d < 5000);
-
-    if (durations.length === 0) {
+    // Pace is the onset-to-onset PERIOD, not how long a word is voiced for.
+    // Measuring (end - start) omits the gap before the next word, so it always
+    // reads faster than the reciter and the two errors have to be cancelled out
+    // elsewhere. Take the interval between successive word onsets instead.
+    const onsets = this._wordTimestamps
+      .map(w => (typeof w.start === 'number' ? w.start
+        : (Array.isArray(w.timestamp) ? w.timestamp[0] : NaN)))
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
+    if (onsets.length < 2) {
       console.log(`[Pipeline] Word pace skipped: no valid timestamps in ${this._wordTimestamps.length} words`);
       return;
     }
 
-    const avgMs = durations.reduce((a, b) => a + b, 0) / durations.length;
-    if (!Number.isFinite(avgMs) || avgMs <= 0) return;
-    const minMs = Math.min(...durations);
-    const maxMs = Math.max(...durations);
-
-    // Weighted average with existing estimate (70% old, 30% new)
-    if (this._measuredMsPerWord > 0) {
-      this._measuredMsPerWord = Math.round(this._measuredMsPerWord * 0.7 + avgMs * 0.3);
-    } else {
-      this._measuredMsPerWord = Math.round(avgMs);
+    // Drop malformed frames and end-of-ayah breaths: a breath is not part of the
+    // speaking rate, and including it stretches every subsequent timer.
+    const periods = [];
+    for (let i = 1; i < onsets.length; i++) {
+      const d = (onsets[i] - onsets[i - 1]) * 1000;
+      if (d >= 120 && d <= 2500) periods.push(d);
     }
+    if (periods.length === 0) return;
 
+    // Median, not mean — one long madd or a missed word should not move the pace.
+    periods.sort((a, b) => a - b);
+    const medianMs = periods[Math.floor(periods.length / 2)];
+    if (!Number.isFinite(medianMs) || medianMs <= 0) return;
+
+    // Groq/OpenAI timestamps are reliable, so follow tempo shifts quickly.
+    const oldWeight = this.isFastProvider ? 0.6 : 0.75;
+    this._measuredMsPerWord = this._measuredMsPerWord > 0
+      ? Math.round(this._measuredMsPerWord * oldWeight + medianMs * (1 - oldWeight))
+      : Math.round(medianMs);
     this._measuredWps = 1000 / this._measuredMsPerWord;
+    this._wordPaceSamples = (this._wordPaceSamples || 0) + 1;
 
     console.log(
-      `[Pipeline] Word pace from timestamps: ${avgMs.toFixed(0)}ms avg ` +
-      `(${minMs.toFixed(0)}-${maxMs.toFixed(0)}ms range, ` +
-      `${durations.length}/${this._wordTimestamps.length} valid words) → ${this._measuredMsPerWord}ms/w`
+      `[Pipeline] Word pace from timestamps: median ${medianMs.toFixed(0)}ms/word ` +
+      `(${periods.length} intervals of ${onsets.length} words) → ${this._measuredMsPerWord}ms/w ` +
+      `(${this._measuredWps.toFixed(2)} wps)`
     );
   }
 
@@ -2091,14 +2269,18 @@ export class AudioPipeline {
     const onLastAyah = this._displaySurah > 0 && this._displayAyah > 0
       && !getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
 
-    // Groq silence guard: word-level timestamps let us detect when the reciter
-    // is paused (emotional, breath, end-of-ayah wait). If the last heard word
-    // was >3s ago, don't let the timer fire — reciter hasn't moved.
-    if (this.isFastProvider && !this.taraweehMode && this._lastHeardWordMs > 0 && !onLastAyah) {
-      const silenceMs = Date.now() - this._lastHeardWordMs;
-      if (silenceMs > 3000) {
+    // Silence hold, from the mic rather than from Whisper. The reciter pausing is
+    // the clearest possible signal not to advance, but word timestamps only
+    // arrive once per spot check, so they cannot resolve a breath shorter than
+    // that interval — which is why this used to be driven by _lastHeardWordMs,
+    // misfire during normal recitation, and end up switched off in Taraweeh.
+    // The voice gate samples every ~85ms, so use it: hold through the breath,
+    // and bound the hold so a mis-tuned gate can never freeze the display.
+    if (!onLastAyah && this._lastDetectedVoiceAt > 0) {
+      const silenceMs = Date.now() - this._lastDetectedVoiceAt;
+      if (silenceMs > DISPLAY_HOLD_SILENCE_MS && silenceMs < DISPLAY_HOLD_MAX_MS) {
         if (!this._lastSilenceLogMs || (Date.now() - this._lastSilenceLogMs) > 2000) {
-          console.log(`[Groq silence hold] ${silenceMs}ms since last word — blocking auto-advance`);
+          console.log(`[Pipeline] Silence hold: ${silenceMs}ms since last voice — display waits on :${this._displayAyah}`);
           this._lastSilenceLogMs = Date.now();
         }
         return false;
@@ -2106,6 +2288,46 @@ export class AudioPipeline {
     }
     return this._displaySurah > 0 && this._displayAyah > 0
       && (this.state.mode === 'LOCKED' || this.state.mode === 'RESUMING' || this.state.mode === 'SEARCHING');
+  }
+
+  /**
+   * Where is the reciter *now*? Re-match only the newest words of the window so
+   * a confirmation reflects the leading edge of the recitation rather than the
+   * ayah that happened to fill most of the window. Returns null unless the tail
+   * gives solid, forward-only evidence, so this can correct lag but never invent
+   * a jump or drag the display backwards.
+   */
+  _leadingEdgeAyah(surah, ayah, words) {
+    if (LEADING_EDGE_TAIL_MS <= 0) return null;
+    if (!this.isFastProvider || !Array.isArray(words) || words.length < LEADING_EDGE_MIN_WORDS) return null;
+    const lastEnd = words[words.length - 1]?.end;
+    if (typeof lastEnd !== 'number' || !Number.isFinite(lastEnd)) return null;
+    const cutoff = lastEnd - LEADING_EDGE_TAIL_MS / 1000;
+    const tail = words.filter((w) => typeof w.end === 'number' && w.end >= cutoff);
+    if (tail.length < LEADING_EDGE_MIN_WORDS) return null;
+
+    const probe = spotCheck(tail.map((w) => w.word).join(' '), surah, ayah, LEADING_EDGE_MAX_ADVANCE);
+    if (!probe.found || probe.surah !== surah) return null;
+    const advance = probe.ayah - ayah;
+    if (advance <= 0 || advance > LEADING_EDGE_MAX_ADVANCE) return null;
+    if (probe.score < LEADING_EDGE_MIN_SCORE) return null;
+    if ((probe.matchedWords?.length ?? 0) < LEADING_EDGE_MIN_WORDS) return null;
+    return { surah: probe.surah, ayah: probe.ayah, score: probe.score, tailWords: tail.length };
+  }
+
+  /**
+   * A far-ahead position is believable once Whisper reports it more than once and
+   * the reports are consistent (equal, or still moving forward). Counts as
+   * evidence in place of a single-shot confidence score.
+   */
+  _forwardJumpConfirmed(surah, ayah) {
+    if (surah !== this._displaySurah) return false;
+    const consistent = this._forwardJumpAyah > 0
+      && ayah >= this._forwardJumpAyah
+      && (ayah - this._forwardJumpAyah) <= FORWARD_JUMP_DRIFT;
+    this._forwardJumpCount = consistent ? this._forwardJumpCount + 1 : 1;
+    this._forwardJumpAyah = ayah;
+    return this._forwardJumpCount >= FORWARD_JUMP_CONFIRMS;
   }
 
   _isDisplayCapped() {
@@ -2205,11 +2427,26 @@ export class AudioPipeline {
     // Fast mode ~700ms/word (half again faster than normal) so tight khatam-pace
     // recitation doesn't lag the display. Slow mode extends. Normal = 1400.
     const defaultMsPerWord = this.fastMode ? 700 : this.slowMode ? 1800 : 1400;
-    // Trust manual pace after 1 sample (direct user feedback), Whisper-only after 3 confirmations
-    const msPerWord = (this._measuredMsPerWord > 0 && (this._msPerWordSamples.length >= 1 || this._whisperClockSamples >= 3))
+    // Trust manual pace after 1 sample (direct user feedback). Word timestamps
+    // come straight from the ASR and measure the reciter's actual speaking rate,
+    // so one sample is enough there too — waiting on the confirmation-interval
+    // clock (3 samples) meant the first several ayahs always ran at the 1400ms
+    // default, which is far slower than most reciters and put the display behind
+    // before tracking had a chance to settle.
+    const paceLearned = this._msPerWordSamples.length >= 1
+      || (this._wordPaceSamples || 0) >= 1
+      || this._whisperClockSamples >= 3;
+    const msPerWord = (this._measuredMsPerWord > 0 && paceLearned)
       ? this._measuredMsPerWord : defaultMsPerWord;
-    // Use totalWeight (corpus-based) instead of plain wordCount for proportional timing
-    const rawMs = Math.round(totalWeight * msPerWord) + elongBonusMs;
+    // Corpus weights spread a *generic* rate across heavy and light words, which
+    // is only useful while msPerWord is still the default. A pace measured from
+    // real word timestamps already contains this reciter's elongations, so
+    // multiplying by the weights again double-counts them and stretches every
+    // timer. Once pace is learned, time plain words and add the learned breath.
+    const timingUnits = paceLearned ? wordCount : totalWeight;
+    const rawMs = Math.round(timingUnits * msPerWord)
+      + (paceLearned ? 0 : elongBonusMs)
+      + this._measuredPauseMs;
     // Short ayahs (≤4 words, common in juz 30 khatam) get a lower floor — 1.5s instead
     // of 2.5s. On khatam nights the imam races through these; 2.5s floor causes the
     // display to lag behind by 2-3 ayahs, making tracking useless.
@@ -2217,7 +2454,12 @@ export class AudioPipeline {
     // Fast mode drops the floor more aggressively: 1s on ≤4-word ayahs, 1.5s otherwise.
     // This matters for khatam-night juz-30 racing where 2.5s floors stall the display.
     const fastFloor = wordCount <= 4 ? 1000 : 1500;
-    const floorMs = Math.max(afterPauseMinMs, this.slowMode ? 6000 : (this.fastMode ? fastFloor : shortAyahFloor));
+    // A floor longer than the ayah itself is pure lag. Once pace is measured we
+    // know how long this ayah takes, so never stretch past that — a khatam-pace
+    // ayah can genuinely be shorter than the 2.5s default floor.
+    const fixedFloor = this.slowMode ? 6000 : (this.fastMode ? fastFloor : shortAyahFloor);
+    const floorMs = Math.max(afterPauseMinMs,
+      paceLearned && !this.slowMode ? Math.min(fixedFloor, rawMs) : fixedFloor);
     const baseDurationMs = Math.max(rawMs, floorMs);
     // Per-word-count ceilings prevent short ayahs getting taraweeh-absurd timers
     // even when learned pace drifts slow. Taraweeh imams typically take:
@@ -2225,17 +2467,29 @@ export class AudioPipeline {
     //   6-10 words: ~3-6s     → cap 8s
     //   11-20 words: ~7-12s   → cap 16s
     //   21+ words: ~15-22s    → cap 25s
-    const perCountCap = wordCount <= 5 ? 5000
+    const fixedCap = wordCount <= 5 ? 5000
       : wordCount <= 10 ? 8000
       : wordCount <= 20 ? 16000
       : 25000;
+    // These absolute ceilings existed to contain a pace estimate that drifted
+    // slow. Once pace comes from word timestamps and the breath is measured, they
+    // become the binding constraint on any genuinely slow reciter: a 9-word ayah
+    // with a 4s breath needs ~9.7s and was being cut to 8s, so the display ran
+    // ahead for the rest of the surah. Keep them as a sanity bound on our own
+    // estimate rather than an absolute one.
+    const perCountCap = paceLearned ? Math.max(fixedCap, Math.round(rawMs * 1.25)) : fixedCap;
     durationMs = Math.min(Math.round(baseDurationMs), perCountCap, READ_ADVANCE_MAX_MS);
     // Groq cushion: pad by 20% so display naturally lingers toward Groq's heard
     // position instead of racing 1 ayah ahead on slow recitations. Groq will
     // snap us forward if we truly fall behind. Skip entirely in fast mode —
     // fast reciters need the opposite (shorter, not padded).
-    if (this.isGroqMode && !this.fastMode) {
-      durationMs = Math.min(Math.round(durationMs * 1.2), READ_ADVANCE_MAX_MS);
+    // Kept flat on purpose. Scaling this by word pace was tried and measured
+    // worse: two imams can share a word pace and differ entirely in how long
+    // they pause, and pause length is already modelled additively above. Tying
+    // the cushion to words-per-second made long-breath recitation overshoot
+    // (74.9% -> 25.3% exact) while barely helping khatam pace.
+    if (this.isGroqMode && !this.fastMode && GROQ_TIMER_CUSHION !== 1) {
+      durationMs = Math.min(Math.round(durationMs * GROQ_TIMER_CUSHION), READ_ADVANCE_MAX_MS);
     }
     // Slow-mode user override: explicit "stretch everything" multiplier that
     // rides on top of learned pace. Cap the caps — perCountCap becomes 2x too.

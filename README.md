@@ -279,6 +279,23 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | `READ_ADVANCE_MIN_MS` | `4000` | Minimum ayah display duration (ms) |
 | `READ_ADVANCE_MAX_MS` | `15000` | Maximum ayah display duration (ms) |
 | `SILENCE_THRESHOLD` | `0.005` | RMS threshold for silence detection |
+| `GROQ_SEARCH_MIN_INTERVAL_MS` | `2000` | Minimum gap between search-mode Groq calls. Raising this slows the first lock |
+| `GROQ_LOCKED_MIN_INTERVAL_MS` | `5000` | Minimum gap between locked-mode Groq spot checks |
+| `SEARCH_VOICE_GATE_BYPASS_MS` | `6000` | Transcribe anyway after this long with buffered audio but no voice detected. Safety valve so a mis-tuned voice gate can never stop recognition |
+| `SIGNAL_PRESENT_RMS` | `0.0003` | "Mic is producing something" floor. Below this the search buffer is trimmed to a short pre-roll |
+| `VOICE_HANGOVER_MS` | `5000` | Silence after which the search buffer resets. Must exceed a between-ayah breath |
+| `VOICE_MIN_ACTIVE_MS` | `500` | Detected speech required before a search call is preferred |
+| `BROWSER_VOICE_MIN_ACTIVITY_RMS` | `0.0012` | Phone-mic voice gate floor (per ~85ms chunk) |
+| `BROWSER_VOICE_MAX_ACTIVITY_RMS` | `0.0022` | Ceiling on how far room noise may raise the phone-mic gate |
+| `G2_VOICE_MIN_ACTIVITY_RMS` | `0.0004` | G2-mic voice gate floor |
+| `G2_VOICE_MAX_ACTIVITY_RMS` | `0.0009` | Ceiling on how far room noise may raise the G2-mic gate |
+| `GROQ_TIMER_CUSHION` | `1.2` | Padding on every locked-mode display timer. Biased slow on purpose: running ahead shows an ayah the imam has not reached yet. Lower it for tighter tracking on even-paced recitation, raise it if the display overshoots |
+| `GAP1_NUDGE_MS` | `500` | When Whisper places the reciter exactly one ayah ahead, compress the remaining timer to this instead of snapping. `0` restores the old ignore-it behaviour |
+| `FORWARD_JUMP_CONFIRMS` | `2` | Consecutive agreeing reports needed to follow a jump of more than 6 ayahs when confidence alone is too low |
+| `DISPLAY_HOLD_SILENCE_MS` | `1200` | Hold the display once the mic has heard nothing for this long |
+| `DISPLAY_HOLD_MAX_MS` | `20000` | Upper bound on that hold, so a mis-tuned voice gate cannot freeze the display |
+| `PAUSE_EST_START_MS` | `900` | Starting estimate for the reciter's end-of-ayah breath before one is measured |
+| `LEADING_EDGE_TAIL_MS` | `2600` | Re-match the newest words of each window to track the leading edge of the recitation. `0` disables |
 | `LOCKED_SEND_MS` | `6000` | Locked-mode tail audio sent per Whisper request (ms) to reduce stale queue buildup |
 | `LOCKED_MAX_INFLIGHT` | `2` | Max concurrent locked-mode Whisper requests per client (higher can improve responsiveness on async endpoints) |
 | `LOCKED_RESULT_STALE_MS` | `3000` | Drop locked-mode confirmations older than this age when they point to the same/older ayah |

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.20 - 2026-08-22
+
+- Merges PR #11 (quiet-mic first lock, display sync, benches, Al-Hashr/translation coverage) onto this branch's matcher, EvenHub sim path, and empty Whisper prompt.
+- Quiet-mic first lock: lower VAD floors, adaptive gate from observed audio, search voice-gate bypass at 6s, Groq search gap 2s, hangover 5s, locked Groq checks every 5s.
+- Display stays with the reciter: onset-to-onset pace, learned breath, timer cushion 1.2, gap-1 nudge, leading-edge tail rematch. Do not stretch a timer past the ayah.
+- Practice: after a shown verse plus pause, next recitation is a fresh global search (surah jumps). First lock still uses the Taraweeh matcher; empty transcripts stay locked.
+- Spoken-form matcher from 2.6.18–2.6.19 is kept (stutter collapse, latin `S`, unique 1-letter / ح↔ه / ق↔ك, 4-letter Ya-Sin OOV). `الله` and `يوسف` are not rewritten.
+- Benches: `scripts/run-lock-bench.sh`, `scripts/run-sync-bench.sh`. Al-Hashr ayah count and translation coverage checks.
+
 ## 2.6.19 - 2026-08-22
 
 - Matcher is more tolerant of weak Groq: collapse stutter (`ياسسين` → `يس`), map latin `S` (`يESSSS` → `يس`), unique 1-letter / ح-ه / ق-ك repairs, and 4-letter Ya-Sin-shaped OOV (`يجيس`). Known Quran words such as `الله` and `يوسف` are not rewritten.
