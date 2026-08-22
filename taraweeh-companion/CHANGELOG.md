@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.27 - 2026-08-22
+
+- Groq lock confirmed on live recitation. Pack for EvenHub upload.
+- Main-screen provider labels stay on one line. Missing-key / 401 / 403 errors name the engine you picked (Groq, OpenAI, Deepgram, ElevenLabs), not always Groq.
+
 ## 2.6.26 - 2026-08-22
 
 - Merges the rest of PR #11: pick provider **and** model in Settings. Groq turbo stays the Groq default; OpenAI defaults to `gpt-4o-mini-transcribe` (whisper-1 still selectable for word timings); Deepgram `nova-3` / `whisper-large`. Deepgram is a fast engine (~450ms, timestamps). ElevenLabs stays an independent extra engine — saving Settings no longer rewrites it to Groq.

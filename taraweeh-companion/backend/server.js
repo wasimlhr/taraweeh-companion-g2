@@ -341,8 +341,14 @@ wss.on('connection', (ws, req) => {
       console.log(`[Init] BYOK independent engine provider=${clientProvider} model=${clientModel || '(default)'}`);
       send({ type: 'sys_status', component: 'model', status: 'ready', provider: clientProvider === 'auto' ? 'groq' : clientProvider, byok: true });
     } else {
-      console.log('[Init] No API key and no shared keys configured — transcribe will fail');
-      send({ type: 'sys_status', component: 'model', status: 'error', provider: clientProvider, message: 'API key required (Groq or OpenAI)' });
+      console.log(`[Init] No API key and no shared keys configured (provider=${clientProvider}) — transcribe will fail`);
+      send({
+        type: 'sys_status',
+        component: 'model',
+        status: 'error',
+        provider: clientProvider,
+        message: 'API key required (Groq, OpenAI, Deepgram or ElevenLabs)',
+      });
     }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
     const translationLang = sanitizeTranslationLang(requestedTranslation);

@@ -20,7 +20,7 @@ function run(cmd, args) {
 run('node', ['scripts/build-evenhub-dist.js']);
 
 const packArgs = [
-  '@evenrealities/evenhub-cli@0.1.12',
+  '@evenrealities/evenhub-cli@0.1.14',
   'pack',
   'app.json',
   'dist',
