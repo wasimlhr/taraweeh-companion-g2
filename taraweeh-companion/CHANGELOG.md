@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.1 - 2026-08-22
+
+- **Settings redesign.** Six stacked sections became four — Microphone, Transcription engine, Reading, and a collapsed **Advanced**. Model choice, tracking style, engine comparison, service wake and the diagnostic trace moved into Advanced. The G2 gesture documentation left Settings entirely and now has its own screen behind the header `?` button.
+- **Bring your own key.** The Free (shared) / My own key toggle is gone; a shared pool would hit rate limits. Pick an engine, paste that engine's key, and a “Get a key” link sits beside the field.
+- **Engine and model selection no longer desync.** `setProvider()` persisted settings *before* refreshing the model list, so every switch stored the outgoing engine’s model against the incoming engine (`deepgram` + `gpt-4o-mini-transcribe`). The server discarded the invalid model and silently fell back to a default, so the picker showed one model while another ran. Models are now normalised through a single helper before anything is saved or sent, and the model chosen per engine is restored when you switch back.
+- **Switching engines mid-recitation is smooth.** Every engine, model or key edit rebuilt the backend pipeline immediately and dropped the lock, so a burst of changes meant a burst of re-inits. They now coalesce into one.
+- **Anti-aliased microphone downsampling.** The 48 kHz → 16 kHz step picked every third sample with no band limiting, folding everything above 8 kHz back into the speech band as noise. The graph now runs at 16 kHz where the browser allows it, and otherwise low-passes (two cascaded Butterworth biquads, ~7.2 kHz) before decimating. Measured: 12 kHz attenuated 24 dB while 440 Hz–3 kHz stays flat.
+- **One version everywhere.** UI, root and app `package.json`, lockfiles, `app.json` and the backend package had drifted to four different numbers (4.6.0 / 2.6.27 / 1.0.0, with a `v5.0.2` comment in `server.js`). All now read 3.0.1, and `/api/status` reports `version` so local and Railway deployments can be checked directly.
+
 ## 2.6.27 - 2026-08-22
 
 - Groq lock confirmed on live recitation. Pack for EvenHub upload.

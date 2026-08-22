@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v5.0.2 — back-correction cooldown, higher snap-back threshold, stronger fast/slow modes
+ * Version is read from package.json and reported on /api/status.
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -53,6 +53,12 @@ try { buildMushafIndex(); } catch (e) { console.warn('[MushafIndex] build failed
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
+
+// Single source of truth for the version reported to clients and /api/status.
+const APP_VERSION = (() => {
+  try { return JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')).version || '0.0.0'; }
+  catch { return '0.0.0'; }
+})();
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -138,6 +144,7 @@ app.get('/api/status', (req, res) => {
     ? (ep ? 'whisper-quran (dedicated)' : 'whisper-quran-v1 (legacy HF)')
     : 'independent engines: groq / openai (optional deepgram / elevenlabs)';
   res.json({
+    version: APP_VERSION,
     groqConfigured: shared.groq,
     openaiConfigured: shared.openai,
     deepgramConfigured: shared.deepgram,

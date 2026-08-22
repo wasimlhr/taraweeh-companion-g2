@@ -1,6 +1,6 @@
 {
   "name": "taraweeh-companion",
-  "version": "4.6.0",
+  "version": "3.0.1",
   "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {

@@ -629,6 +629,20 @@ body {
   font-style: normal;           /* spec doesn't use italic for hints */
   letter-spacing: var(--track-tight);
 }
+.s-adv { margin: 18px 0 6px; }
+.s-adv > summary {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tc-2);
+  cursor: pointer;
+  list-style: none;
+  padding: 6px 0;
+  user-select: none;
+}
+.s-adv > summary::-webkit-details-marker { display: none; }
+.s-adv > summary::before { content: '\25B8'; display: inline-block; margin-right: 6px; transition: transform 0.15s; }
+.s-adv[open] > summary::before { transform: rotate(90deg); }
 .help-list {
   margin: 0;
   padding: 0 0 0 1.1em;
@@ -811,7 +825,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.27</span>
+      <span class="version" id="versionEl">v3.0.1</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -966,34 +980,77 @@ body {
     <div style="width:60px"></div>
   </div>
 
-  <div class="s-section">Connection</div>
   <div class="s-card">
     <div class="s-status" id="backendStatus">Checking...</div>
-    <div class="s-row" style="margin-top:12px">
-      <span class="s-label">Microphone</span>
+  </div>
+
+  <div class="s-section">Microphone</div>
+  <div class="s-card">
+    <div class="s-row">
       <div class="toggle-group" role="group">
         <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">G2 mic</button>
         <button type="button" class="toggle-btn" id="btnPhoneMic" onclick="setMicSource('phone')">Phone mic</button>
       </div>
-      <span class="s-hint" style="margin-top:4px;display:block">Use G2 mic by default, or Phone mic after permission prompt.</span>
-      <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">—</span>
+      <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">&mdash;</span>
       <button type="button" id="settingMicTest" class="back-btn btn-arrow" style="margin-top:6px;font-size:13px">Request mic permission</button>
     </div>
-    <div class="s-warn" style="margin-top:8px;padding:10px 14px;background:var(--bc-accent);border-radius:var(--r);font-size:12px;color:var(--tc-1)">
-      <strong>Note:</strong> G2 and Phone mic both work when permission is granted.
+    <div class="s-row" id="mobileOnlyHintRow" style="display:none">
+      <span class="s-label">Mobile-only mode</span>
+      <span class="s-hint">Phone mic is enforced for this deployment.</span>
     </div>
   </div>
 
-  <div class="s-section">Recitation</div>
+  <div class="s-section">Transcription engine</div>
   <div class="s-card">
     <div class="s-row">
-      <span class="s-label">Tracking style</span>
-      <select id="settingPipeline">
-        <option value="v4">V4 (Recommended)</option>
-        <option value="v3">V3 (Compatibility)</option>
-      </select>
-      <span class="s-hint">Only V3 and V4 are supported.</span>
+      <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
+        <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
+        <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
+        <button type="button" class="toggle-btn" id="btnProviderDeepgram" onclick="setProvider('deepgram')">Deepgram</button>
+        <button type="button" class="toggle-btn" id="btnProviderEleven" onclick="setProvider('elevenlabs')">ElevenLabs</button>
+      </div>
+      <span class="s-hint" id="engineHint" style="font-size:11px;display:block;margin-top:8px;line-height:1.5"></span>
+
+      <div id="groqKeyRow" style="margin-top:10px">
+        <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+          <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testSttKey('groq')" style="font-size:13px">Test key</button>
+          <span id="groqTestResult" style="font-size:12px;color:var(--tc-2)">&mdash;</span>
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key &rarr;</a>
+        </div>
+      </div>
+      <div id="openaiKeyRow" style="margin-top:10px;display:none">
+        <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false" />
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+          <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testSttKey('openai')" style="font-size:13px">Test key</button>
+          <span id="openaiTestResult" style="font-size:12px;color:var(--tc-2)">&mdash;</span>
+          <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key &rarr;</a>
+        </div>
+      </div>
+      <div id="deepgramKeyRow" style="margin-top:10px;display:none">
+        <input id="settingDeepgramKey" type="password" placeholder="Deepgram API key" autocomplete="off" spellcheck="false" />
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+          <button type="button" class="back-btn btn-arrow" onclick="testSttKey('deepgram')" style="font-size:13px">Test key</button>
+          <span id="deepgramTestResult" style="font-size:12px;color:var(--tc-2)">&mdash;</span>
+          <a href="https://console.deepgram.com/" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key &rarr;</a>
+        </div>
+      </div>
+      <div id="elevenKeyRow" style="margin-top:10px;display:none">
+        <input id="settingElevenKey" type="password" placeholder="ElevenLabs API key" autocomplete="off" spellcheck="false" />
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+          <button type="button" class="back-btn btn-arrow" onclick="testSttKey('elevenlabs')" style="font-size:13px">Test key</button>
+          <span id="elevenTestResult" style="font-size:12px;color:var(--tc-2)">&mdash;</span>
+          <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key &rarr;</a>
+        </div>
+      </div>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
+        Your key stays on this device and is sent to the server only while listening.
+      </span>
     </div>
+  </div>
+
+  <div class="s-section">Reading</div>
+  <div class="s-card">
     <div class="s-row">
       <span class="s-label">Default Surah</span>
       <select id="settingSurah"><option value="0">Any Surah</option></select>
@@ -1014,147 +1071,50 @@ body {
           <option value="ur" title="Urdu on phone; English fallback on glasses because Urdu glyph shaping is unavailable.">Urdu</option>
         </optgroup>
       </select>
-      <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;font-style:normal;min-height:1.4em"></span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Translations are local app bundles only (no cloud translation fetch).</span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">No Urdu, Farsi, Hindi, Bengali, or Arabic on glasses — those show English instead.</span>
+      <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;min-height:1.4em"></span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Bundled locally. Urdu, Bengali and Arabic show English on the glasses.</span>
     </div>
-  </div>
-
-  <div class="s-row" id="mobileOnlyHintRow" style="display:none">
-    <span class="s-label">Mobile-only mode</span>
-    <span class="s-hint">Enabled by host env. Phone mic is enforced for this deployment.</span>
-  </div>
-  <div class="s-row" id="wakeServerRow" style="display:none;margin-top:8px">
-    <button type="button" id="wakeServerBtn" class="back-btn btn-primary btn-arrow" style="font-size:13px">Start service now</button>
-    <span class="s-hint" id="wakeServerHint" style="margin-top:6px;display:block">Use this if service is sleeping.</span>
-  </div>
-
-  <div class="s-section">Glasses display</div>
-  <div class="s-card">
     <div class="s-row">
       <span class="s-label">Second line on glasses</span>
       <div class="toggle-group" role="group">
         <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
       </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">
-        English translation always shows on top. Bottom line is Latin transliteration.
-      </span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Translation is always on the top line.</span>
     </div>
   </div>
 
-  <div class="s-section">Transcription</div>
-  <div class="s-card">
-    <div class="s-row">
-      <span class="s-label">Mode</span>
-      <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
-        <button type="button" class="toggle-btn active" id="btnModeShared" onclick="setKeyMode('shared')">Free (shared)</button>
-        <button type="button" class="toggle-btn" id="btnModeBYOK" onclick="setKeyMode('byok')">Use my own key</button>
+  <details class="s-adv">
+    <summary>Advanced</summary>
+    <div class="s-card">
+      <div class="s-row" id="transcribeModelRow">
+        <span class="s-label">Model</span>
+        <select id="settingTranscribeModel" onchange="setTranscribeModel(this.value)"></select>
+        <span class="s-hint" id="modelHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
       </div>
-      <div id="sharedHint" style="margin-top:8px;padding:10px 12px;background:var(--bc-2);border-radius:var(--r);font-size:12px;line-height:1.55;color:var(--tc-1)">
-        <b>Free mode</b> uses a shared Groq or OpenAI key as <i>sadaka jariya</i> (~90 min/session). Pick <b>Groq</b> or <b>OpenAI</b> — each engine recognizes verses on its own. Nothing is a backup.<br><br>
-        For unlimited use, switch to <b>"Use my own key"</b> and paste the key for the engine you selected.
+      <div class="s-row">
+        <span class="s-label">Tracking style</span>
+        <select id="settingPipeline">
+          <option value="v4">V4 (Recommended)</option>
+          <option value="v3">V3 (Compatibility)</option>
+        </select>
       </div>
-
-      <div id="byokSection" style="display:none;margin-top:12px">
-        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-          <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
-          <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
-          <button type="button" class="toggle-btn" id="btnProviderDeepgram" onclick="setProvider('deepgram')">Deepgram</button>
-          <button type="button" class="toggle-btn" id="btnProviderEleven" onclick="setProvider('elevenlabs')">ElevenLabs</button>
-        </div>
-        <span class="s-hint" style="font-size:11px;display:block;margin-bottom:8px;line-height:1.5">
-          Each engine is independent — pick one and it must lock verses on its own.<br>
-          <b>Groq</b> turbo — fastest (~350ms) with word timings. Sign-ups may be closed.<br>
-          <b>OpenAI</b> default is <code>gpt-4o-mini-transcribe</code> (~450ms). Pick <code>whisper-1</code> if you want timestamps.<br>
-          <b>Deepgram</b> nova-3 — ~450ms with word timings. <b>ElevenLabs</b> is an extra engine, not a backup.
-        </span>
-        <div id="transcribeModelRow">
-          <label class="s-label" for="settingTranscribeModel">Model</label>
-          <select id="settingTranscribeModel" onchange="setTranscribeModel(this.value)"></select>
-          <span class="s-hint" id="modelHint" style="font-size:11px;display:block;margin:6px 0 10px;line-height:1.5"></span>
-        </div>
-        <div id="groqKeyRow">
-          <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
-          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-            <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testSttKey('groq')" style="font-size:13px">Test key</button>
-            <span id="groqTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
-          </div>
-          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-            <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a free Groq key →</a>
-          </span>
-        </div>
-        <div id="deepgramKeyRow" style="margin-top:10px;display:none">
-          <input id="settingDeepgramKey" type="password" placeholder="Deepgram API key" autocomplete="off" spellcheck="false" />
-          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-            <button type="button" class="back-btn btn-arrow" onclick="testSttKey('deepgram')" style="font-size:13px">Test key</button>
-            <span id="deepgramTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
-          </div>
-          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-            <a href="https://console.deepgram.com/" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get a Deepgram key →</a>
-          </span>
-        </div>
-        <div id="elevenKeyRow" style="margin-top:10px;display:none">
-          <input id="settingElevenKey" type="password" placeholder="ElevenLabs API key" autocomplete="off" spellcheck="false" />
-          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-            <button type="button" class="back-btn btn-arrow" onclick="testSttKey('elevenlabs')" style="font-size:13px">Test key</button>
-            <span id="elevenTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
-          </div>
-          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-            <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get an ElevenLabs key →</a>
-          </span>
-        </div>
-        <div id="openaiKeyRow" style="margin-top:10px;display:none">
-          <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false" />
-          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-            <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testSttKey('openai')" style="font-size:13px">Test key</button>
-            <span id="openaiTestResult" style="font-size:12px;align-self:center;color:var(--tc-2)">—</span>
-          </div>
-          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">
-            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--tc-gold)">Get an OpenAI key →</a>
-          </span>
-        </div>
-        <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
-          Key stays on your device. Sent to server only when listening starts.
-        </span>
+      <div class="s-row">
+        <span class="s-label">Compare engines</span>
+        <button type="button" class="back-btn btn-arrow" onclick="compareSttProviders()" style="font-size:13px">Compare (4s recitation)</button>
+        <span class="s-hint" id="compareSttResult" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">Recite a short ayah, then tap Compare. Runs every configured engine independently.</span>
       </div>
-      <div style="margin-top:12px">
-        <button type="button" class="back-btn btn-arrow" onclick="compareSttProviders()" style="font-size:13px">Compare providers (4s recitation)</button>
-        <span class="s-hint" id="compareSttResult" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">Optional: recite a short ayah, then tap Compare. Runs each configured engine independently so you can see which one you want to use — not a backup chain.</span>
+      <div class="s-row" id="wakeServerRow" style="display:none">
+        <span class="s-label">Service</span>
+        <button type="button" id="wakeServerBtn" class="back-btn btn-primary btn-arrow" style="font-size:13px">Start service now</button>
+        <span class="s-hint" id="wakeServerHint" style="margin-top:6px;display:block">Use this if the service is sleeping.</span>
+      </div>
+      <div class="s-row">
+        <span class="s-label">Diagnostics</span>
+        <button type="button" class="back-btn btn-arrow" onclick="copyDiagLog()" style="font-size:13px">Copy diagnostic log</button>
+        <span class="s-hint" id="diagCopyHint" style="margin-top:6px;display:block">Last 500 events. Paste into an issue when reporting a bug.</span>
       </div>
     </div>
-  </div>
-
-  <div class="s-section" id="helpSection">Help — G2 &amp; modes</div>
-  <div class="s-card" id="helpCard">
-    <p class="s-hint" style="margin:0 0 12px">Temple and R1 ring share the same gestures (Device APIs). Double-tap on the ready/stopped screen opens the system exit confirmation (same idea as long-press).</p>
-    <ul class="help-list">
-      <li><strong>Single tap (ready / stopped)</strong> — start or resume listening</li>
-      <li><strong>Single tap (while listening)</strong> - pause listening</li>
-      <li><strong>Swipe up / down</strong> — previous / next ayah</li>
-      <li><strong>Double tap (ready / stopped)</strong> — system exit confirmation
-        <span class="help-sub">Cancel keeps you in the app. Confirm closes glasses and phone WebView.</span>
-      </li>
-      <li><strong>Double tap (while listening)</strong> — pause / stop listening
-        <span class="help-sub">Returns to the root screen so you can exit or resume.</span>
-      </li>
-      <li><strong>Double tap (long ayah)</strong> — next page on glasses when the translation spans multiple screens</li>
-    </ul>
-    <p class="s-hint" style="margin:14px 0 8px">Recitation modes (bottom of main screen):</p>
-    <ul class="help-list">
-      <li><strong>Practice</strong> — shows what you recite; jump any surah. Pause ~2–3s between surahs for a fresh match.</li>
-      <li><strong>Taraweeh</strong> — follows the imam with an auto-advance timer. Use the pace button for fast/slow reciters.</li>
-    </ul>
-    <p class="s-hint" style="margin:14px 0 0">On phone: <strong>Start Listening</strong> begins capture; <strong>Prev / Next</strong> browse ayahs while practicing.</p>
-  </div>
-
-  <div class="s-section">Diagnostics</div>
-  <div class="s-card">
-    <div class="s-row">
-      <span class="s-label">Event & bridge trace</span>
-      <button type="button" class="back-btn btn-arrow" onclick="copyDiagLog()" style="font-size:13px">Copy diagnostic log</button>
-      <span class="s-hint" id="diagCopyHint" style="margin-top:6px;display:block">Last 500 events (ring buffer). Paste into an issue when reporting glasses/UI bugs.</span>
-    </div>
-  </div>
+  </details>
 
   <div class="settings-footer">
     <div id="settingsVersion"></div>
@@ -1162,9 +1122,48 @@ body {
   </div>
 </div>
 
+<!-- Help view -->
+<div id="helpView" style="display:none">
+  <div class="settings-header">
+    <button class="back-btn" onclick="hideHelp()">← Back</button>
+    <h2>How it works</h2>
+    <div style="width:60px"></div>
+  </div>
+
+  <div class="s-section">Glasses gestures</div>
+  <div class="s-card" id="helpCard">
+    <div class="s-row">
+      <p class="s-hint" style="margin:0 0 12px">Temple and R1 ring share the same gestures.</p>
+      <ul class="help-list">
+        <li><strong>Single tap (ready / stopped)</strong> — start or resume listening</li>
+        <li><strong>Single tap (while listening)</strong> — pause listening</li>
+        <li><strong>Swipe up / down</strong> — previous / next ayah</li>
+        <li><strong>Double tap (ready / stopped)</strong> — system exit confirmation
+          <span class="help-sub">Cancel keeps you in the app. Confirm closes glasses and phone WebView.</span>
+        </li>
+        <li><strong>Double tap (while listening)</strong> — pause / stop listening</li>
+        <li><strong>Double tap (long ayah)</strong> — next page when the translation spans screens</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="s-section">Recitation modes</div>
+  <div class="s-card">
+    <div class="s-row">
+      <ul class="help-list">
+        <li><strong>Practice</strong> — shows what you recite; jump to any surah. Pause 2–3s between surahs for a fresh match.</li>
+        <li><strong>Taraweeh</strong> — follows the imam with an auto-advance timer. Use the pace button for fast or slow reciters.</li>
+      </ul>
+      <p class="s-hint" style="margin:12px 0 0">On phone: <strong>Start Listening</strong> begins capture; <strong>Prev / Next</strong> browse ayahs while practicing.</p>
+    </div>
+  </div>
+
+  <div class="settings-footer">Built for the Ummah</div>
+</div>
+
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.27';
+  const APP_VERSION = 'v3.0.1';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1407,6 +1406,62 @@ body {
   const SETTINGS_KEY = 'qlive_settings';
   const SEND_INTERVAL = 200;
   const TARGET_SR = 16000;
+
+  // ─── Downsampling to TARGET_SR ────────────────────────────────────────────
+  // Picking every Nth sample is nearest-neighbour decimation with no band
+  // limiting: everything above 8 kHz folds back into the speech band as
+  // aliasing, which is exactly the range Whisper scores on. Low-pass first.
+  // Filter state persists across callbacks so it does not restart (and click)
+  // on every buffer.
+  function makeLowpass(srcRate, targetRate) {
+    var fc = targetRate * 0.45;                    // 7.2 kHz for a 16 kHz target
+    var w0 = 2 * Math.PI * fc / srcRate;
+    var cs = Math.cos(w0);
+    var alpha = Math.sin(w0) / (2 * Math.SQRT1_2); // Q = 0.7071, Butterworth
+    var a0 = 1 + alpha;
+    return {
+      b0: ((1 - cs) / 2) / a0,
+      b1: (1 - cs) / a0,
+      b2: ((1 - cs) / 2) / a0,
+      a1: (-2 * cs) / a0,
+      a2: (1 - alpha) / a0,
+      // two cascaded biquads = 24 dB/octave
+      st: [{ x1: 0, x2: 0, y1: 0, y2: 0 }, { x1: 0, x2: 0, y1: 0, y2: 0 }],
+    };
+  }
+
+  function lowpassStep(f, x) {
+    for (var i = 0; i < f.st.length; i++) {
+      var t = f.st[i];
+      var y = f.b0 * x + f.b1 * t.x1 + f.b2 * t.x2 - f.a1 * t.y1 - f.a2 * t.y2;
+      t.x2 = t.x1; t.x1 = x; t.y2 = t.y1; t.y1 = y;
+      x = y;
+    }
+    return x;
+  }
+
+  function floatToPcm16(f32, ratio, lp) {
+    if (ratio <= 1.0001) {              // graph already runs at TARGET_SR
+      var out = new Int16Array(f32.length);
+      for (var k = 0; k < f32.length; k++) {
+        var c = f32[k] < -1 ? -1 : f32[k] > 1 ? 1 : f32[k];
+        out[k] = c < 0 ? c * 0x8000 : c * 0x7fff;
+      }
+      return out;
+    }
+    var n = Math.floor(f32.length / ratio);
+    var i16 = new Int16Array(n);
+    var next = 0, w = 0;
+    for (var i = 0; i < f32.length; i++) {
+      var y = lowpassStep(lp, f32[i]);  // filter every input sample...
+      if (i >= next && w < n) {         // ...then keep every ratio-th
+        var v = y < -1 ? -1 : y > 1 ? 1 : y;
+        i16[w++] = v < 0 ? v * 0x8000 : v * 0x7fff;
+        next += ratio;
+      }
+    }
+    return i16;
+  }
   const MAX_REBUILD_CHARS = 1000;  // rebuildPageContainer limit per G2 SDK docs
   const MAX_UPGRADE_CHARS = 2000;  // textContainerUpgrade limit
   const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
@@ -1556,13 +1611,14 @@ body {
     fastMode: false,
     slowMode: false,
     paceMode: 'follow',
-    keyMode: 'shared',      // 'shared' = use server-held free key; 'byok' = user key
+    keyMode: 'byok',      // 'shared' = use server-held free key; 'byok' = user key
     groqApiKey: '',
     openaiApiKey: '',
     deepgramApiKey: '',
     elevenlabsApiKey: '',
     transcriptionProvider: 'groq',
-    transcriptionModel: '',         // per-provider model; '' = provider default
+    transcriptionModel: '',         // active model; '' = engine default
+    modelByProvider: {},            // last model chosen per engine
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
     reciteMode: 'taraweeh',
   };
@@ -1578,11 +1634,61 @@ body {
     if (p === 'auto' || p === 'shared') return 'groq';
     return STT_PROVIDERS.indexOf(p) >= 0 ? p : 'groq';
   }
+  // Mirrors ALLOWED_MODELS in server.js. Notes are measured, not marketing.
+  var TRANSCRIBE_MODELS = {
+    groq: [
+      { id: 'whisper-large-v3-turbo', label: 'whisper-large-v3-turbo (default)',
+        note: 'Fastest measured: ~350ms, word timings, ~$0.12 per 90min session.' },
+      { id: 'whisper-large-v3', label: 'whisper-large-v3',
+        note: 'Slightly lower error rate than turbo, ~3x the price.' },
+    ],
+    openai: [
+      { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe (default)',
+        note: '~450ms and half the price of whisper-1. No word timings; the timer re-phases from text.' },
+      { id: 'gpt-transcribe', label: 'gpt-transcribe',
+        note: "OpenAI's newer default. ~465ms, no word timings." },
+      { id: 'gpt-4o-transcribe', label: 'gpt-4o-transcribe',
+        note: '~1.4s, no word timings. Higher accuracy claim than mini.' },
+      { id: 'whisper-1', label: 'whisper-1 (legacy)',
+        note: 'The only OpenAI model returning word timings, but ~1.25s and dearest.' },
+    ],
+    deepgram: [
+      { id: 'nova-3', label: 'nova-3 (default)',
+        note: "~450ms with word timings. Deepgram's own Arabic model." },
+      { id: 'whisper-large', label: 'whisper-large',
+        note: 'Deepgram-hosted Whisper. Similar latency, Whisper transcripts.' },
+    ],
+  };
+
+  function modelsFor(p) { return TRANSCRIBE_MODELS[sanitizeProvider(p)] || []; }
+
+  // A model belongs to exactly one engine. Anything unrecognised collapses to
+  // that engine's default, so the wire payload can never carry a model the
+  // server would reject — it would silently fall back and the picker would lie.
+  function normalizeModel(p, model) {
+    var list = modelsFor(p);
+    if (!list.length) return '';
+    for (var i = 0; i < list.length; i++) if (list[i].id === model) return list[i].id;
+    return list[0].id;
+  }
+
+  // Switching away and back restores what you last picked for that engine.
+  function rememberedModel(p) {
+    p = sanitizeProvider(p);
+    return normalizeModel(p, (S.settings.modelByProvider || {})[p]);
+  }
+
+  function rememberModel(p, model) {
+    p = sanitizeProvider(p);
+    if (!S.settings.modelByProvider) S.settings.modelByProvider = {};
+    S.settings.modelByProvider[p] = normalizeModel(p, model);
+  }
+
   function sttPayload() {
     var byok = S.settings.keyMode === 'byok';
     return {
       transcriptionProvider: sanitizeProvider(S.settings.transcriptionProvider),
-      transcriptionModel: S.settings.transcriptionModel || '',
+      transcriptionModel: normalizeModel(S.settings.transcriptionProvider, S.settings.transcriptionModel),
       groqApiKey: byok ? (S.settings.groqApiKey || '').trim() : '',
       openaiApiKey: byok ? (S.settings.openaiApiKey || '').trim() : '',
       deepgramApiKey: byok ? (S.settings.deepgramApiKey || '').trim() : '',
@@ -3022,7 +3128,15 @@ body {
     navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true } })
       .then(function (stream) {
         S.mediaStream = stream;
-        S.audioContext = new AudioContext();
+        // Ask for a 16 kHz graph: the browser's own resampler is properly
+        // band-limited, so no manual decimation is needed when it honours this.
+        try {
+          S.audioContext = new AudioContext({ sampleRate: TARGET_SR });
+        } catch (_) {
+          S.audioContext = new AudioContext();
+        }
+        var _ratio = S.audioContext.sampleRate / TARGET_SR;
+        var _lp = makeLowpass(S.audioContext.sampleRate, TARGET_SR);
         var src = S.audioContext.createMediaStreamSource(stream);
         S.scriptProcessor = S.audioContext.createScriptProcessor(4096, 1, 1);
         src.connect(S.scriptProcessor);
@@ -3031,20 +3145,13 @@ body {
         mute.gain.value = 0;
         S.scriptProcessor.connect(mute);
         mute.connect(S.audioContext.destination);
-        log('Browser mic open, sr=' + S.audioContext.sampleRate, 'ok');
+        log('Browser mic open, sr=' + S.audioContext.sampleRate
+          + (_ratio > 1.0001 ? ' → ' + TARGET_SR + ' (filtered)' : ''), 'ok');
 
         S.scriptProcessor.onaudioprocess = function (e) {
           var f32 = e.inputBuffer.getChannelData(0);
           updateWave(rmsFloat32(f32));
-          var ratio = S.audioContext.sampleRate / TARGET_SR;
-          var rs = new Float32Array(Math.floor(f32.length / ratio));
-          for (var i = 0; i < rs.length; i++) rs[i] = f32[Math.floor(i * ratio)];
-          var i16 = new Int16Array(rs.length);
-          for (var j = 0; j < rs.length; j++) {
-            var s = Math.max(-1, Math.min(1, rs[j]));
-            i16[j] = s < 0 ? s * 0x8000 : s * 0x7fff;
-          }
-          sendPcm(new Uint8Array(i16.buffer));
+          sendPcm(new Uint8Array(floatToPcm16(f32, _ratio, _lp).buffer));
         };
       })
       .catch(function (err) {
@@ -3477,81 +3584,62 @@ body {
   // Free vs BYOK key mode. Shared mode = no client key sent → backend uses
   // SHARED_GROQ_KEY/SHARED_OPENAI_KEY env vars and enforces the per-session
   // minute cap. BYOK = user's own key, no cap. Each engine is independent.
+  // Every user brings their own key: a shared pool would hit rate limits,
+  // so there is no mode to choose any more. Kept as a function because the
+  // settings and bridge-restore paths still call it.
   window.setKeyMode = function (m, reinitialize) {
-    m = (m === 'byok') ? 'byok' : 'shared';
-    S.settings.keyMode = m;
+    S.settings.keyMode = 'byok';
     try { saveSettings(); } catch (_) {}
-    var sBtn = document.getElementById('btnModeShared');
-    var bBtn = document.getElementById('btnModeBYOK');
-    if (sBtn) sBtn.classList.toggle('active', m === 'shared');
-    if (bBtn) bBtn.classList.toggle('active', m === 'byok');
-    var sHint = document.getElementById('sharedHint');
-    var byokSec = document.getElementById('byokSection');
-    if (sHint) sHint.style.display = (m === 'shared') ? '' : 'none';
-    if (byokSec) byokSec.style.display = (m === 'byok') ? '' : 'none';
-    if (reinitialize !== false && S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
-    log('Key mode: ' + (m === 'shared' ? 'Free (shared)' : 'My own key'), 'ok');
+    if (reinitialize !== false) scheduleReinit();
   };
 
-  // Mirrors ALLOWED_MODELS in server.js. Notes are measured, not marketing.
-  var TRANSCRIBE_MODELS = {
-    groq: [
-      { id: 'whisper-large-v3-turbo', label: 'whisper-large-v3-turbo (default)',
-        note: 'Fastest measured: ~350ms, word timings, ~$0.12 per 90min session.' },
-      { id: 'whisper-large-v3', label: 'whisper-large-v3',
-        note: 'Slightly lower error rate than turbo, ~3x the price.' },
-    ],
-    openai: [
-      { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe (default)',
-        note: '~450ms and half the price of whisper-1. No word timings; the timer re-phases from text.' },
-      { id: 'gpt-transcribe', label: 'gpt-transcribe',
-        note: "OpenAI's newer default. ~465ms, no word timings." },
-      { id: 'gpt-4o-transcribe', label: 'gpt-4o-transcribe',
-        note: '~1.4s, no word timings. Higher accuracy claim than mini.' },
-      { id: 'whisper-1', label: 'whisper-1 (legacy)',
-        note: 'The only OpenAI model returning word timings, but ~1.25s and dearest.' },
-    ],
-    deepgram: [
-      { id: 'nova-3', label: 'nova-3 (default)',
-        note: "~450ms with word timings. Deepgram's own Arabic model." },
-      { id: 'whisper-large', label: 'whisper-large',
-        note: 'Deepgram-hosted Whisper. Similar latency, Whisper transcripts.' },
-    ],
+
+  var ENGINE_NOTES = {
+    groq: 'Fastest (~350ms) with word timings. Sign-ups may be closed.',
+    openai: 'Reliable and widely available. ~450ms on the default model.',
+    deepgram: 'Fast (~450ms) with word timings, using its own Arabic model.',
+    elevenlabs: 'Extra engine. No model choice and no word timings.',
   };
 
   function refreshModelChoices() {
     var p = sanitizeProvider(S.settings.transcriptionProvider);
-    var list = TRANSCRIBE_MODELS[p] || [];
+    var list = modelsFor(p);
     var sel = document.getElementById('settingTranscribeModel');
     var hint = document.getElementById('modelHint');
     var row = document.getElementById('transcribeModelRow');
+    var eHint = document.getElementById('engineHint');
+    if (eHint) eHint.textContent = ENGINE_NOTES[p] || '';
     if (row) row.style.display = list.length ? '' : 'none';
+    S.settings.transcriptionModel = normalizeModel(p, S.settings.transcriptionModel);
     if (!sel) return;
-    var ids = list.map(function (m) { return m.id; });
-    if (list.length && ids.indexOf(S.settings.transcriptionModel) < 0) {
-      S.settings.transcriptionModel = list[0].id;
-    }
-    if (!list.length) S.settings.transcriptionModel = '';
     sel.innerHTML = list.map(function (m) {
-      return '<option value="' + m.id + '"' + (m.id === S.settings.transcriptionModel ? ' selected' : '') + '>' + m.label + '</option>';
+      return '<option value="' + m.id + '">' + m.label + '</option>';
     }).join('');
+    sel.value = S.settings.transcriptionModel;
     var cur = list.filter(function (m) { return m.id === S.settings.transcriptionModel; })[0];
     if (hint) hint.textContent = cur ? cur.note : '';
   }
   window.refreshModelChoices = refreshModelChoices;
 
   window.setTranscribeModel = function (id) {
-    S.settings.transcriptionModel = id || '';
-    saveSettings();
+    var p = sanitizeProvider(S.settings.transcriptionProvider);
+    var next = normalizeModel(p, id);
+    if (next === S.settings.transcriptionModel) return;   // no-op: do not churn the pipeline
+    S.settings.transcriptionModel = next;
+    rememberModel(p, next);
     refreshModelChoices();
-    if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
-    log('Model → ' + (id || 'default'), 'ok');
+    saveSettings();
+    scheduleReinit('Model → ' + (next || 'default'));
   };
 
   window.setProvider = function (p, reinitialize) {
     p = sanitizeProvider(p);
+    var changed = S.settings.transcriptionProvider !== p;
     S.settings.transcriptionProvider = p;
-    try { saveSettings(); } catch (_) {}
+    // Pick this engine's model BEFORE persisting. Saving first stored the
+    // outgoing engine's model against the incoming one, so a reload came back
+    // with a mismatched pair that the server silently discarded.
+    S.settings.transcriptionModel = rememberedModel(p);
     var ids = {
       groq: ['btnProviderGroq', 'btnProviderGroqMain'],
       openai: ['btnProviderOpenAI', 'btnProviderOpenAIMain'],
@@ -3573,10 +3661,10 @@ body {
     if (eRow) eRow.style.display = (p === 'elevenlabs') ? '' : 'none';
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
     refreshModelChoices();
-    if (reinitialize !== false && S.ws && S.ws.readyState === WebSocket.OPEN) {
-      reinitPipeline();
-      log('Provider → ' + providerLabel(p)
-        + (S.settings.transcriptionModel ? ' (' + S.settings.transcriptionModel + ')' : ''), 'ok');
+    try { saveSettings(); } catch (_) {}
+    if (reinitialize !== false && changed) {
+      scheduleReinit('Engine → ' + providerLabel(p)
+        + (S.settings.transcriptionModel ? ' (' + S.settings.transcriptionModel + ')' : ''));
     }
   };
 
@@ -3781,9 +3869,16 @@ body {
   };
 
   window.showHelp = function () {
-    showSettings();
-    var help = document.getElementById('helpSection');
-    if (help) help.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('mainView').style.display = 'none';
+    document.getElementById('settingsView').style.display = 'none';
+    document.getElementById('helpView').style.display = 'block';
+    window.scrollTo(0, 0);
+  };
+
+  window.hideHelp = function () {
+    document.getElementById('helpView').style.display = 'none';
+    document.getElementById('mainView').style.display = 'block';
+    window.scrollTo(0, 0);
   };
 
   window.showSettings = function () {
@@ -3800,7 +3895,7 @@ body {
     var elInput = document.getElementById('settingElevenKey');
     if (elInput) elInput.value = S.settings.elevenlabsApiKey || '';
     setProvider(sanitizeProvider(S.settings.transcriptionProvider), false);
-    setKeyMode(S.settings.keyMode === 'byok' ? 'byok' : 'shared', false);
+    setKeyMode('byok', false);
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
@@ -3811,6 +3906,20 @@ body {
     var wakeBtn = document.getElementById('wakeServerBtn');
     if (wakeBtn) wakeBtn.onclick = wakeServerNow;
   };
+
+  // Engine, model and key edits arrive in bursts. Every init tears down and
+  // rebuilds the backend pipeline (dropping any lock), so collapse a burst into
+  // a single re-init instead of one per keystroke.
+  var _reinitTimer = null;
+  function scheduleReinit(message) {
+    if (message) log(message, 'ok');
+    if (!S.ws || S.ws.readyState !== WebSocket.OPEN) return;
+    if (_reinitTimer) clearTimeout(_reinitTimer);
+    _reinitTimer = setTimeout(function () {
+      _reinitTimer = null;
+      reinitPipeline();
+    }, 300);
+  }
 
   function reinitPipeline() {
     if (!S.ws || S.ws.readyState !== WebSocket.OPEN) return;
@@ -3848,18 +3957,21 @@ body {
     S.settings.deepgramApiKey = dgEl ? (dgEl.value || '').trim() : (S.settings.deepgramApiKey || '');
     var elEl = document.getElementById('settingElevenKey');
     S.settings.elevenlabsApiKey = elEl ? (elEl.value || '').trim() : (S.settings.elevenlabsApiKey || '');
-    var modelEl = document.getElementById('settingTranscribeModel');
-    if (modelEl && modelEl.value) S.settings.transcriptionModel = modelEl.value;
-    // setProvider() is the source of truth. Re-deriving from button DOM dropped
-    // any engine the save path did not name (Deepgram / ElevenLabs).
+    // setProvider() is the source of truth for the engine; the dropdown only
+    // ever contributes a model, and only one this engine actually offers.
     S.settings.transcriptionProvider = sanitizeProvider(S.settings.transcriptionProvider);
+    var modelEl = document.getElementById('settingTranscribeModel');
+    if (modelEl && modelEl.value) {
+      S.settings.transcriptionModel = normalizeModel(S.settings.transcriptionProvider, modelEl.value);
+      rememberModel(S.settings.transcriptionProvider, S.settings.transcriptionModel);
+    }
     S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')
       ? 'transliteration' : 'transliteration';
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');
     saveSettings();
-    reinitPipeline();
+    scheduleReinit();
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('mainView').style.display = 'block';
   };
