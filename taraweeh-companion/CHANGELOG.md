@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.12 - 2026-08-22
+
+- Practice uses the same first-lock as Taraweeh (instant Fatiha 1:2). The separate weaker Practice matcher is gone.
+- Practice still has no auto-advance timer. Search/STT runs only while a verse is being recited — silence does not search.
+- Reciting a different ayah still snaps the display; empty transcripts stay locked.
+
 ## 2.6.11 - 2026-08-22
 
 - Practice stays on the matched verse. A 2.5s quiet gap (typical on the simulator) no longer drops back to Searching.

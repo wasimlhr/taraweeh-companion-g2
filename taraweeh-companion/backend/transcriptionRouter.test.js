@@ -227,11 +227,14 @@ describe('anchor first-lock speed', () => {
     assert.equal(next.ayah, 2);
   });
 
-  it('Practice locks the recited verse on the first hit (no 2-win wait)', () => {
-    const next = processWhisperResult('الحمد لله رب العالمين', createState(), { practiceMode: true });
-    assert.equal(next.mode, 'LOCKED');
-    assert.equal(next.surah, 1);
-    assert.equal(next.ayah, 2);
+  it('Practice uses Taraweeh first-lock on Fatiha 1:2 (no separate matcher)', () => {
+    const taraweeh = processWhisperResult('الحمد لله رب العالمين', createState(), {});
+    const practice = processWhisperResult('الحمد لله رب العالمين', createState(), { practiceMode: true });
+    assert.equal(taraweeh.mode, 'LOCKED');
+    assert.equal(practice.mode, 'LOCKED');
+    assert.equal(practice.surah, taraweeh.surah);
+    assert.equal(practice.ayah, taraweeh.ayah);
+    assert.equal(practice.ayah, 2);
   });
 
   it('Practice jumps to a newly recited verse instead of auto-advancing', () => {
@@ -250,5 +253,13 @@ describe('anchor first-lock speed', () => {
     assert.equal(still.mode, 'LOCKED');
     assert.equal(still.surah, 1);
     assert.equal(still.ayah, 2);
+  });
+
+  it('Practice snaps to the next recited Fatiha ayah (heard verse, not a timer)', () => {
+    const locked = processWhisperResult('الحمد لله رب العالمين', createState(), { practiceMode: true });
+    const next = processWhisperResult('الرحمن الرحيم', locked, { practiceMode: true });
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 1);
+    assert.equal(next.ayah, 3);
   });
 });

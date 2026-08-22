@@ -61,6 +61,9 @@ const SEARCH_PREROLL_MS = parseInt(process.env.SEARCH_PREROLL_MS || '1000', 10);
 
 const VOICE_MIN_ACTIVE_MS = parseInt(process.env.VOICE_MIN_ACTIVE_MS || '500', 10);
 const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '2500', 10);
+// Practice: drop search as soon as recitation stops. Taraweeh keeps a longer
+// hangover so trailing words still reach the matcher.
+const PRACTICE_VOICE_HANGOVER_MS = parseInt(process.env.PRACTICE_VOICE_HANGOVER_MS || '400', 10);
 // 2.5s search gap ≈ 24 RPM only during the brief unlock phase. Once locked we
 // drop to ~15 RPM. Starving search at 4–6s is what prevented lock (and caused 429s).
 const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '2500', 10);
@@ -223,9 +226,10 @@ function removeDcOffset(pcm) {
 
 const CLIP_THRESHOLD = parseFloat(process.env.CLIP_THRESHOLD || '0.10');
 const CLIP_TARGET    = parseFloat(process.env.CLIP_TARGET    || '0.04');
-function applyClipGuard(pcm, rms, profile) {
+function applyClipGuard(pcm, rms, profile, opts = {}) {
+  const quietBoost = opts.quietBoost !== false;
   let gain = 1;
-  if (rms > 0 && rms < profile.quietBoostThreshold) {
+  if (quietBoost && rms > 0 && rms < profile.quietBoostThreshold) {
     gain = Math.min(profile.maxBoostGain, profile.quietBoostTarget / rms);
     console.log(`[Pipeline] ${profile.source} quiet boost: rms=${rms.toFixed(4)} -> ${profile.quietBoostTarget} (gain=${gain.toFixed(1)})`);
   } else if (rms > CLIP_THRESHOLD) {
@@ -430,7 +434,7 @@ export class AudioPipeline {
     this._lastPaceEmitMs = 0;
 
     this.taraweehMode    = false;
-    this.practiceMode    = false;  // Match what is heard — no timers, instant global lock
+    this.practiceMode    = false;  // Taraweeh lock, no timer; STT only when a verse is heard
     this._practiceLastMatchMs = 0; // when a verse was last shown in Practice
     this._practiceFreshRun    = false; // true → global search, no sequential bias
     this._taraweehPos    = 'QIYAM';
@@ -1050,6 +1054,22 @@ export class AudioPipeline {
     console.log('[Pipeline] Destroyed');
   }
 
+  _voiceHangoverMs() {
+    return this.practiceMode ? PRACTICE_VOICE_HANGOVER_MS : VOICE_HANGOVER_MS;
+  }
+
+  _hasSearchVerse(now = Date.now()) {
+    return this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
+      && !!this._searchLastVoiceAt
+      && now - this._searchLastVoiceAt <= this._voiceHangoverMs();
+  }
+
+  _hasLockedVerse(now = Date.now()) {
+    return this._lockedVoicedMs >= VOICE_MIN_ACTIVE_MS
+      && !!this._lockedLastVoiceAt
+      && now - this._lockedLastVoiceAt <= this._voiceHangoverMs();
+  }
+
   // ── Ingest ─────────────────────────────────────────────────────────────────
 
   ingest(pcmData) {
@@ -1096,7 +1116,7 @@ export class AudioPipeline {
       return;
     }
 
-    if (this._searchLastVoiceAt && now - this._searchLastVoiceAt > VOICE_HANGOVER_MS && !this.processing) {
+    if (this._searchLastVoiceAt && now - this._searchLastVoiceAt > this._voiceHangoverMs() && !this.processing) {
       this._resetSearchBuf();
     }
     if (hasVoice) {
@@ -1118,8 +1138,7 @@ export class AudioPipeline {
     }
 
     const targetMs = SEARCH_WINDOWS_MS[this._searchWinIdx];
-    const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
-      && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
+    const freshVoice = this._hasSearchVerse(now);
     const providerGapOk = !this.isGroqMode || !this._lastSearchCall
       || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
     if (bufMs >= targetMs && freshVoice && providerGapOk && !this.processing) {
@@ -1138,11 +1157,11 @@ export class AudioPipeline {
       : LOCKED_MIN_MS;
     if (this._lockedInFlight >= maxInFlight || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
-    const freshVoice = this._lockedVoicedMs >= VOICE_MIN_ACTIVE_MS
-      && now - this._lockedLastVoiceAt <= VOICE_HANGOVER_MS;
+    const freshVoice = this._hasLockedVerse(now);
     const displayCapped = this._isDisplayCapped();
     if (!displayCapped) this._cappedRecoveryChecks = 0;
-    const canForceRecovery = displayCapped
+    const canForceRecovery = !this.practiceMode
+      && displayCapped
       && this._cappedRecoveryChecks < CAPPED_RECOVERY_MAX_CHECKS
       && this._lastDetectedVoiceAt > 0
       && now - this._lastDetectedVoiceAt <= CAPPED_RECOVERY_RECENT_VOICE_MS;
@@ -1245,8 +1264,7 @@ export class AudioPipeline {
     }
 
     const now = Date.now();
-    const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
-      && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
+    const freshVoice = this._hasSearchVerse(now);
     const providerGapOk = !this.isGroqMode || !this._lastSearchCall
       || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
     if (!freshVoice || !providerGapOk) {
@@ -1263,6 +1281,12 @@ export class AudioPipeline {
     const searchChunk = Buffer.from(sendSlice);
     const sendMs = Math.round(searchChunk.length / BYTES_PER_MS);
     const rms = computeRms(searchChunk);
+    const profile = this._audioProfile || AUDIO_SOURCE_PROFILES.g2;
+    if (this.practiceMode && rms < profile.voiceMinActivityRms) {
+      console.log(`[Pipeline] Practice: no verse yet (rms=${rms.toFixed(4)}) — not searching`);
+      this.processing = false;
+      return;
+    }
     this._lastSearchCall = now;
     this._searchVoicedMs = 0;
     this._searchLastVoiceAt = 0;
@@ -1275,7 +1299,9 @@ export class AudioPipeline {
       let text = '';
       let words = [];  // V4: Word timestamps from Whisper
       try {
-        const audioToSend = applyClipGuard(searchChunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2);
+        const audioToSend = applyClipGuard(searchChunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2, {
+          quietBoost: !this.practiceMode,
+        });
         this._applyWhisperPrompt();
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
@@ -1397,11 +1423,9 @@ export class AudioPipeline {
       const preferredSurah = (this.taraweehMode && this._taraweehPos === 'RUKU') ? 1
         : expectFatiha ? 1
         : (this._arRahmanRefrainSeen ? 55 : this.preferredSurah);
-      const opts = { preferredSurah, fastMode: this.fastMode, missBeforeResuming: MISSED_BEFORE_RESUMING_V3, missBeforeLost: MISSED_BEFORE_LOST_V3, practiceMode: this.practiceMode };
-      if (this.practiceMode) {
-        opts.preferredSurah = 0;
-        opts.freshRun = this._practiceFreshRun;
-      } else if (expectFatiha) opts.taraweehExpectFatiha = true;
+      const opts = { preferredSurah, fastMode: this.fastMode, missBeforeResuming: MISSED_BEFORE_RESUMING_V3, missBeforeLost: MISSED_BEFORE_LOST_V3 };
+      // Practice uses Taraweeh first-lock (do not pass practiceMode here).
+      if (expectFatiha) opts.taraweehExpectFatiha = true;
       if (this.state.mode === 'RESUMING' && this._displaySurah > 0 && this._displayAyah > 0) {
         opts.displaySurah = this._displaySurah;
         opts.displayAyah = this._displayAyah;
@@ -1501,8 +1525,7 @@ export class AudioPipeline {
       const bufMs2 = this._searchBuf.length / BYTES_PER_MS;
       const nextTarget = SEARCH_WINDOWS_MS[this._searchWinIdx];
       const now = Date.now();
-      const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
-        && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
+      const freshVoice = this._hasSearchVerse(now);
       const providerGapOk = !this.isGroqMode || !this._lastSearchCall
         || now - this._lastSearchCall >= GROQ_SEARCH_MIN_INTERVAL_MS;
       if (nextTarget && bufMs2 >= nextTarget && freshVoice && providerGapOk
@@ -1556,7 +1579,9 @@ export class AudioPipeline {
       let words = [];  // V4: Word timestamps from Whisper
       let resultAgeMs = 0;
       try {
-        const audioToSend = applyClipGuard(chunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2);
+        const audioToSend = applyClipGuard(chunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2, {
+          quietBoost: !this.practiceMode,
+        });
         this._applyWhisperPrompt();
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';

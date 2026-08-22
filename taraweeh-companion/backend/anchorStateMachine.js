@@ -107,47 +107,8 @@ export function processWhisperResult(whisperText, state, options = {}) {
 }
 
 function handleSearching(whisperText, state, preferredSurah, opts = {}) {
-  // Practice: global match only — no sequential bias, instant lock on first hit.
-  if (opts.practiceMode) {
-    const { matches, keywords } = findAnchor(whisperText, 0);
-    if (!matches.length) {
-      return { ...state, _matches: [], _locked: false, _wins: 0, _pendingMatch: null, lastKeywords: keywords };
-    }
-    const pt = matches[0];
-    const mc = pt.matchedWords?.length ?? 0;
-    // Groq is fast — accept slightly weaker hits; one strong word can lock adjacent ayah.
-    const near = !opts.freshRun && state.surah > 0 && pt.surah === state.surah && Math.abs(pt.ayah - state.ayah) <= 2;
-    const minScore = near ? 0.18 : 0.22;
-    const minWords = (near && pt.score >= 0.26) ? 1 : 2;
-    if (pt.score >= minScore && mc >= minWords) {
-      console.log(`[Anchor] Practice lock [${pt.surah}:${pt.ayah}] score=${pt.score.toFixed(2)} words=${mc}${opts.freshRun ? ' (fresh)' : ''}`);
-      return {
-        ...state,
-        mode: 'LOCKED',
-        surah: pt.surah,
-        ayah: pt.ayah,
-        confidence: pt.score,
-        missedChunks: 0,
-        ayahsSinceLock: 0,
-        ayahsSinceCheck: 0,
-        _matches: matches.slice(0, 3),
-        _locked: true,
-        _wins: 1,
-        _pendingMatch: { surah: pt.surah, ayah: pt.ayah, score: pt.score },
-        lastLockedSurah: pt.surah,
-        lastLockedAyah: pt.ayah,
-        lastKeywords: keywords,
-      };
-    }
-    return {
-      ...state,
-      _matches: matches.slice(0, 3),
-      _locked: false,
-      _wins: 0,
-      _pendingMatch: { surah: pt.surah, ayah: pt.ayah },
-      lastKeywords: keywords,
-    };
-  }
+  // Practice uses this same Taraweeh first-lock path (Fatiha single-win, sequential
+  // hints, bismillah guard). practiceMode only changes locked tracking / timers.
 
   // After a surah completes, bias toward the NEXT surah (sequential order in Quran)
   // e.g. after Luqman (31) ends, boost As-Sajdah (32) ayah 1-10
@@ -499,27 +460,20 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
 }
 
 
-function handleLocked(whisperText, state, fastMode = false, opts = {}) {
-  const { missBeforeResuming = MISSED_BEFORE_RESUMING, isGroqMode = false } = opts;
+function handlePracticeLocked(whisperText, state, fastMode, opts) {
+  const keywords = extractKeywords(whisperText);
+  if (keywords.length === 0) {
+    // Silence / no verse — stay on the matched ayah. Do not search or unlock.
+    return { ...state, missedChunks: 0, _matches: [], lastKeywords: [] };
+  }
 
-  // Practice mode: always global scan — jump to whatever verse is being recited.
-  if (opts.practiceMode) {
-    const { matches, keywords } = findAnchor(whisperText, 0);
-    const top = matches[0];
-    if (!top) {
-      return { ...state, missedChunks: 0, _matches: [], _locked: false, lastKeywords: keywords };
-    }
-    const mc = top.matchedWords?.length ?? 0;
-    const near = !opts.freshRun && top.surah === state.surah && Math.abs(top.ayah - state.ayah) <= 2;
-    const minScore = near ? 0.18 : 0.22;
-    const minWords = (near && top.score >= 0.26) ? 1 : 2;
-    if (top.score < minScore || mc < minWords) {
-      return { ...state, missedChunks: 0, _matches: matches.slice(0, 3), _locked: false, lastKeywords: keywords };
-    }
-    const jumped = top.surah !== state.surah || top.ayah !== state.ayah;
-    if (jumped) {
-      console.log(`[Anchor] Practice → [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)} (was ${state.surah}:${state.ayah})${opts.freshRun ? ' (fresh)' : ''}`);
-    }
+  const { matches } = findAnchor(whisperText, 0);
+  const top = matches[0];
+  const mc = top?.matchedWords?.length ?? 0;
+  const jumped = top && (top.surah !== state.surah || top.ayah !== state.ayah);
+  const farJump = jumped && (top.surah !== state.surah || Math.abs(top.ayah - state.ayah) > 2);
+  if (farJump && top.score >= SINGLE_WIN_SCORE && mc >= 2) {
+    console.log(`[Anchor] Practice heard [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)} (was ${state.surah}:${state.ayah})`);
     return {
       ...state,
       mode: 'LOCKED',
@@ -533,6 +487,41 @@ function handleLocked(whisperText, state, fastMode = false, opts = {}) {
       lastLockedAyah: top.ayah,
       lastKeywords: keywords,
     };
+  }
+
+  // Same-surah recitation (1:2 → 1:3): Taraweeh tracker, but never unlock on misses.
+  const tracked = handleLocked(whisperText, state, fastMode, {
+    ...opts,
+    practiceMode: false,
+    missBeforeResuming: Number.MAX_SAFE_INTEGER,
+    missBeforeLost: Number.MAX_SAFE_INTEGER,
+  });
+  if (tracked.mode === 'LOCKED') return tracked;
+  if (jumped && top.score >= SINGLE_WIN_SCORE && mc >= 2) {
+    console.log(`[Anchor] Practice heard [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)} (was ${state.surah}:${state.ayah})`);
+    return {
+      ...state,
+      mode: 'LOCKED',
+      surah: top.surah,
+      ayah: top.ayah,
+      confidence: top.score,
+      missedChunks: 0,
+      _matches: matches.slice(0, 3),
+      _locked: true,
+      lastLockedSurah: top.surah,
+      lastLockedAyah: top.ayah,
+      lastKeywords: keywords,
+    };
+  }
+  return { ...state, missedChunks: 0, _matches: matches.slice(0, 3), lastKeywords: keywords };
+}
+
+function handleLocked(whisperText, state, fastMode = false, opts = {}) {
+  const { missBeforeResuming = MISSED_BEFORE_RESUMING, isGroqMode = false } = opts;
+
+  // Practice: Taraweeh matching when a verse is heard; stay put on silence.
+  if (opts.practiceMode) {
+    return handlePracticeLocked(whisperText, state, fastMode, opts);
   }
 
   const keywords = extractKeywords(whisperText);
