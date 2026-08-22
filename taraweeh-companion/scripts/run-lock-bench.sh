@@ -24,7 +24,7 @@ trap 'rm -f "$BASELINE_FILE"' EXIT
 
 PIPES=("audioPipelineV4.js" ".bench-baseline-pipeline.js")
 label() { [ "$1" = "audioPipelineV4.js" ] && echo "working tree" || echo "baseline $BASELINE"; }
-fields='ASR calls|first ASR|ASR call gaps|ASR windows|FIRST LOCK|verse locks|truncs'
+fields="ASR calls|first ASR|ASR call gaps|ASR windows|FIRST LOCK|verse locks|truncs"
 
 run() {  # run <tag> <pipeline> <args…>
   local tag="$1" pipe="$2"; shift 2

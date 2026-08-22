@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.25 - 2026-08-22
+
+- Merges the rest of PR #11 onto this branch: re-phase the display timer from how many words of the current ayah have been heard, so lag does not carry ayah to ayah. Real-recitation benches, Groq 429 backoff check, and live OpenAI quota/header reporting come with it. Groq and OpenAI stay independent engines.
+- Skip-ahead hop from 2.6.24 is kept.
+
 ## 2.6.24 - 2026-08-22
 
 - Taraweeh skip-ahead self-heal: if you jump recitation further down the same surah, lock hops to the heard ayah instead of holding the old one while the timer walks. Same-surah distinctive matches (3+ words) hop even when the local ±8 scan would have ignored them. Display snaps on gap 7+ at 35–40%, not 70%.

@@ -510,6 +510,25 @@ function _resolveRefrain(inputWords, surah, expectedAyah, startAyah, endAyah) {
   return null;
 }
 
+/**
+ * How far into an ayah the reciter has got, in words.
+ *
+ * Returns the position of the furthest word of that ayah present in the
+ * transcript, plus the ayah's total word count. Used to re-phase the display
+ * timer: knowing the reciter is 5 words into a 9-word ayah is what lets the
+ * timer schedule the *remaining* time rather than a whole ayah again.
+ */
+export function ayahWordsCovered(surah, ayah, transcriptText) {
+  if (ayahList.length === 0) loadQuran();
+  const a = ayahList.find(x => x.surah === surah && x.ayah === ayah);
+  if (!a) return { covered: 0, total: 0 };
+  const ayahWords = a.normText.split(/\s+/).filter(Boolean);
+  const heard = new Set(splitWords(transcriptText || ''));
+  let last = -1;
+  for (let i = 0; i < ayahWords.length; i++) if (heard.has(ayahWords[i])) last = i;
+  return { covered: last + 1, total: ayahWords.length };
+}
+
 export function resyncInSurah(whisperText, surah) {
   return findAnchor(whisperText, surah);
 }

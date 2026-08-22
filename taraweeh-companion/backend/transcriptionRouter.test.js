@@ -4,7 +4,7 @@ import { pcmToWav } from './pcmToWav.js';
 import { parseRetryAfterMs, isRetryableStatus, httpError } from './httpRetry.js';
 import { collectKeys, resolveProvider, transcribe, compareProviders, STT_ENGINES } from './transcriptionRouter.js';
 import { buildWhisperPrompt, stripWhisperPromptEcho } from './whisperPrompt.js';
-import { loadQuran } from './keywordMatcher.js';
+import { loadQuran, ayahWordsCovered } from './keywordMatcher.js';
 import { createState, processWhisperResult } from './anchorStateMachine.js';
 
 describe('pcmToWav', () => {
@@ -423,5 +423,12 @@ describe('Taraweeh skip-ahead self-heal', () => {
     assert.equal(next.mode, 'LOCKED');
     assert.equal(next.surah, 36);
     assert.equal(next.ayah, 22);
+  });
+
+  it('ayahWordsCovered reports furthest heard word for timer re-phase', () => {
+    const { covered, total } = ayahWordsCovered(36, 22, 'اعبد الذي فطرني');
+    assert.ok(total >= 7);
+    assert.ok(covered >= 3);
+    assert.ok(covered <= total);
   });
 });
