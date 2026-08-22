@@ -14,11 +14,15 @@ function readJson(path) {
 
 const checks = [
   ['repo package.json', readJson(join(repo, 'package.json')).version],
+  ['repo package-lock.json', readJson(join(repo, 'package-lock.json')).version],
   ['app package.json', readJson(join(root, 'package.json')).version],
+  ['app package-lock.json', readJson(join(root, 'package-lock.json')).version],
   ['app.json', readJson(join(root, 'app.json')).version],
   ['backend package.json', readJson(join(root, 'backend/package.json')).version],
   ['backend package-lock.json', readJson(join(root, 'backend/package-lock.json')).version],
 ];
+const serverBanner = readFileSync(join(root, 'backend/server.js'), 'utf8').match(/\* v([0-9.]+)/);
+checks.push(['server.js banner', serverBanner && serverBanner[1]]);
 
 const html = readFileSync(join(root, 'app/index.html'), 'utf8');
 const appVer = html.match(/const APP_VERSION = 'v([^']+)'/);

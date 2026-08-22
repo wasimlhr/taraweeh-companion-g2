@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v5.0.2 — back-correction cooldown, higher snap-back threshold, stronger fast/slow modes
+ * v2.6.27 — selected-engine Ready/key check, independent STT, EvenHub pack
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
