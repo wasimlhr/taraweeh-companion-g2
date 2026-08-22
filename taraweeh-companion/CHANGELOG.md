@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.17 - 2026-08-22
+
+- Restore 2.6.7 live matching: 3s first search window, 4s Groq search gap, 6s locked checks, no Whisper prompt, no client-side sim gain.
+- Backend quiet-boost is back to the 2.6.7 per-source profiles (only when RMS is below that source’s threshold). Loud recitation is not multiplied.
+
 ## 2.6.16 - 2026-08-22
 
 - Simulator PC mic no longer applies a flat 8× gain. Quiet frames still boost (cap 8×); loud recitation is sent as-is. Flat 8× was clipping live recitation so Groq emitted `ترجمة نانسي قنقر` / `من` instead of the verse.

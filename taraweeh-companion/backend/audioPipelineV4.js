@@ -14,7 +14,6 @@ import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
 import { findAnchor, isRefrain, getAyah } from './keywordMatcher.js';
-import { buildWhisperPrompt } from './whisperPrompt.js';
 import {
   prepareMatcherText,
   isBismillahOnly,
@@ -59,21 +58,17 @@ const SAMPLE_RATE      = 16000;
 const BYTES_PER_SAMPLE = 2;
 const BYTES_PER_MS     = (SAMPLE_RATE * BYTES_PER_SAMPLE) / 1000;
 
-// First search at 2s so lock can happen on the opening words; later windows
-// accumulate so the matcher gets enough unique tokens without extra STT engines.
-const SEARCH_WINDOWS_MS = [2000, 4000, 7000, 12000, 20000];
+// 2.6.7 matching: first search at 3s so Groq gets a full verse-opening, not a
+// 2s clipped fragment that hallucinates ترجمة نانسي قنقر.
+const SEARCH_WINDOWS_MS = [3000, 5000, 8000, 12000, 20000];
 const MAX_SEARCH_BUF_MS = 35000;
 const SEARCH_SEND_MS = parseInt(process.env.SEARCH_SEND_MS || '12000', 10);
 const SEARCH_PREROLL_MS = parseInt(process.env.SEARCH_PREROLL_MS || '1000', 10);
 
 const VOICE_MIN_ACTIVE_MS = parseInt(process.env.VOICE_MIN_ACTIVE_MS || '500', 10);
 const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '2500', 10);
-// Practice: drop search as soon as recitation stops. Taraweeh keeps a longer
-// hangover so trailing words still reach the matcher.
-const PRACTICE_VOICE_HANGOVER_MS = parseInt(process.env.PRACTICE_VOICE_HANGOVER_MS || '400', 10);
-// 2.5s search gap ≈ 24 RPM only during the brief unlock phase. Once locked we
-// drop to ~15 RPM. Starving search at 4–6s is what prevented lock (and caused 429s).
-const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '2500', 10);
+const PRACTICE_VOICE_HANGOVER_MS = parseInt(process.env.PRACTICE_VOICE_HANGOVER_MS || '2500', 10);
+const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '4000', 10);
 const SEARCH_SEND_BYTES = Math.floor(BYTES_PER_MS * SEARCH_SEND_MS);
 const SEARCH_PREROLL_BYTES = Math.floor(BYTES_PER_MS * SEARCH_PREROLL_MS);
 
@@ -87,7 +82,7 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
     lockedVoiceGateFactor: parseFloat(process.env.BROWSER_LOCKED_VOICE_GATE_FACTOR || '0.75'),
     quietBoostThreshold: parseFloat(process.env.BROWSER_QUIET_BOOST_THRESHOLD || '0.025'),
     quietBoostTarget: parseFloat(process.env.BROWSER_QUIET_BOOST_TARGET || '0.08'),
-    maxBoostGain: parseFloat(process.env.BROWSER_MAX_BOOST_GAIN || '1'),
+    maxBoostGain: parseFloat(process.env.BROWSER_MAX_BOOST_GAIN || '8'),
   }),
   simulator: Object.freeze({
     source: 'simulator',
@@ -98,7 +93,7 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
     lockedVoiceGateFactor: parseFloat(process.env.SIMULATOR_LOCKED_VOICE_GATE_FACTOR || '0.8'),
     quietBoostThreshold: parseFloat(process.env.SIMULATOR_QUIET_BOOST_THRESHOLD || '0.015'),
     quietBoostTarget: parseFloat(process.env.SIMULATOR_QUIET_BOOST_TARGET || '0.08'),
-    maxBoostGain: parseFloat(process.env.SIMULATOR_MAX_BOOST_GAIN || '1'),
+    maxBoostGain: parseFloat(process.env.SIMULATOR_MAX_BOOST_GAIN || '20'),
   }),
   g2: Object.freeze({
     source: 'g2',
@@ -109,7 +104,7 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
     lockedVoiceGateFactor: parseFloat(process.env.G2_LOCKED_VOICE_GATE_FACTOR || '0.75'),
     quietBoostThreshold: parseFloat(process.env.G2_QUIET_BOOST_THRESHOLD || '0.010'),
     quietBoostTarget: parseFloat(process.env.G2_QUIET_BOOST_TARGET || '0.06'),
-    maxBoostGain: parseFloat(process.env.G2_MAX_BOOST_GAIN || '1'),
+    maxBoostGain: parseFloat(process.env.G2_MAX_BOOST_GAIN || '24'),
   }),
 });
 
@@ -120,10 +115,10 @@ function normalizeAudioSource(source) {
 
 // Locked: send a 6s tail at least every ~3.2s. Groq stays 1-in-flight at 3.5s
 // (~17 RPM) so free-tier 20 RPM is not the bottleneck — matching is.
-const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '3200', 10);
+const LOCKED_MIN_MS    = parseInt(process.env.LOCKED_MIN_MS    || '4000', 10);
 const LOCKED_MAX_MS    = parseInt(process.env.LOCKED_MAX_MS    || '10000', 10);
 const LOCKED_SEND_MS   = parseInt(process.env.LOCKED_SEND_MS   || '6000', 10);
-const GROQ_LOCKED_MIN_INTERVAL_MS = parseInt(process.env.GROQ_LOCKED_MIN_INTERVAL_MS || '3500', 10);
+const GROQ_LOCKED_MIN_INTERVAL_MS = parseInt(process.env.GROQ_LOCKED_MIN_INTERVAL_MS || '6000', 10);
 // 3s chunks → 4 misses = 12s (too fast). 12 misses ≈ 36s, similar to 10s chunks × 4.
 // 2s chunks → 16 misses ≈ 32s before resuming (same effective time as 12 × 3s)
 const MISSED_BEFORE_RESUMING_V3 = parseInt(process.env.MISSED_BEFORE_RESUMING_V3 || '16', 10);
@@ -194,11 +189,21 @@ function removeDcOffset(pcm) {
 const CLIP_THRESHOLD = parseFloat(process.env.CLIP_THRESHOLD || '0.10');
 const CLIP_TARGET    = parseFloat(process.env.CLIP_TARGET    || '0.04');
 function applyClipGuard(pcm, rms, profile) {
-  // Never quiet-boost. 20× gain on G2 and PC-mic/sim audio distorts recitation
-  // into Whisper hallucinations (موسيقى, اشتركوا في القناة, حال الله).
-  if (!(rms > CLIP_THRESHOLD)) return pcm;
-  const gain = CLIP_TARGET / rms;
-  console.log(`[Pipeline] Audio normalize: rms=${rms.toFixed(3)} -> ${CLIP_TARGET} (gain=${gain.toFixed(3)})`);
+  // 2.6.7: boost only when this source is below its quiet threshold; never a
+  // flat client-side 8×. Loud recitation is left alone; only clip > 0.10.
+  let gain = 1;
+  const maxBoost = profile?.maxBoostGain ?? 1;
+  const thresh = profile?.quietBoostThreshold ?? 0;
+  const target = profile?.quietBoostTarget ?? 0.08;
+  if (rms > 0 && rms < thresh && maxBoost > 1) {
+    gain = Math.min(maxBoost, target / rms);
+    console.log(`[Pipeline] ${profile.source} quiet boost: rms=${rms.toFixed(4)} -> ${target} (gain=${gain.toFixed(1)})`);
+  } else if (rms > CLIP_THRESHOLD) {
+    gain = CLIP_TARGET / rms;
+    console.log(`[Pipeline] Audio normalize: rms=${rms.toFixed(3)} -> ${CLIP_TARGET} (gain=${gain.toFixed(3)})`);
+  } else {
+    return pcm;
+  }
   const out = Buffer.alloc(pcm.length);
   const n = Math.floor(pcm.length / 2);
   for (let i = 0; i < n * 2; i += 2) {
@@ -412,7 +417,7 @@ export class AudioPipeline {
     this._lastDetectedVoiceAt = 0;
     this._cappedRecoveryChecks = 0;
     const profile = this._audioProfile;
-    console.log(`[Pipeline] Audio profile=${normalized} gate=${profile.voiceMinActivityRms}-${profile.voiceMaxActivityRms} noise*${profile.voiceNoiseMultiplier} (no quiet-boost)`);
+    console.log(`[Pipeline] Audio profile=${normalized} gate=${profile.voiceMinActivityRms}-${profile.voiceMaxActivityRms} noise*${profile.voiceNoiseMultiplier} boost<${profile.quietBoostThreshold} max×${profile.maxBoostGain}`);
     this.onStatus({ type: 'audio_profile', component: 'audio', status: 'ready', source: normalized });
   }
 
@@ -487,15 +492,11 @@ export class AudioPipeline {
   setVerseHoldMode(enabled) { this.setPracticeMode(enabled); }
 
   _applyWhisperPrompt() {
-    if (!this.whisperOpts || typeof this.whisperOpts !== 'object') return;
-    let ayahText = '';
-    if (this.state?.mode === 'LOCKED' && this.state.surah > 0 && this.state.ayah > 0) {
-      ayahText = getAyah(this.state.surah, this.state.ayah)?.text || '';
+    // 2.6.7 sent no Whisper prompt. Prompt-echo was locking Fatiha / تلاوة
+    // and crowding out the actual recitation tokens.
+    if (this.whisperOpts && typeof this.whisperOpts === 'object') {
+      this.whisperOpts.prompt = '';
     }
-    this.whisperOpts.prompt = buildWhisperPrompt({
-      lastTranscript: this._lastPromptText || '',
-      ayahText,
-    });
   }
 
   _handleTranscriptionError(err) {
@@ -1072,9 +1073,7 @@ export class AudioPipeline {
     if (this._isRateLimited()) return false;
     // Groq: 1 in-flight at ~3.5s ≈ 17 RPM (under free-tier 20). OpenAI can overlap.
     const maxInFlight = this.isGroqMode ? 1 : LOCKED_MAX_INFLIGHT;
-    const minIntervalMs = this.isGroqMode
-      ? Math.max(GROQ_LOCKED_MIN_INTERVAL_MS, LOCKED_MIN_MS)
-      : LOCKED_MIN_MS;
+    const minIntervalMs = this.isGroqMode ? Math.max(GROQ_LOCKED_MIN_INTERVAL_MS, LOCKED_SEND_MS) : LOCKED_MIN_MS;
     if (this._lockedInFlight >= maxInFlight || this._lockedBuf.length < LOCKED_MIN_BYTES) return false;
     const now = Date.now();
     const freshVoice = this._hasLockedVerse(now);

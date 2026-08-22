@@ -11,7 +11,6 @@ import { transcribeWithGroq } from './groqProvider.js';
 import { transcribeWithOpenAI } from './openaiProvider.js';
 import { transcribeWithDeepgram, probeDeepgramKey } from './deepgramProvider.js';
 import { transcribeWithElevenLabs, probeElevenLabsKey } from './elevenlabsProvider.js';
-import { buildWhisperPrompt } from './whisperPrompt.js';
 
 export const PROVIDER = (process.env.TRANSCRIPTION_PROVIDER || 'groq').toLowerCase();
 export const STT_ENGINES = ['groq', 'openai', 'deepgram', 'elevenlabs'];
@@ -115,12 +114,8 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
     throw new Error(`${engineLabel(name)} API key missing. Add it in Settings, or set SHARED_${name.toUpperCase()}_KEY.`);
   }
 
-  const extra = {
-    prompt: opts.prompt || buildWhisperPrompt({
-      lastTranscript: opts.lastTranscript || '',
-      ayahText: opts.ayahText || '',
-    }),
-  };
+  const extra = {};
+  if (opts.prompt) extra.prompt = opts.prompt;
   return callProvider(name, pcmBuffer, apiKey, emit, extra);
 }
 
@@ -129,9 +124,7 @@ export async function compareProviders(pcmBuffer, whisperOpts, emit = null) {
   const jobs = STT_ENGINES.filter((p) => keys[p]).map(async (name) => {
     const t0 = Date.now();
     try {
-      const result = await callProvider(name, pcmBuffer, keys[name], emit, {
-        prompt: buildWhisperPrompt(),
-      });
+      const result = await callProvider(name, pcmBuffer, keys[name], emit, {});
       return {
         provider: name,
         ok: true,

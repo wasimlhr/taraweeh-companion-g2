@@ -30,8 +30,8 @@ const LOCK_MARGIN_MIN    = 3;     // score gap (% points) between #1 and #2 (was
 const LOCK_COVERAGE_MIN  = 0.25;  // ≥25% of target ayah's words must be matched (scaled down for long ayahs)
 const LOCK_MIN_WORDS     = 3;     // matched words must be ≥ this to prevent single-word fast-locks
 const FAST_LOCK_SCORE    = 0.75;  // instant lock when score ≥ this AND margin ≥ 30
-const SINGLE_WIN_SCORE  = 0.42;  // first solid IDF match can lock — waiting for a 2nd 4–6s win is too slow
-const SINGLE_WIN_MARGIN = 8;     // still require a clear gap to #2
+const SINGLE_WIN_SCORE  = 0.55;  // 2.6.7: solid first-chunk lock, not 0.42 on noise
+const SINGLE_WIN_MARGIN = 12;    // 2.6.7: 12-point gap to #2
 
 const SURAH_AYAH_COUNTS = [
   7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111,
