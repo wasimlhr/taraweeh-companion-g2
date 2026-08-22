@@ -5,6 +5,7 @@
 - Removed quiet-boost for every source (G2, simulator, browser). 20× gain was distorting recitation — live Taraweeh logs turned `الحمد لله` into `حال الله` / `موسيقى`.
 - G2 PCM is sent as-is. PC mic through the EvenHub simulator gets a limited 8× capture gain (clip, not a 20× boost) so Groq can hear it.
 - Browser mic graph is muted so the PC speaker does not echo into STT.
+- YouTube recitation replay: `npm run replay:youtube -- <url>` streams 16 kHz PCM through the same V4 pipeline.
 
 ## 2.6.13 - 2026-08-22
 
