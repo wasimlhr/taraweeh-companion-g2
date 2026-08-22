@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.0.1 — simplified Settings, engine/model desync fix, band-limited mic audio
+ * v3.0.2 — bismillah never identifies a surah
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';

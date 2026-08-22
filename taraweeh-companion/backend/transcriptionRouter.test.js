@@ -449,6 +449,69 @@ describe('live preamble strip (isti\'adha / bismillah)', () => {
   });
 });
 
+describe('bismillah never identifies a surah', () => {
+  loadQuran();
+
+  // Bismillah opens every surah but At-Tawbah, so hearing it says nothing about
+  // which surah is being recited. It used to lock Al-Fatiha 1:1 on the second
+  // window: the guard asked for 2 consecutive wins, but search windows overlap,
+  // so one utterance supplied both.
+  function locksAt(text, opts) {
+    let st = createState();
+    for (let i = 0; i < 5; i++) {
+      st = processWhisperResult(text, st, opts || {});
+      if (st.mode === 'LOCKED') return st.surah + ':' + st.ayah;
+    }
+    return null;
+  }
+
+  const VARIANTS = [
+    ['plain', 'بسم الله الرحمن الرحيم'],
+    ['diacritised', 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ'],
+    ['no space after بسم', 'بسمالله الرحمن الرحيم'],
+    ["isti'adha then bismillah", 'أعوذ بالله من الشيطان الرجيم بسم الله الرحمن الرحيم'],
+  ];
+
+  for (const [label, text] of VARIANTS) {
+    it('does not lock any surah on bismillah — ' + label, () => {
+      assert.equal(locksAt(text), null);
+    });
+  }
+
+  it('recognises every bismillah variant as opening preamble', async () => {
+    const { isOpeningPreamble } = await import('./whisperClean.js');
+    for (const [label, text] of VARIANTS) {
+      assert.equal(isOpeningPreamble(text), true, label + ' should be preamble');
+    }
+  });
+
+  it('still locks Fatiha once the reciter reaches 1:2', () => {
+    assert.equal(locksAt('بسم الله الرحمن الرحيم الحمد لله رب العالمين'), '1:2');
+    assert.equal(locksAt('الحمد لله رب العالمين'), '1:2');
+  });
+
+  it('still locks 27:30, where bismillah is quoted inside the verse', () => {
+    assert.equal(locksAt('إنه من سليمان وإنه بسم الله الرحمن الرحيم'), '27:30');
+  });
+
+  it('still locks Fatiha 1:1 in taraweeh, where Fatiha is known to be next', () => {
+    assert.equal(locksAt('بسم الله الرحمن الرحيم', { taraweehExpectFatiha: true }), '1:1');
+  });
+
+  it('does not let bismillah words alone lock 1:3 (الرحمن الرحيم)', () => {
+    // 1:3 is wholly contained in the bismillah, so it is just as ambiguous as 1:1.
+    const st = processWhisperResult('الرحمن الرحيم', createState(), {});
+    assert.notEqual(st.mode, 'LOCKED');
+  });
+
+  it('does not lock a surah other than Fatiha on bismillah', () => {
+    for (const [, text] of VARIANTS) {
+      const got = locksAt(text);
+      assert.equal(got, null, 'bismillah locked ' + got);
+    }
+  });
+});
+
 describe('Taraweeh skip-ahead self-heal', () => {
   loadQuran();
 

@@ -90,6 +90,11 @@ export function createState() {
  * @param {object} options - {preferredSurah}
  * @returns {object} new state
  */
+// The bismillah's own vocabulary, used to spot matches that are really just the
+// opening formula. Bismillah opens every surah but At-Tawbah, so on its own it
+// identifies nothing.
+const BISMILLAH_WORDS = new Set(['بسم', 'الله', 'الرحمن', 'الرحيم']);
+
 export function processWhisperResult(whisperText, state, options = {}) {
   const { preferredSurah = 0, fastMode = false, missBeforeResuming, missBeforeLost } = options;
   const opts = { ...options, missBeforeResuming: missBeforeResuming ?? MISSED_BEFORE_RESUMING, missBeforeLost: missBeforeLost ?? MISSED_BEFORE_LOST };
@@ -249,12 +254,21 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   }
 
   // Bismillah guard: 1:1 ("بسم الله الرحمن الرحيم") is recited before EVERY surah,
-  // so matching it doesn't confirm we're in Al-Fatiha. Require 2 consecutive wins
-  // (i.e. the NEXT chunk must also land in Fatiha 1:2+) before locking.
+  // so matching it never confirms we are in Al-Fatiha. This cannot be a win count:
+  // search windows overlap, so one utterance of bismillah supplies consecutive
+  // wins by itself. 1:1 is therefore not lockable from bismillah at all — the
+  // reciter has to reach 1:2+ for Fatiha to win.
   // EXCEPTION: in taraweeh mode after ruku/sajda cycle, we KNOW Fatiha is next —
   // the imam always recites Fatiha at the start of each rak'ah. Skip the guard.
   const taraweehExpectFatiha = !!opts.taraweehExpectFatiha;
-  const isBismillahAmbiguous = top.surah === 1 && top.ayah === 1 && !taraweehExpectFatiha;
+  // Any Fatiha hit whose matched words all come from the bismillah is the
+  // opening formula, not evidence of Fatiha: that covers 1:1 itself and 1:3
+  // ("الرحمن الرحيم"), which is wholly contained in it.
+  const matchedFromBismillahOnly = (top.matchedWords || []).length > 0
+    && (top.matchedWords || []).every((w) => BISMILLAH_WORDS.has(w));
+  const isBismillahAmbiguous = !taraweehExpectFatiha
+    && top.surah === 1
+    && (top.ayah === 1 || matchedFromBismillahOnly);
 
   const matchedWordCount = top.matchedWords?.length ?? 0;
   // Never demand more words than the ayah actually has. 36:2 is two words
@@ -378,7 +392,8 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && top.score >= consistentScoreMin
     && margin   >= LOCK_MARGIN_MIN
     && coverage >= covThreshold
-    && hasEnoughWords;
+    && hasEnoughWords
+    && !isBismillahAmbiguous;   // overlapping windows made the win count meaningless here
 
   // Sequential-carry lock: 3+ wins accumulated via sequential advancement in the same
   // surah. Each window pointed at the next verse — that's strong directional evidence

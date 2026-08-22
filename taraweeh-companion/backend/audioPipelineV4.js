@@ -17,6 +17,7 @@ import { findAnchor, isRefrain, getAyah, spotCheck, ayahWordsCovered } from './k
 import {
   prepareMatcherText,
   isBismillahOnly,
+  isOpeningPreamble,
   isPreRecitationPhrase,
   isAmeen,
   isNoise,
@@ -1427,8 +1428,8 @@ export class AudioPipeline {
       // Otherwise bismillah-only is generic (could be any surah) — skip the matcher,
       // but still add to _lastSearchTexts so the NEXT chunk combines with it
       // (e.g. "بسم الله..." + "الحمد لله..." = strong Fatiha match).
-      if (isBismillahOnly(cleaned) && this._taraweehPos !== 'RUKU') {
-        console.log(`[Pipeline] Bismillah only — skipping matcher but keeping for combination`);
+      if (isOpeningPreamble(cleaned) && this._taraweehPos !== 'RUKU') {
+        console.log(`[Pipeline] Opening preamble only — skipping matcher but keeping for combination`);
         this._lastSearchTexts.push(cleaned);
         if (this._lastSearchTexts.length > 3) this._lastSearchTexts.shift();
         this.onStatus({ component: 'search', status: 'noise', audioSec: bufMs / 1000 });

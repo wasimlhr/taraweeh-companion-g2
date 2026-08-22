@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.2 - 2026-08-22
+
+- **Bismillah no longer locks Al-Fatiha.** It opens every surah but At-Tawbah, so hearing it says nothing about which surah is being recited — yet it locked 1:1 on the *second* search window. The guard asked for two consecutive wins, but search windows overlap, so one utterance supplied both; and the main lock path (`isConsistentLock`) never consulted the guard at all.
+- The opening a reciter actually uses — isti’adha *then* bismillah in one breath — was not recognised as preamble, because the bismillah pattern is anchored to the start of the chunk. Detection now strips a leading isti’adha first, and tolerates the missing space in `بسمالله` that Whisper often produces.
+- The guard is now about vocabulary rather than one ayah number: a Fatiha hit whose matched words come entirely from the bismillah is the opening formula. That also covers 1:3 (`الرحمن الرحيم`), which is wholly contained in it.
+- Still locks where bismillah is genuine evidence: Fatiha once the reciter reaches 1:2, An-Naml 27:30 where bismillah is quoted inside the verse, and Taraweeh after ruku where Fatiha is known to be next. Ten regression tests added (47 total).
+
 ## 3.0.1 - 2026-08-22
 
 - **Settings redesign.** Six stacked sections became four — Microphone, Transcription engine, Reading, and a collapsed **Advanced**. Model choice, tracking style, engine comparison, service wake and the diagnostic trace moved into Advanced. The G2 gesture documentation left Settings entirely and now has its own screen behind the header `?` button.

@@ -25,7 +25,7 @@ const NOISE_PHRASES = [
 ];
 
 const QURAN_MARKS_RE = /[\u064B-\u065F\u0610-\u061A\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u0615\u0652\u06D9\uFE70-\uFEFF]/g;
-const BISMILLAH_NORM_RE = /^بسم\s+الله\s+الرحمن\s+الرحيم[\s\u06D9\u060C]*/;
+const BISMILLAH_NORM_RE = /^بسم\s*الله\s+الرحمن\s+الرحيم[\s\u06D9\u060C.،]*/;
 // Leading isti'adha only (the recitation preamble). Do not match mid-verse
 // "الشيطان الرجيم" (16:98, 7:200) — those are Quran, not a skip cue.
 const ISTI_ADHA_PREFIX_RE = /^(اعوذ|أعوذ)\s+بالله(\s+من)?(\s+الشيطان)?(\s+الرجيم)?[\s.،,]*/;
@@ -71,7 +71,12 @@ export function stripBismillahPrefix(text) {
 
 export function isBismillahOnly(text) {
   if (!text || !String(text).trim()) return false;
-  const norm = normalizeMarks(text);
+  // A reciter opens with isti'adha AND bismillah in one breath, so the bismillah
+  // is not always at the head of the chunk. Drop a leading isti'adha first,
+  // otherwise the anchored regex misses the most common real opening.
+  let norm = normalizeMarks(text);
+  const isti = norm.match(ISTI_ADHA_PREFIX_RE);
+  if (isti) norm = norm.slice(isti[0].length).trim();
   const match = norm.match(BISMILLAH_NORM_RE);
   if (!match) return false;
   return norm.slice(match[0].length).trim().length < 5;
@@ -88,6 +93,17 @@ export function isIstiAdhaOnly(text) {
 /** True only when the chunk is the preamble itself, not a verse that quotes it. */
 export function isPreRecitationPhrase(text) {
   return isIstiAdhaOnly(text);
+}
+
+/**
+ * Bismillah opens every surah but At-Tawbah, so on its own it says nothing
+ * about which surah is being recited — it is only a numbered ayah in Al-Fatiha
+ * (and quoted mid-verse at 27:30, which carries extra words and so is not
+ * "bismillah only"). Treat the whole opening — isti'adha, bismillah, or both —
+ * as preamble that must never reach the matcher on its own.
+ */
+export function isOpeningPreamble(text) {
+  return isIstiAdhaOnly(text) || isBismillahOnly(text);
 }
 
 export function isPreambleOnly(text) {
