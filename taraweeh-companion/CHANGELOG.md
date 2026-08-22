@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.16 - 2026-08-22
+
+- Simulator PC mic no longer applies a flat 8× gain. Quiet frames still boost (cap 8×); loud recitation is sent as-is. Flat 8× was clipping live recitation so Groq emitted `ترجمة نانسي قنقر` / `من` instead of the verse.
+
 ## 2.6.15 - 2026-08-22
 
 - Simulator/app boot: `DEFAULT_SETTINGS` was missing its closing brace after `reciteMode` was added, so the page script never ran and EvenHub showed a dead shell.
