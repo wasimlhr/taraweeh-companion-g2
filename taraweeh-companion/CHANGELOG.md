@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.6.9 - 2026-08-22
+
+- Display now tracks the reciter far more closely instead of trailing a verse behind.
+- Reading pace is measured from the reciter's actual speech instead of a fixed guess.
+- The end-of-ayah breath is learned, so slow recitation no longer runs ahead.
+- Follows the reciter when they skip forward or start a different surah.
+- Recovers within seconds after takbeer instead of showing the wrong surah.
+
 ## 2.6.8 - 2026-08-22
 
 - Fixed recitation never being detected on quieter phone and G2 microphones.
