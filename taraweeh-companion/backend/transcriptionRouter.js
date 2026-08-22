@@ -111,7 +111,9 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
   const name = resolveProvider(opts.provider, keys);
   const apiKey = keys[name] || '';
   if (!apiKey) {
-    throw new Error(`${engineLabel(name)} API key missing. Add it in Settings, or set SHARED_${name.toUpperCase()}_KEY.`);
+    const msg = `${engineLabel(name)} API key missing. Add it in Settings, or set SHARED_${name.toUpperCase()}_KEY.`;
+    emit?.({ component: 'model', status: 'error', provider: name, message: msg });
+    throw new Error(msg);
   }
 
   const extra = {};

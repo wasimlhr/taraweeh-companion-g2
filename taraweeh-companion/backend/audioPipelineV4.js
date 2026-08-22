@@ -571,7 +571,16 @@ export class AudioPipeline {
   _handleTranscriptionError(err) {
     if (!err) return;
     const is429 = err.status === 429 || /HTTP 429|rate.?limit/i.test(err.message || '');
-    if (!is429) return;
+    if (!is429) {
+      this.onStatus({
+        component: 'model',
+        status: 'error',
+        provider: this.resolvedProvider || this.whisperOpts?.provider || 'groq',
+        message: String(err.message || 'transcription failed').slice(0, 160),
+        httpStatus: err.status || 0,
+      });
+      return;
+    }
     // Short pause only — long 15–60s freezes were a byproduct of failed lock
     // (search kept retrying). Faster lock is the real fix.
     const hintMs = err.retryAfterMs || 0;
