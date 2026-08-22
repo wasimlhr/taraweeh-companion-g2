@@ -3479,7 +3479,7 @@ body {
   };
 
   window.setProvider = function (p, reinitialize) {
-    p = (p === 'openai') ? 'openai' : 'groq';
+    p = ['groq', 'openai', 'deepgram'].indexOf(p) >= 0 ? p : 'groq';
     S.settings.transcriptionProvider = p;
     try { saveSettings(); } catch (_) {}
     // Settings view
@@ -3760,8 +3760,11 @@ body {
     S.settings.openaiApiKey = oaiEl ? (oaiEl.value || '').trim() : (S.settings.openaiApiKey || '');
     var dgEl = document.getElementById('settingDeepgramKey');
     if (dgEl) S.settings.deepgramApiKey = dgEl.value.trim();
-    S.settings.transcriptionProvider =
-      document.getElementById('btnProviderOpenAI').classList.contains('active') ? 'openai' : 'groq';
+    // setProvider() is the source of truth here. Re-deriving the provider from
+    // button state on save silently dropped any provider this branch did not
+    // name, which is how Deepgram kept reverting to Groq.
+    S.settings.transcriptionProvider = ['groq', 'openai', 'deepgram']
+      .indexOf(S.settings.transcriptionProvider) >= 0 ? S.settings.transcriptionProvider : 'groq';
     S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')
       ? 'transliteration' : 'transliteration';
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
