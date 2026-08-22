@@ -204,7 +204,19 @@ Because of the 10-second minimum, roughly 40% of that quota is padding on 6-seco
 | 10s / 6s | 6,275 (87%) | ~69 min | 94.7% |
 | 10s / 7.5s | 4,968 (69%) | ~87 min | 83.1% |
 
-To buy headroom at a known accuracy cost, raise `GROQ_LOCKED_MIN_INTERVAL_MS`. For hosting a full Taraweeh, a paid Groq key is the better answer: at $0.04 per audio-hour, a 90-minute session costs about **$0.12**, or roughly **$3.60 for all 30 nights**.
+To buy headroom at a known accuracy cost, raise `GROQ_LOCKED_MIN_INTERVAL_MS`.
+
+**OpenAI has no practical rate-limit problem.** Measured against the live `whisper-1` endpoint on a real recitation, the API's own `x-ratelimit` headers reported **2,499 of 2,500 requests remaining** while the pipeline ran at 15 rpm — about 0.6% of the cap. Latency is higher than Groq (median 1.25s, p95 2.26s versus ~350ms), but every call stayed inside the pipeline's 3s stale-result threshold: 0 of 69 were dropped, and tracking held at **99.2% within one ayah**.
+
+Choosing a provider for a full session:
+
+| provider | rpm | cost / 90-min session | cost / 30 nights | latency | limit |
+|---|---|---|---|---|---|
+| Groq free (turbo) | 12 | free | free | ~350ms | **rate-limited at ~60 min** |
+| Groq paid (turbo) | 12 | ~$0.07 | ~$2.16 | ~350ms | none in practice |
+| OpenAI (`whisper-1`) | 15 | ~$0.81 | ~$24.30 | ~1.25s | none in practice |
+
+Groq's paid tier is roughly 10× cheaper and 3× faster, so it is the better primary when available. OpenAI is the right failover, and the right primary if Groq sign-ups are closed — it is measurably accurate and never rate-limits, just slower and dearer.
 
 ### 2. Transcription providers
 

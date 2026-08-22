@@ -30,6 +30,8 @@ const OPTS = {
   dir: arg('dir', null),
   targetRms: parseFloat(arg('target-rms', '0')),   // 0 = leave the audio as-is
   whisper: arg('whisper', ''),                     // live local model, if given
+  provider: arg('provider', 'groq'),               // groq (stubbed) or openai (live)
+  keyFile: arg('key-file', ''),                    // path to an API key, never inlined
   asrLatency: parseInt(arg('asr-latency', '350'), 10),   // Groq-like, for transcript mode
   taraweeh: argv.includes('--taraweeh'),
   fast: argv.includes('--fast'),
@@ -105,14 +107,43 @@ function wavHeader(dataLen) {
 //                   timestamp with Groq-like latency. Real recitation, real ASR
 //                   errors, realistic timing — but the model saw more context
 //                   than a 6s request would, so ASR quality is optimistic.
+// A third way: --provider=openai sends the real WAV to the real hosted API, so
+// the provider code, its latency and its transcription quality are all live.
+const LIVE_OPENAI = OPTS.provider === 'openai';
+const apiKey = OPTS.keyFile ? readFileSync(OPTS.keyFile, 'utf8').trim() : '';
+if (LIVE_OPENAI && !apiKey) throw new Error('--provider=openai needs --key-file');
+
 let transcript = null;
-if (!OPTS.whisper) {
+if (!OPTS.whisper && !LIVE_OPENAI) {
   transcript = JSON.parse(readFileSync(join(OPTS.dir, 'transcript.json'), 'utf8'));
 }
 
 const asrCalls = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
+  // Live provider: let it through untouched and just time it.
+  if (LIVE_OPENAI) {
+    if (!String(url).includes('api.openai.com')) return realFetch(url, init);
+    const sent = init?.body?.get?.('file');
+    const bytes = sent ? sent.size : 44;
+    const t0 = Date.now();
+    const res = await realFetch(url, init);
+    const body = await res.text();
+    let parsed = {}; try { parsed = JSON.parse(body); } catch { /* non-JSON error body */ }
+    asrCalls.push({
+      atMs: Date.now() - clockStart,
+      windowMs: Math.round((bytes - 44) / BYTES_PER_MS),
+      latencyMs: Date.now() - t0,
+      words: parsed.words?.length || 0,
+      text: parsed.text || '',
+      status: res.status,
+      // The provider tells us our own limits; no need to guess them.
+      limitReq: res.headers.get('x-ratelimit-limit-requests'),
+      remainReq: res.headers.get('x-ratelimit-remaining-requests'),
+      resetReq: res.headers.get('x-ratelimit-reset-requests'),
+    });
+    return new Response(body, { status: res.status, headers: res.headers });
+  }
   if (!String(url).includes('api.groq.com')) return realFetch(url, init);
   const file = init?.body?.get?.('file');
   const buf = Buffer.from(await file.arrayBuffer());
@@ -161,7 +192,9 @@ let clockStart = 0;
 const pipeline = new AudioPipeline({
   preferredSurah: 0,
   audioSource: 'browser',
-  whisperOpts: { provider: 'groq', apiKey: 'gsk_real_audio_bench' },
+  whisperOpts: LIVE_OPENAI
+    ? { provider: 'openai', apiKey }
+    : { provider: 'groq', apiKey: 'gsk_real_audio_bench' },
   onStateUpdate: (msg) => {
     if (msg.type !== 'state') return;
     const st = msg.state || {};
@@ -254,8 +287,26 @@ function report() {
   out(`ayah pace           : ${(bounds.reduce((a, b) => a + (b.endMs - b.startMs), 0) / bounds.length / 1000).toFixed(1)}s per ayah`);
   out(`first lock at       : ${firstIdx < 0 ? 'NEVER' : `${(samples[firstIdx].atMs / 1000).toFixed(1)}s`}`);
   out(`ASR calls           : ${asrCalls.length} (${(asrCalls.length / (totalMs / 60000)).toFixed(1)} per min), ${emptyCalls} returned nothing`);
-  out(`ASR source          : ${OPTS.whisper ? `live ${OPTS.whisper}` : `${transcript.model.split('/').pop()} (${transcript.compute}), replayed`}`);
-  quotaReport(out, asrCalls, totalMs);
+  out(`ASR source          : ${LIVE_OPENAI ? 'LIVE OpenAI whisper-1' : OPTS.whisper ? `live ${OPTS.whisper}` : `${transcript.model.split('/').pop()} (${transcript.compute}), replayed`}`);
+  const errs4xx = asrCalls.filter((c) => c.status && c.status >= 400);
+  if (LIVE_OPENAI) {
+    const billedMin = asrCalls.reduce((s2, c) => s2 + c.windowMs / 1000, 0) / 60;
+    out(`OpenAI cost         : ${asrCalls.length} calls, ${billedMin.toFixed(1)} audio-min = $${(billedMin * 0.006).toFixed(3)} at $0.006/min`);
+    out(`OpenAI errors       : ${errs4xx.length}${errs4xx.length ? ' (' + [...new Set(errs4xx.map((c) => c.status))].join(', ') + ')' : ''}`);
+    const p95 = [...asrCalls.map((c) => c.latencyMs)].sort((a, b) => a - b)[Math.floor(asrCalls.length * 0.95)] || 0;
+    out(`  latency p95       : ${p95}ms (pipeline drops same/older results past 3000ms)`);
+    const stale = asrCalls.filter((c) => c.latencyMs > 3000).length;
+    out(`  over stale limit  : ${stale} of ${asrCalls.length} calls exceeded 3000ms`);
+    const last = [...asrCalls].reverse().find((c) => c.limitReq);
+    if (last) {
+      out(`OpenAI rate limit   : ${last.remainReq} of ${last.limitReq} requests left, resets in ${last.resetReq}`);
+      const used = Number(last.limitReq) - Number(last.remainReq);
+      out(`  headroom at ${(asrCalls.length / (totalMs / 60000)).toFixed(1)} rpm : ${((asrCalls.length / (totalMs / 60000)) / Number(last.limitReq) * 100).toFixed(0)}% of the per-minute cap (used ${used})`);
+    } else {
+      out('OpenAI rate limit   : no x-ratelimit headers returned');
+    }
+  }
+  if (!LIVE_OPENAI) quotaReport(out, asrCalls, totalMs);
   out(`ASR latency         : median ${lat.length ? lat[Math.floor(lat.length / 2)] : 0}ms (Groq is ~350ms)`);
   out(`IN SYNC (exact)     : ${pct(numeric.filter((e) => e === 0).length)}`);
   out(`within +/-1 ayah    : ${pct(numeric.filter((e) => Math.abs(e) <= 1).length)}`);
