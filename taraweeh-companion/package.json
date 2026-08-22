@@ -20,7 +20,9 @@
     "build:evenhub": "node scripts/build-evenhub-dist.js",
     "pack:evenhub": "node scripts/pack-evenhub.js",
     "pack:evenhub:check": "node scripts/pack-evenhub.js --check",
-    "test": "node --test backend/transcriptionRouter.test.js"
+    "test": "node --test backend/transcriptionRouter.test.js",
+    "test:version": "node scripts/check-version-alignment.js",
+    "test:provider-key": "node scripts/check-provider-key.js"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.10",

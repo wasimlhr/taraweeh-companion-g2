@@ -5,7 +5,7 @@
 - Groq lock confirmed on live recitation. Pack for EvenHub upload.
 - Main-screen provider labels stay on one line. Missing-key / 401 / 403 errors name the engine you picked (Groq, OpenAI, Deepgram, ElevenLabs), not always Groq.
 - Ready is only shown when that engine actually has a key. A missing Groq key no longer looks Ready while the panel sits at 0.0s. Tapping Groq again does not tear down a live session.
-- App version is 2.6.27 in the UI, package.json, and app.json.
+- App version is 2.6.27 in the UI, both package.json files, app.json, and the backend package. Unknown engines are labeled Engine, not Groq or OpenAI.
 
 ## 2.6.26 - 2026-08-22
 

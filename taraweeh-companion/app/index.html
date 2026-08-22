@@ -1590,8 +1590,12 @@ body {
     };
   }
   function providerLabel(p) {
-    p = sanitizeProvider(p);
-    return p === 'groq' ? 'Groq' : p === 'deepgram' ? 'Deepgram' : p === 'elevenlabs' ? 'ElevenLabs' : 'OpenAI';
+    p = String(p || '').toLowerCase();
+    if (p === 'groq') return 'Groq';
+    if (p === 'openai') return 'OpenAI';
+    if (p === 'deepgram') return 'Deepgram';
+    if (p === 'elevenlabs') return 'ElevenLabs';
+    return p ? p : 'Engine';
   }
 
   // Stable per-install session ID. Backend uses this to dedup duplicate WS
@@ -1736,7 +1740,7 @@ body {
           setStatus('Selected engine unavailable — using the backup transcriber', 'err');
           break;
         case 'error':
-          var provLbl = providerLabel(s.provider || _modelProvider || 'groq');
+          var provLbl = providerLabel(s.provider || _modelProvider);
           var detail = s.message ? (' — ' + s.message) : '';
           if (s.httpStatus === 429 && s.retryAfterMs > 0) {
             var waitS = Math.ceil(s.retryAfterMs / 1000);
