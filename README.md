@@ -222,8 +222,8 @@ Both providers were run on identical real recitations. **Tracking accuracy is a 
 | median latency | **343ms** | 1,249ms |
 | p95 latency | **1,442ms** | 2,260ms |
 | cost, same 275s recitation | **$0.006** | $0.042 |
-| cost / 90-min session | **~$0.07** | ~$0.81 |
-| cost / 30 nights | **~$2.16** | ~$24.30 |
+| cost / 90-min session | **~$0.12** | ~$0.81 |
+| cost / 30 nights | **~$3.60** | ~$24.30 |
 | rate limit | 20 rpm, 2,000/day (54% per session) | 2,500 rpm (**0.6% used**) |
 | word timestamps | yes | yes |
 
@@ -231,7 +231,24 @@ On isolated 6-second windows scored through the app's matcher (`scripts/compare-
 
 **Use Groq as primary**: same accuracy, 3.6× faster, 7× cheaper, higher match confidence. Its one real constraint is 2,000 requests/day, about one long session per key per day, and the 20 rpm cap which nothing else should share.
 
-**Use OpenAI as failover or primary if Groq access is a problem**: measurably just as accurate for tracking and effectively never rate-limited, at ~10× the cost and ~3× the latency. Its latency still sits inside the pipeline's 3s stale-result threshold — 0 of 69 calls were dropped.
+**Use OpenAI as failover or primary if Groq access is a problem**: measurably just as accurate for tracking and effectively never rate-limited, at higher cost and latency. Its latency still sits inside the pipeline's 3s stale-result threshold — 0 of 69 calls were dropped.
+
+#### Which OpenAI model
+
+`whisper-large-v3-turbo` is **not** available on OpenAI's API — the weights are OpenAI's and open, but the hosted endpoint returns HTTP 404 for it (and for `whisper-large-v3`). Groq serves turbo; OpenAI does not. On OpenAI these are the options, measured on the same recitation:
+
+| model | word timestamps | median latency | $/min | tracking (within ±1) | exact |
+|---|---|---|---|---|---|
+| `whisper-1` (default) | **yes** | 1,249ms | $0.006 | 99.2% | 64.3% |
+| `gpt-4o-mini-transcribe` | no | **455ms** | **$0.003** | 98.7% | **74.3%** |
+| `gpt-4o-transcribe` | no | ~1,365ms | $0.006 | not measured | – |
+| `gpt-transcribe` | no | ~465ms | $0.0045 | not measured | – |
+
+`whisper-1` is the only one that returns word timestamps; the `gpt-4o-*` transcribe models reject `verbose_json` with HTTP 400. That matters less than expected: the display timer re-phases from the **transcript text**, not from timestamps, so `gpt-4o-mini-transcribe` tracked just as well while being 2.7× faster and half the price. Losing timestamps does fall pace learning back to the confirmation-interval clock, which is a weaker estimator.
+
+Set `OPENAI_TRANSCRIBE_MODEL` to switch. The default stays `whisper-1` because the mini result rests on two recitations from one reciter — worth testing on your own imam before switching production traffic.
+
+Cost for a 90-minute session: Groq turbo **~$0.12**, `gpt-4o-mini-transcribe` ~$0.41, `gpt-transcribe` ~$0.61, `whisper-1` ~$0.81.
 
 ### 2. Transcription providers
 

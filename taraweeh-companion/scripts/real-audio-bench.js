@@ -32,6 +32,10 @@ const OPTS = {
   whisper: arg('whisper', ''),                     // live local model, if given
   provider: arg('provider', 'groq'),               // groq (stubbed) or openai (live)
   keyFile: arg('key-file', ''),                    // path to an API key, never inlined
+  // Swap the model without touching production code. The gpt-4o-* transcribe
+  // models reject verbose_json, so asking for one also drops the timestamp
+  // request — which is the point: it measures what losing word timestamps costs.
+  model: arg('model', ''),
   asrLatency: parseInt(arg('asr-latency', '350'), 10),   // Groq-like, for transcript mode
   taraweeh: argv.includes('--taraweeh'),
   fast: argv.includes('--fast'),
@@ -130,8 +134,20 @@ globalThis.fetch = async (url, init) => {
     if (!String(url).includes(LIVE_HOST)) return realFetch(url, init);
     const sent = init?.body?.get?.('file');
     const bytes = sent ? sent.size : 44;
+    let req = init;
+    if (OPTS.model) {
+      const form = new FormData();
+      for (const [k, v] of init.body.entries()) {
+        if (k === 'model' || k === 'response_format' || k === 'timestamp_granularities[]') continue;
+        form.append(k, v);
+      }
+      form.append('model', OPTS.model);
+      form.append('response_format', /^gpt-/.test(OPTS.model) ? 'json' : 'verbose_json');
+      if (!/^gpt-/.test(OPTS.model)) form.append('timestamp_granularities[]', 'word');
+      req = { ...init, body: form };
+    }
     const t0 = Date.now();
-    const res = await realFetch(url, init);
+    const res = await realFetch(url, req);
     const body = await res.text();
     let parsed = {}; try { parsed = JSON.parse(body); } catch { /* non-JSON error body */ }
     asrCalls.push({
@@ -293,13 +309,18 @@ function report() {
   out(`ayah pace           : ${(bounds.reduce((a, b) => a + (b.endMs - b.startMs), 0) / bounds.length / 1000).toFixed(1)}s per ayah`);
   out(`first lock at       : ${firstIdx < 0 ? 'NEVER' : `${(samples[firstIdx].atMs / 1000).toFixed(1)}s`}`);
   out(`ASR calls           : ${asrCalls.length} (${(asrCalls.length / (totalMs / 60000)).toFixed(1)} per min), ${emptyCalls} returned nothing`);
-  const label = LIVE ? `LIVE ${OPTS.provider === 'openai' ? 'OpenAI whisper-1' : 'Groq whisper-large-v3-turbo'}` : null;
+  const label = LIVE ? `LIVE ${OPTS.provider} ${OPTS.model || (OPTS.provider === 'openai' ? 'whisper-1' : 'whisper-large-v3-turbo')}` : null;
   out(`ASR source          : ${label || (OPTS.whisper ? `live ${OPTS.whisper}` : `${transcript.model.split('/').pop()} (${transcript.compute}), replayed`)}`);
   const errs4xx = asrCalls.filter((c) => c.status && c.status >= 400);
   if (LIVE) {
     const audioMin = asrCalls.reduce((s2, c) => s2 + c.windowMs / 1000, 0) / 60;
     // Groq bills a 10s minimum per request; OpenAI bills by the minute.
-    const cost = LIVE_OPENAI ? audioMin * 0.006
+    // OpenAI bills per minute of actual audio and the rate varies by model;
+    // Groq bills a 10-second minimum per request.
+    const OPENAI_RATE = { 'whisper-1': 0.006, 'gpt-4o-transcribe': 0.006,
+      'gpt-4o-mini-transcribe': 0.003, 'gpt-transcribe': 0.0045 };
+    const cost = LIVE_OPENAI
+      ? audioMin * (OPENAI_RATE[OPTS.model || 'whisper-1'] ?? 0.006)
       : (asrCalls.reduce((s2, c) => s2 + Math.max(10, c.windowMs / 1000), 0) / 3600) * 0.04;
     out(`cost                : ${asrCalls.length} calls, ${audioMin.toFixed(1)} audio-min = $${cost.toFixed(3)}`);
     out(`errors              : ${errs4xx.length}${errs4xx.length ? ' (' + [...new Set(errs4xx.map((c) => c.status))].join(', ') + ')' : ''}`);
@@ -307,6 +328,8 @@ function report() {
     out(`  latency p95       : ${p95}ms (pipeline drops same/older results past 3000ms)`);
     const stale = asrCalls.filter((c) => c.latencyMs > 3000).length;
     out(`  over stale limit  : ${stale} of ${asrCalls.length} calls exceeded 3000ms`);
+    const withWords = asrCalls.filter((c) => c.words > 0).length;
+    out(`  word timestamps   : ${withWords} of ${asrCalls.length} responses carried them`);
     const last = [...asrCalls].reverse().find((c) => c.limitReq || c.limitAudio);
     if (last) {
       if (last.limitReq) out(`rate limit requests : ${last.remainReq} of ${last.limitReq} left, resets in ${last.resetReq}`);
