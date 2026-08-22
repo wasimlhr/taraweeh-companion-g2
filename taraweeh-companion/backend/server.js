@@ -281,9 +281,13 @@ wss.on('connection', (ws, req) => {
       console.log(`[Init] SHARED mode — Groq=${hasSharedGroq ? 'on' : 'off'}, OpenAI failover=${hasSharedOpenAI ? 'on' : 'off'}`);
       send({ type: 'sys_status', component: 'model', status: 'ready', provider: 'shared', byok: false });
     } else {
-      whisperOpts = { ...whisperOpts, provider: 'groq', apiKey: '' };
-      console.log('[Init] No API key and no shared keys configured — transcribe will fail');
-      send({ type: 'sys_status', component: 'model', status: 'error', provider: 'groq', message: 'API key required (Groq or OpenAI)' });
+      whisperOpts = { ...whisperOpts, provider: clientProvider || 'groq', apiKey: '', model: clientModel };
+      console.log(`[Init] No API key and no shared keys configured (provider=${clientProvider || 'groq'}) — transcribe will fail`);
+      // Report the provider the client actually picked, so the pill and banner
+      // do not blame Groq when the user selected something else.
+      const shownProvider = clientProvider || 'groq';
+      send({ type: 'sys_status', component: 'model', status: 'error', provider: shownProvider,
+        message: 'API key required (Groq, OpenAI or Deepgram)' });
     }
     const requestedTranslation = (opts.lang && String(opts.lang).trim()) || '';
     const translationLang = sanitizeTranslationLang(requestedTranslation);

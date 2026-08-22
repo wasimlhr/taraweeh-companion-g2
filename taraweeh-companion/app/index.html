@@ -1701,6 +1701,18 @@ body {
               setPill('sPillModel', 'err', 'OpenAI: error');
               setStatus('OpenAI error' + detail + ' — check key/network', 'err');
             }
+          } else if (s.provider === 'deepgram' || _modelProvider === 'deepgram') {
+            if (s.httpStatus === 401 || s.httpStatus === 403 || /invalid.*key|unauthoriz|forbidden/i.test(s.message || '')) {
+              setPill('sPillModel', 'err', 'Deepgram: bad API key');
+              setStatus('Deepgram API key invalid — open Settings to fix', 'err');
+            } else if (s.httpStatus === 429 && s.retryAfterMs > 0) {
+              var dgWait = Math.ceil(s.retryAfterMs / 1000);
+              setPill('sPillModel', 'warn', 'Deepgram: rate limit — ' + dgWait + 's');
+              setStatus('Deepgram rate-limited, retry in ' + dgWait + 's', 'result');
+            } else {
+              setPill('sPillModel', 'err', 'Deepgram: error');
+              setStatus('Deepgram error' + detail + ' — check key/network', 'err');
+            }
           } else {
             setPill('sPillModel', 'err', provLbl + ': error');
             setStatus(provLbl + ' error' + detail, 'err');
