@@ -781,7 +781,9 @@ export class AudioPipeline {
     this._userSearchingDisplay = false;
   }
 
-  // After a matched verse + pause, re-enter global search for surah-to-surah jumps.
+  // After a matched verse + pause, listen for the next recited verse.
+  // Do not keep the previous ayah's audio or transcripts — mixing them is why
+  // Practice re-locked the old verse instead of matching what you just recited.
   _enterPracticeFreshSearch() {
     if (!this.practiceMode || this.state.mode !== 'LOCKED') return;
     console.log(`[Pipeline] Practice fresh run — listening for next verse (was ${this._displaySurah}:${this._displayAyah})`);
@@ -794,24 +796,22 @@ export class AudioPipeline {
     this._whisperAyah  = 0;
     this._lastHeardWordMs = 0;
     this._lastTexts = [];
+    this._lastSearchTexts = [];
+    this._lastPromptText = '';
     this._lockedInFlight = 0;
     this._lockedLastAppliedSeq = 0;
     this._lockedVoicedMs = 0;
     this._lockedLastVoiceAt = 0;
     this._searchWinIdx = 0;
-    if (this._lockedBuf.length > 0) {
-      this._searchBuf = Buffer.concat([this._searchBuf, this._lockedBuf]);
-      this._lockedBuf = Buffer.alloc(0);
-    }
+    this._searchGen = (this._searchGen || 0) + 1;
+    const tail = this._lockedBuf.length > SEARCH_PREROLL_BYTES
+      ? this._lockedBuf.subarray(this._lockedBuf.length - SEARCH_PREROLL_BYTES)
+      : this._lockedBuf;
+    this._searchBuf = Buffer.from(tail);
+    this._lockedBuf = Buffer.alloc(0);
+    this._searchVoicedMs = 0;
+    this._searchLastVoiceAt = 0;
     this._emitState(null, null);
-    const bufMs = this._searchBuf.length / BYTES_PER_MS;
-    if (bufMs >= PRACTICE_FRESH_SEARCH_MS && !this.processing) {
-      setTimeout(() => {
-        if (this.active && this.state.mode === 'SEARCHING' && !this.processing) {
-          this._processSearchChunk();
-        }
-      }, 0);
-    }
   }
 
   _maybePracticeFreshRun() {

@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.9</span>
+      <span class="version" id="versionEl">v2.6.10</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -946,9 +946,10 @@ body {
 
   <div class="btn-group" style="margin-top:8px">
     <div class="mv-toggle-group" role="group" aria-label="Recitation mode" style="margin-bottom:8px">
-      <button type="button" class="mv-toggle-btn" id="btnModeTaraweeh" onclick="setReciteMode('taraweeh')">🌙 Taraweeh</button>
-      <button type="button" class="mv-toggle-btn active" id="btnModePractice" onclick="setReciteMode('practice')">📖 Practice</button>
+      <button type="button" class="mv-toggle-btn active" id="btnModeTaraweeh" onclick="setReciteMode('taraweeh')">🌙 Taraweeh</button>
+      <button type="button" class="mv-toggle-btn" id="btnModePractice" onclick="setReciteMode('practice')">📖 Practice</button>
     </div>
+    <span class="s-hint" id="reciteModeHint" style="display:block;margin:0 0 8px;font-size:11px;line-height:1.45">Taraweeh follows the prayer and auto-advances. Practice matches the verse you recite and stays there — no auto-forward.</span>
     <button id="paceModeBtn" class="mode-btn" onclick="cyclePaceMode()" title="Tap to cycle: Follow mode → Fast recitor → Slow recitor (Taraweeh only)">👣 Follow mode</button>
   </div>
 
@@ -1155,7 +1156,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.9';
+  const APP_VERSION = 'v2.6.10';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1321,6 +1322,12 @@ body {
     var paceOn = _reciteMode === 'taraweeh';
     var paceBtn = document.getElementById('paceModeBtn');
     if (paceBtn) paceBtn.style.display = paceOn ? '' : 'none';
+    var hint = document.getElementById('reciteModeHint');
+    if (hint) {
+      hint.textContent = _reciteMode === 'practice'
+        ? 'Practice: listen and match the verse you recite. Display stays on that ayah — no auto-forward.'
+        : 'Taraweeh: lock the recitation, then follow with auto-advance (ruku / sajda / next ayah).';
+    }
   }
 
   window.setReciteMode = function (mode) {

@@ -221,4 +221,20 @@ describe('anchor first-lock speed', () => {
     assert.equal(next.surah, 1);
     assert.equal(next.ayah, 2);
   });
+
+  it('Practice locks the recited verse on the first hit (no 2-win wait)', () => {
+    const next = processWhisperResult('الحمد لله رب العالمين', createState(), { practiceMode: true });
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 1);
+    assert.equal(next.ayah, 2);
+  });
+
+  it('Practice jumps to a newly recited verse instead of auto-advancing', () => {
+    const locked = processWhisperResult('الحمد لله رب العالمين', createState(), { practiceMode: true });
+    assert.equal(locked.mode, 'LOCKED');
+    const jumped = processWhisperResult('قل هو الله احد', locked, { practiceMode: true });
+    assert.equal(jumped.mode, 'LOCKED');
+    assert.equal(jumped.surah, 112);
+    assert.equal(jumped.ayah, 1);
+  });
 });

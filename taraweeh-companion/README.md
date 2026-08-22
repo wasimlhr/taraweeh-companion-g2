@@ -70,9 +70,10 @@ Taraweeh Companion listens to a reciter, identifies which ayah is being recited 
 - **Surah selector** — dropdown to hint the preferred surah for faster initial lock
 
 ### Modes
-- **Fast Mode** — wider scan windows and faster timers for quick reciters
-- **Taraweeh Mode** — prayer-aware state machine with ruku/qiyam tracking
-- **Surah preference** — optional hint to prioritize a specific surah during search
+- **Taraweeh** — lock the recitation, then follow the prayer with auto-advance (ruku / sajda / next ayah)
+- **Practice** — listen and match the verse you recite; display stays on that ayah (no auto-forward)
+- **Fast / Slow pace** — Taraweeh-only timer follow for quick or slow reciters
+- **Surah preference** — optional hint to prioritize a specific surah during Taraweeh search
 
 ---
 

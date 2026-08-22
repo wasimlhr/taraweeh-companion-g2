@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.10 - 2026-08-22
+
+- Clarified the two recitation modes: **Taraweeh** locks then auto-advances with the prayer; **Practice** only matches the verse you recite and stays there (no auto-forward).
+- Practice no longer mixes the previous ayah's audio/transcript into the next match after a pause.
+
 ## 2.6.9 - 2026-08-20
 
 - Groq and OpenAI each recognize recitation independently. Nothing is a backup; Auto failover is gone.
