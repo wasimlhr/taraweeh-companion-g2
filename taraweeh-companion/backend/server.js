@@ -331,14 +331,14 @@ wss.on('connection', (ws, req) => {
     // instead of advancing at the naive measured rate.
     if (pipeline.setFastMode) pipeline.setFastMode(!!opts.fastMode);
     if (pipeline.setSlowMode) pipeline.setSlowMode(!!opts.slowMode);
-    // Apply recitation mode before any audio — default Taraweeh (timer follow).
-    if (opts.taraweehMode && pipeline.setTaraweehMode) {
+    // Recitation mode: Practice wins if the client sent it. Default Taraweeh.
+    if (opts.practiceMode && pipeline.setPracticeMode) {
+      pipeline.setPracticeMode(true);
+    } else if (pipeline.setTaraweehMode) {
       pipeline.setTaraweehMode(true);
       if (pipeline.setPracticeMode) pipeline.setPracticeMode(false);
-    } else if (pipeline.setPracticeMode) {
-      pipeline.setPracticeMode(!!opts.practiceMode);
     }
-    console.log(`[Init] Pace: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'} (client), mode: ${opts.taraweehMode ? 'taraweeh' : (opts.practiceMode ? 'practice' : 'taraweeh')}`);
+    console.log(`[Init] Pace: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'} (client), mode: ${opts.practiceMode ? 'practice' : 'taraweeh'}`);
     send({ type: 'pipeline_version', version: pipelineVersion });
   }
 

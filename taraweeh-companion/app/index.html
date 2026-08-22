@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.12</span>
+      <span class="version" id="versionEl">v2.6.13</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1156,7 +1156,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.12';
+  const APP_VERSION = 'v2.6.13';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1335,14 +1335,24 @@ body {
     _reciteMode = mode;
     _taraweehMode = mode === 'taraweeh';
     _practiceMode = mode === 'practice';
+    if (S.settings) {
+      S.settings.reciteMode = mode;
+      try { saveSettings(); } catch (_) {}
+    }
     _updateReciteModeUI();
     if (_practiceMode) {
       stopPageFlip();
       stopCountdown();
     }
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: _taraweehMode }));
-      S.ws.send(JSON.stringify({ type: 'set_practice_mode', enabled: _practiceMode }));
+      // Practice first so a Taraweeh echo cannot clobber the selection.
+      if (_practiceMode) {
+        S.ws.send(JSON.stringify({ type: 'set_practice_mode', enabled: true }));
+        S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: false }));
+      } else {
+        S.ws.send(JSON.stringify({ type: 'set_taraweeh_mode', enabled: true }));
+        S.ws.send(JSON.stringify({ type: 'set_practice_mode', enabled: false }));
+      }
     }
     if (_taraweehMode) _updateTaraweehOverlay(_taraweehPos, _rakatCount);
   };
@@ -1541,7 +1551,7 @@ body {
     elevenlabsApiKey: '',
     transcriptionProvider: 'groq',
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
-  };
+    reciteMode: 'taraweeh',
 
   function sanitizePipelineVersion(v) {
     var normalized = String(v || '').toLowerCase().trim();
@@ -1737,13 +1747,10 @@ body {
       _syncPaceFlags();
       _updatePaceButton();
     } else if (s.type === 'taraweeh_mode') {
-      _taraweehMode = !!s.enabled;
-      if (_taraweehMode) { _reciteMode = 'taraweeh'; _practiceMode = false; }
-      _updateReciteModeUI();
+      if (s.position) _taraweehPos = s.position;
+      if (typeof s.rakat === 'number') _rakatCount = s.rakat;
+      if (_reciteMode === 'taraweeh') _updateTaraweehOverlay(_taraweehPos, _rakatCount);
     } else if (s.type === 'practice_mode' || s.type === 'verse_hold_mode') {
-      _practiceMode = !!s.enabled;
-      if (_practiceMode) { _reciteMode = 'practice'; _taraweehMode = false; }
-      _updateReciteModeUI();
       if (_practiceMode) { stopPageFlip(); stopCountdown(); }
     } else if (s.type === 'session_quota') {
       // Shared-mode per-session usage cap: warn at 80%, hard-stop at 100%.
@@ -3185,7 +3192,7 @@ body {
     initWave();
     // Clear any stale "Stopped" text from the last session immediately — state
     // updates will refine this once audio starts flowing.
-    setStatus('Listening\u2026');
+    setStatus('Listening\u2026' + (_practiceMode ? ' (Practice)' : ' (Taraweeh)'));
 
     // Only reconnect if not already connected — reuse existing connection if open
     if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
@@ -3195,7 +3202,7 @@ body {
       // here wastes initialization work and can duplicate provider calls.
       setReciteMode(_reciteMode);
       sendStartForCurrentAudioSource();
-      log('Reused existing WS, sent start', 'ok');
+      log('Reused existing WS, sent start (' + _reciteMode + ')', 'ok');
     }
 
     var btn = document.getElementById('recordBtn');
@@ -3338,6 +3345,12 @@ body {
         await Storage.attach(S.bridge);
         var freshSettings = loadSettings();
         S.settings = { ...S.settings, ...freshSettings };
+        if (S.settings.reciteMode === 'practice' || S.settings.reciteMode === 'taraweeh') {
+          _reciteMode = S.settings.reciteMode;
+          _taraweehMode = _reciteMode === 'taraweeh';
+          _practiceMode = _reciteMode === 'practice';
+          _updateReciteModeUI();
+        }
         // Refresh any settings inputs that were rendered with stale (empty)
         // values before bridge hydration finished.
         try {
@@ -3856,6 +3869,12 @@ body {
     }
 
     S.settings = loadSettings();
+    if (S.settings.reciteMode === 'practice' || S.settings.reciteMode === 'taraweeh') {
+      _reciteMode = S.settings.reciteMode;
+      _taraweehMode = _reciteMode === 'taraweeh';
+      _practiceMode = _reciteMode === 'practice';
+      _updateReciteModeUI();
+    }
     if (S.settings.paceMode === 'fast' || S.settings.paceMode === 'slow' || S.settings.paceMode === 'follow') {
       _paceMode = S.settings.paceMode;
     } else if (S.settings.slowMode) {

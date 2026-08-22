@@ -85,13 +85,13 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
   simulator: Object.freeze({
     source: 'simulator',
     removeDcOffset: true,
-    voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.0022'),
-    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.010'),
+    voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.005'),
+    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.020'),
     voiceNoiseMultiplier: parseFloat(process.env.SIMULATOR_VOICE_NOISE_MULTIPLIER || '1.5'),
     lockedVoiceGateFactor: parseFloat(process.env.SIMULATOR_LOCKED_VOICE_GATE_FACTOR || '0.8'),
     quietBoostThreshold: parseFloat(process.env.SIMULATOR_QUIET_BOOST_THRESHOLD || '0.015'),
     quietBoostTarget: parseFloat(process.env.SIMULATOR_QUIET_BOOST_TARGET || '0.08'),
-    maxBoostGain: parseFloat(process.env.SIMULATOR_MAX_BOOST_GAIN || '20'),
+    maxBoostGain: parseFloat(process.env.SIMULATOR_MAX_BOOST_GAIN || '2'),
   }),
   g2: Object.freeze({
     source: 'g2',
@@ -1282,8 +1282,8 @@ export class AudioPipeline {
     const sendMs = Math.round(searchChunk.length / BYTES_PER_MS);
     const rms = computeRms(searchChunk);
     const profile = this._audioProfile || AUDIO_SOURCE_PROFILES.g2;
-    if (this.practiceMode && rms < profile.voiceMinActivityRms) {
-      console.log(`[Pipeline] Practice: no verse yet (rms=${rms.toFixed(4)}) — not searching`);
+    if (rms < profile.voiceMinActivityRms) {
+      console.log(`[Pipeline] No verse yet (rms=${rms.toFixed(4)} gate=${profile.voiceMinActivityRms}) — not searching`);
       this.processing = false;
       return;
     }
@@ -1300,7 +1300,7 @@ export class AudioPipeline {
       let words = [];  // V4: Word timestamps from Whisper
       try {
         const audioToSend = applyClipGuard(searchChunk, rms, this._audioProfile || AUDIO_SOURCE_PROFILES.g2, {
-          quietBoost: !this.practiceMode,
+          quietBoost: false,
         });
         this._applyWhisperPrompt();
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);

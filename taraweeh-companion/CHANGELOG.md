@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.13 - 2026-08-22
+
+- Simulator search no longer 20×-boosts quiet noise into Groq. That was producing `موسيقى` / `ترجمة نانسي قنقر` instead of Fatiha.
+- STT search waits for real recitation RMS in both modes.
+- Practice selection is persisted and is no longer overwritten by Taraweeh status echoes. Init prefers Practice when the client asked for it.
+
 ## 2.6.12 - 2026-08-22
 
 - Practice uses the same first-lock as Taraweeh (instant Fatiha 1:2). The separate weaker Practice matcher is gone.
