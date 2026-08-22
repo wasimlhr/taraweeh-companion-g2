@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.23 - 2026-08-22
+
+- Practice is not Taraweeh: lock the ayah you recite (including repeats) and stay there. Do not wait for a few ayahs or show "Auto locking" after the verse is on glasses. Pause no longer drops back to searching.
+
 ## 2.6.22 - 2026-08-22
 
 - Local EvenHub sim was blank after a hard-reload: `app.json` entrypoint `index.html` 404'd at `/index.html`, and `/app/sdk/even_hub_sdk.js` 404'd so the SDK fell through to CDN (blank WebView). Both paths now serve the app/SDK.

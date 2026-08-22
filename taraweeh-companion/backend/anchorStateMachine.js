@@ -512,6 +512,18 @@ function handlePracticeLocked(whisperText, state, fastMode, opts) {
   const top = matches[0];
   const mc = top?.matchedWords?.length ?? 0;
   const jumped = top && (top.surah !== state.surah || top.ayah !== state.ayah);
+  if (top && !jumped) {
+    // Repeat of the shown ayah — stay locked. Do not wait for more ayahs.
+    return {
+      ...state,
+      mode: 'LOCKED',
+      confidence: Math.max(state.confidence || 0, top.score),
+      missedChunks: 0,
+      _matches: matches.slice(0, 3),
+      _locked: true,
+      lastKeywords: keywords,
+    };
+  }
   const farJump = jumped && (top.surah !== state.surah || Math.abs(top.ayah - state.ayah) > 2);
   if (farJump && top.score >= SINGLE_WIN_SCORE && mc >= 2) {
     console.log(`[Anchor] Practice heard [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)} (was ${state.surah}:${state.ayah})`);

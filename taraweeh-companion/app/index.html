@@ -808,7 +808,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v2.6.22</span>
+      <span class="version" id="versionEl">v2.6.23</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1156,7 +1156,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v2.6.22';
+  const APP_VERSION = 'v2.6.23';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1325,7 +1325,7 @@ body {
     var hint = document.getElementById('reciteModeHint');
     if (hint) {
       hint.textContent = _reciteMode === 'practice'
-        ? 'Practice: same lock as Taraweeh when you recite. Stays on that ayah — no auto-forward. Silent until you recite.'
+        ? 'Practice: lock the ayah you recite (including repeats). Stays there — no auto-forward, no multi-ayah wait.'
         : 'Taraweeh: lock the recitation, then follow with auto-advance (ruku / sajda / next ayah).';
     }
   }
@@ -2182,8 +2182,10 @@ body {
           var cPad  = Math.max(1, G2_CHARS - cRef.length - cPct.length - 3);
           var cHdr  = '\u25CB ' + cRef + ' '.repeat(cPad) + cPct;
           var cPages = buildPages(transForGlasses, state.transliteration, 1);
-          var lockDots = (state._lockingDots !== undefined) ? '.'.repeat(state._lockingDots) : '\u2026';
-          cPages[cPages.length - 1] += '\nAuto locking' + lockDots + ' ' + (state.candidateScore || 0) + '%';
+          if (!state.practiceMode) {
+            var lockDots = (state._lockingDots !== undefined) ? '.'.repeat(state._lockingDots) : '\u2026';
+            cPages[cPages.length - 1] += '\nAuto locking' + lockDots + ' ' + (state.candidateScore || 0) + '%';
+          }
           return { hdr: cHdr, pages: cPages };
         }
         if (state.completedSurah) {
@@ -2401,10 +2403,10 @@ body {
       var versePosEl = document.getElementById('versePos');
       var isCandidate = state.isCandidate;
       var isUserSearching = state.userSearching;
-      var scoreLabel = isCandidate ? ' \u007e' + (state.candidateScore || '') + '%' : (isUserSearching ? ' (Auto locking…)' : '');
+      var scoreLabel = (isCandidate && !_practiceMode) ? ' \u007e' + (state.candidateScore || '') + '%' : (isUserSearching && !_practiceMode ? ' (Auto locking…)' : '');
       versePosEl.textContent =
         (state.surahName || '') + '  \u2022  Ayah ' + (state.ayah || '') + ' of ' + (state.ayahTotal || '?') + scoreLabel;
-      versePosEl.style.opacity = (isCandidate || isUserSearching) ? '0.75' : '1';
+      versePosEl.style.opacity = (isCandidate || isUserSearching) && !_practiceMode ? '0.75' : '1';
 
       document.getElementById('verseArabic').textContent = state.arabic || '';
       document.getElementById('verseTranslit').textContent = state.transliteration || '';
@@ -2412,7 +2414,7 @@ body {
 
       // Dim the verse slightly while it's a candidate or user searching (still confirming)
       var verseCard = locked.querySelector ? locked.querySelector('.verse-card') : null;
-      if (verseCard) verseCard.style.opacity = (isCandidate || isUserSearching) ? '0.75' : '1';
+      if (verseCard) verseCard.style.opacity = (isCandidate || isUserSearching) && !_practiceMode ? '0.75' : '1';
 
       // confidence from backend is 0-1 float
       var conf = isCandidate
@@ -2425,10 +2427,12 @@ body {
       var statusLabel = state.syncing
         ? 'Syncing recitation\u2026 Heard ' + (state.whisperSurah || '?') + ':' + (state.whisperAyah || '?')
           + ' \u2022 Shown ' + (state.surah || '?') + ':' + (state.ayah || '?')
+        : (_practiceMode && (state.surahName || state.surah))
+          ? (state.surahName || '') + ' \u2022 ' + (state.ayah || '')
         : (isCandidate || state.userSearching)
           ? 'Auto locking\u2026 ' + (state.surahName || '') + ' \u2022 ' + (state.ayah || '') + (isCandidate ? ' (' + (state.candidateScore || '') + '%)' : '')
           : (state.surahName || '') + ' \u2022 ' + (state.ayah || '');
-      setStatus(statusLabel, (state.syncing || isCandidate || state.userSearching) ? '' : 'result');
+      setStatus(statusLabel, (state.syncing || ((isCandidate || state.userSearching) && !_practiceMode)) ? '' : 'result');
     } else {
       locked.style.display = 'none';
       var navRow = document.getElementById('verseNavRow');
@@ -2658,9 +2662,10 @@ body {
     }
     document.getElementById('matchCands').innerHTML = html;
 
-    // Lock progress
+    // Lock progress (Taraweeh only — Practice snaps on the recited ayah)
     var lp = msg.lockProgress;
-    if (lp && cands.length) {
+    if (lp && cands.length && !_practiceMode) {
+      document.getElementById('lockProgress').style.display = '';
       document.getElementById('lockProgress').style.display = '';
       var winsHtml = '';
       for (var i = 0; i < (lp.winsRequired || 2); i++) {
@@ -2674,6 +2679,8 @@ body {
         : lp.wins === 1 ? 'Auto locking… ' + lp.wins + '/' + lp.winsRequired + ' wins'
         : 'Auto locking…';
       document.getElementById('lockMsg').textContent = msg2;
+    } else {
+      document.getElementById('lockProgress').style.display = 'none';
     }
   }
 
@@ -2734,7 +2741,7 @@ body {
         S._lastGlassesState = Object.assign({}, msg.state, { _glassesSession: _glassesSessionId });
         if (msg.state.isCandidate || msg.state.mode === 'LOCKED') stopSearchingDots();
         if (_practiceMode && msg.state.userSearching && msg.state.arabic) stopSearchingDots();
-        if (msg.state.isCandidate) startLockingDots();
+        if (msg.state.isCandidate && !_practiceMode) startLockingDots();
         else stopLockingDots();
         // Force full rebuild when leaving LOCKED or when candidate verse changes so G2 reliably gets updates (textContainerUpgrade can fail over BLE)
         if (sessionStart ||

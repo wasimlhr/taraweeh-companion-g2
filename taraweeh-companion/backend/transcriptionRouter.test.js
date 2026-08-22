@@ -255,6 +255,15 @@ describe('anchor first-lock speed', () => {
     assert.equal(still.ayah, 2);
   });
 
+  it('Practice stays locked when the same ayah is recited again', () => {
+    const locked = processWhisperResult('الحمد لله رب العالمين', createState(), { practiceMode: true });
+    assert.equal(locked.mode, 'LOCKED');
+    const again = processWhisperResult('الحمد لله رب العالمين', locked, { practiceMode: true });
+    assert.equal(again.mode, 'LOCKED');
+    assert.equal(again.surah, 1);
+    assert.equal(again.ayah, 2);
+  });
+
   it('Practice snaps to the next recited Fatiha ayah (heard verse, not a timer)', () => {
     const locked = processWhisperResult('الحمد لله رب العالمين', createState(), { practiceMode: true });
     const next = processWhisperResult('الرحمن الرحيم', locked, { practiceMode: true });

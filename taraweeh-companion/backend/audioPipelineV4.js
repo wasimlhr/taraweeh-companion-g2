@@ -808,15 +808,10 @@ export class AudioPipeline {
   }
 
   _maybePracticeFreshRun() {
-    if (!this.practiceMode || this.state.mode !== 'LOCKED' || !this._practiceLastMatchMs) return;
-    const heldMs = Date.now() - this._practiceLastMatchMs;
-    if (heldMs < PRACTICE_FRESH_MIN_HOLD_MS) return;
-    // Silence since this verse was matched — ignore stale timestamps from pre-lock audio.
-    const silenceAnchor = Math.max(this._practiceLastMatchMs, this._lastHeardWordMs || 0);
-    const wordSilence = Date.now() - silenceAnchor;
-    if (wordSilence >= PRACTICE_FRESH_SILENCE_MS) {
-      this._enterPracticeFreshSearch();
-    }
+    // Practice is not Taraweeh: stay on the matched ayah through pauses and
+    // repeats. A newly recited verse snaps while still LOCKED. Do not drop
+    // back to SEARCHING ("Auto locking") after the ayah is already on glasses.
+    return;
   }
 
   _tryPracticeSnapFromMatches(anchorResult, words = []) {
@@ -1558,8 +1553,17 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       } else {
-        // Wait for anchor to lock — don't start display on weak candidates.
-        // Show candidate + "Auto locking" on glasses; only advance when properly locked.
+        // Practice: the verse on glasses IS the lock. Do not wait for Taraweeh
+        // 2-win / multi-ayah confirmation ("Auto locking").
+        if (this.practiceMode && this._tryPracticeSnapFromMatches(this.state, words)) {
+          this._resetSearchBuf();
+          this._lastLockedCall = 0;
+          this._lockedBuf = Buffer.alloc(0);
+          if (!stale()) this._emitState(text, rms);
+          if (!stale()) this.processing = false;
+          return;
+        }
+        // Taraweeh: wait for anchor to lock — show candidate + "Auto locking".
         if (!stale()) this._emitState(text, rms);
         if (!stale()) this._advanceSearchWindow();
       }
@@ -2922,6 +2926,7 @@ export class AudioPipeline {
         isCandidate:     isCandidate || false,
         candidateScore:  isCandidate ? Math.round(topScore * 100) : undefined,
         candidateMargin: isCandidate ? topMargin : undefined,
+        practiceMode:    !!this.practiceMode,
         completedSurah:     this._completedSurah || undefined,
         completedSurahName: this._completedSurah
           ? (getVerseData(this._completedSurah, 1, this.translationLang)?.surahName ?? `Surah ${this._completedSurah}`)
