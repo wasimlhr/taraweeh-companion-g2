@@ -264,6 +264,48 @@ describe('anchor first-lock speed', () => {
   });
 });
 
+describe('live Groq Ya-Sin typos (Fatiha lock does not count)', () => {
+  loadQuran();
+
+  it('locks Ya-Sin on the exact Groq string ياسين والقرمان الهكيم', () => {
+    const next = processWhisperResult('ياسين والقرمان الهكيم', createState(), {});
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 36);
+    assert.notEqual(next.surah, 1);
+    assert.notEqual(next.surah, 16);
+  });
+
+  it('locks Ya-Sin 36:1 on Groq first-chunk يسي', () => {
+    const next = processWhisperResult('يسي', createState(), {});
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 36);
+    assert.equal(next.ayah, 1);
+  });
+
+  it('locks Ya-Sin 36:3 on Groq إن لك للمرسلين', () => {
+    const next = processWhisperResult('إن لك للمرسلين', createState(), {});
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(next.surah, 36);
+    assert.equal(next.ayah, 3);
+  });
+
+  it('still locks Fatiha 1:2 and Ikhlas 112:1 on their live strings', () => {
+    const fatiha = processWhisperResult('الحمد لله', createState(), {});
+    assert.equal(fatiha.mode, 'LOCKED');
+    assert.equal(fatiha.surah, 1);
+    assert.equal(fatiha.ayah, 2);
+    const ikhlas = processWhisperResult('قل هو الله أهل الله السلام', createState(), {});
+    assert.equal(ikhlas.mode, 'LOCKED');
+    assert.equal(ikhlas.surah, 112);
+    assert.equal(ikhlas.ayah, 1);
+  });
+
+  it('does not treat الم as a distinctive opener lock', () => {
+    const next = processWhisperResult('الم', createState(), {});
+    assert.equal(next.mode, 'SEARCHING');
+  });
+});
+
 describe('live preamble strip (isti\'adha / bismillah)', () => {
   it('does not lock 16:98 on opening isti\'adha — keeps Ya-Sin tokens', async () => {
     const { prepareMatcherText, isPreambleOnly } = await import('./whisperClean.js');

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.18 - 2026-08-22
+
+- Live Ya-Sin lock: Groq already heard the opening (`يسي`, `ياسين والقرمان الهكيم`, `إن لك للمرسلين`) and the matcher dropped it. Spoken-form aliases, distinctive 1-word muqatta'at openers, and ه/ح + extra-letter repair now lock surah 36. Fatiha lock is not the bar.
+
 ## 2.6.17 - 2026-08-22
 
 - Restore 2.6.7 live matching: 3s first search window, 4s Groq search gap, 6s locked checks, no Whisper prompt, no client-side sim gain.

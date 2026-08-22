@@ -54,10 +54,14 @@ function normalizeDaggerAlef(text) {
 }
 
 function splitWords(text) {
-  return normalize(text)
+  let t = normalize(text)
     .replace(/يا\s+ايها/g, 'ياايها')
-    .split(/\s+/)
-    .filter(Boolean);
+    .replace(/[،,.؛;:!?؟]/g, ' ');
+  // Spoken forms Groq/Whisper emit for openings (live PC-mic log, 2026-08-22):
+  // "يا سين" / "إن لك" before tokenization.
+  t = t.replace(/يا\s+سين/g, 'يس');
+  t = t.replace(/ان\s+لك(?=\s|$)/g, 'انك');
+  return t.split(/\s+/).filter(Boolean).map(repairSpokenWord);
 }
 
 // Whisper spells out huruf muqatta'at — map them to what appears in the Quran
@@ -75,6 +79,60 @@ const MUQATTAAT_ALIASES = {
   'ق': 'ق', 'قاف': 'ق',
   'ن': 'ن', 'نون': 'ن',
 };
+
+// Unique 1-word surah openers. Do not include الم / الر / حم / طسم (ambiguous)
+// or ص / ق / ن (not 1-word ayahs). Live Groq "يسي" / "ياسين" must lock 36:1.
+const DISTINCTIVE_ONE_WORD_OPENERS = new Set(['يس', 'طه', 'كهيعص', 'المص', 'المر']);
+
+// Live Whisper typos from the EvenHub PC-mic log. Aliases apply on INPUT
+// (index-only muqatta'at aliases never saw "يسي" / "والقرمان" / "الهكيم").
+const SPOKEN_WORD_ALIASES = {
+  'ياسين': 'يس',
+  'يسي': 'يس',
+  'ياسي': 'يس',
+  'طاها': 'طه',
+  'حاميم': 'حم',
+  'والقرمان': 'والقران',
+  'القرمان': 'القران',
+  'الهكيم': 'الحكيم',
+  'للمرسلين': 'المرسلين',
+  'صاد': 'ص',
+  'قاف': 'ق',
+  'نون': 'ن',
+};
+
+function isDistinctiveOpenerAyah(ayah, matchedWords) {
+  if (!ayah || ayah.canonicalWordCount !== 1) return false;
+  const opener = ayah.words.find((w) => DISTINCTIVE_ONE_WORD_OPENERS.has(w));
+  if (!opener) return false;
+  return matchedWords.includes(opener);
+}
+
+function repairSpokenWord(w) {
+  const aliased = SPOKEN_WORD_ALIASES[w] || MUQATTAAT_ALIASES[w];
+  if (aliased) return aliased;
+  if (ayahList.length === 0 || wordIndex.has(w)) return w;
+  // للمرسلين → المرسلين (لام + ال)
+  if (w.startsWith('لل') && w.length >= 6) {
+    const asAl = 'ال' + w.slice(2);
+    if (wordIndex.has(asAl)) return asAl;
+  }
+  // الهكيم → الحكيم (ه/ح confusion)
+  if (w.includes('ه')) {
+    const swapped = w.replace(/ه/g, 'ح');
+    if (wordIndex.has(swapped)) return swapped;
+  }
+  // والقرمان → والقران (one extra letter). Require a unique hit.
+  if (w.length >= 6) {
+    const hits = new Set();
+    for (let i = 0; i < w.length; i++) {
+      const deleted = w.slice(0, i) + w.slice(i + 1);
+      if (wordIndex.has(deleted)) hits.add(deleted);
+    }
+    if (hits.size === 1) return [...hits][0];
+  }
+  return w;
+}
 
 let ayahList = [];
 let wordIndex = new Map();   // word → Set<ayahIndex>
@@ -104,7 +162,9 @@ export function loadQuran() {
       const wordsAlt = normTextAlt.split(/\s+/).filter(Boolean);
       const canonicalWordCount = Math.min(words.length, wordsAlt.length);
 
-      // Add common Whisper spellings for muqatta'at letters
+      // Spoken muqatta'at names belong in the word index for lookup, not in the
+      // scoring bag — unioning them with the ayah (يس + ياسين) halved coverage
+      // and blocked the 1-word opener lock. Input aliases map ياسين → يس.
       const extraWords = [];
       for (const w of words) {
         for (const [alias, canonical] of Object.entries(MUQATTAAT_ALIASES)) {
@@ -112,11 +172,11 @@ export function loadQuran() {
         }
       }
 
-      // Union: original + dagger-alef-expanded + muqatta'at aliases
-      words = [...new Set([...words, ...wordsAlt, ...extraWords])];
+      const scoreWords = [...new Set([...words, ...wordsAlt])];
+      const indexWords = [...new Set([...scoreWords, ...extraWords])];
       const idx = ayahList.length;
-      ayahList.push({ surah, ayah: a.verse, text: a.text, normText, words, canonicalWordCount });
-      for (const w of new Set(words)) {
+      ayahList.push({ surah, ayah: a.verse, text: a.text, normText, words: scoreWords, canonicalWordCount });
+      for (const w of indexWords) {
         if (!wordIndex.has(w)) wordIndex.set(w, new Set());
         wordIndex.get(w).add(idx);
       }
@@ -254,8 +314,10 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
     if (score < 0.01 && !inSeqHintRange) continue;
     if (matchedWords.length === 0) continue;  // hard gate: no matched words = skip always
 
-    // Require 2+ matched words; 3+ for longer ayahs
-    if (matchedWords.length < 2) continue;
+    const distinctiveOpener = isDistinctiveOpenerAyah(a, matchedWords);
+    // Require 2+ matched words; 3+ for longer ayahs.
+    // Distinctive 1-word openers (يس, طه, ...) lock on the spoken name alone.
+    if (matchedWords.length < 2 && !distinctiveOpener) continue;
     if (matchedWords.length < 3 && a.canonicalWordCount > 4) continue;
 
     // Sequential boost: candidate is the expected next verse(s) after last lock
@@ -263,7 +325,8 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
       && a.surah === seqHint.surah
       && a.ayah >= seqHint.fromAyah
       && a.ayah <= seqHint.toAyah;
-    const boostedScore = inSeqRange ? Math.min(1, score + SEQ_BOOST) : score;
+    const openerBoost = distinctiveOpener ? 0.15 : 0;
+    const boostedScore = Math.min(1, (inSeqRange ? score + SEQ_BOOST : score) + openerBoost);
 
     results.push({
       surah: a.surah, ayah: a.ayah,
@@ -271,6 +334,7 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
       f1, idfScore, coverage,
       arabic: a.text, matchedWords,
       seqBoosted: inSeqRange,
+      muqattaatOpener: distinctiveOpener,
     });
   }
 

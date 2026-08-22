@@ -190,10 +190,16 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   const top    = matches[0];
   const second = matches[1];
 
+  // Adjacent ayahs in the same surah are one recitation window, not competitors.
+  // Live Ya-Sin: 36:1 (يس) + 36:2 (والقرآن الحكيم) used to cut margin from 97 → 48
+  // and block the 2-word high-margin lock that 2.6.7 already had on a lone 36:2.
+  const isSameWindow = (a, b) => a && b && a.surah === b.surah && Math.abs(a.ayah - b.ayah) <= 2;
+  const competing = matches.find((m) => m !== top && !isSameWindow(m, top));
+
   // Use raw score for margin so the sequential boost doesn't inflate it
   const topRaw    = top.rawScore ?? top.score;
-  const secondRaw = second ? (second.rawScore ?? second.score) : 0;
-  const margin    = second ? (topRaw - secondRaw) * 100 : topRaw * 100;
+  const secondRaw = competing ? (competing.rawScore ?? competing.score) : 0;
+  const margin    = competing ? (topRaw - secondRaw) * 100 : topRaw * 100;
   const coverage  = top.coverage || 0;
   // Scale coverage threshold for long ayahs: a 49-word ayah with 7 matched words
   // is 14% coverage but very reliable. Min 10% for long ayahs, 25% for short ones.
@@ -422,8 +428,18 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && matchedWordCount >= 2
     && wins >= 1;
 
-  if (isFastLock || isSingleWinLock || isHighMarginLock || isConsistentLock || isHighScoreLock || isSeqLock || isSeqCarryLock || isSameSurahLock || isRefrainLock || isTaraweehFatihaLock) {
+  // Distinctive 1-word openers (يس / طه / كهيعص / المص / المر). Groq's first
+  // Ya-Sin chunk is often just "يسي" — the 2-word gate would drop a real lock.
+  const isMuqattaatOpenerLock = !!top.muqattaatOpener
+    && matchedWordCount >= 1
+    && coverage >= 0.50
+    && margin >= 20
+    && !isBismillahAmbiguous
+    && !prefixBlocksLock;
+
+  if (isFastLock || isSingleWinLock || isHighMarginLock || isConsistentLock || isHighScoreLock || isSeqLock || isSeqCarryLock || isSameSurahLock || isRefrainLock || isTaraweehFatihaLock || isMuqattaatOpenerLock) {
     const reason = isTaraweehFatihaLock ? `taraweeh-fatiha-lock score=${top.score.toFixed(2)} (express)`
+                 : isMuqattaatOpenerLock ? `muqattaat-opener-lock score=${top.score.toFixed(2)}`
                  : isFastLock       ? `fast-lock score=${top.score.toFixed(2)}`
                  : isSingleWinLock  ? `single-win score=${top.score.toFixed(2)} margin=${margin.toFixed(1)}`
                  : isHighMarginLock ? `margin-lock margin=${margin.toFixed(1)} score=${top.score.toFixed(2)}`
@@ -433,16 +449,18 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
                  : isSameSurahLock  ? `same-surah-lock wins=${wins} score=${top.score.toFixed(2)}`
                  : isRefrainLock    ? `refrain-lock wins=${wins} score=${top.score.toFixed(2)} (Ar-Rahman-style)`
                  : `wins=${wins} margin=${margin.toFixed(1)} cov=${(coverage*100).toFixed(0)}%`;
-    console.log(`[Anchor] LOCKED on ${top.surah}:${top.ayah} (${reason})`);
+    const openerInWindow = matches.find((m) => m.muqattaatOpener && m.surah === top.surah && m.ayah <= top.ayah);
+    const lockTarget = openerInWindow || top;
+    console.log(`[Anchor] LOCKED on ${lockTarget.surah}:${lockTarget.ayah} (${reason})`);
     return {
       ...createState(),
       mode: 'LOCKED',
-      surah: top.surah,
-      ayah: top.ayah,
-      confidence: Math.round(top.score * 100),
+      surah: lockTarget.surah,
+      ayah: lockTarget.ayah,
+      confidence: Math.round(lockTarget.score * 100),
       lastKeywords: keywords,
-      lastLockedSurah: top.surah,
-      lastLockedAyah: top.ayah,
+      lastLockedSurah: lockTarget.surah,
+      lastLockedAyah: lockTarget.ayah,
       _matches: matches.slice(0, 3),
       _locked: true,
     };
