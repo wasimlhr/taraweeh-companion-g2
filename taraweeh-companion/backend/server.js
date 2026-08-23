@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.0.5 — bismillah never locks, in any mode
+ * v3.0.6 — G2 keeps up with the phone; tap responds at once
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';

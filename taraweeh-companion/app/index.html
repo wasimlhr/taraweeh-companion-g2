@@ -825,7 +825,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.0.5</span>
+      <span class="version" id="versionEl">v3.0.6</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1168,7 +1168,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.0.5';
+  const APP_VERSION = 'v3.0.6';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2203,10 +2203,47 @@ body {
   // glassesUpdate receives { hdr, body } object from buildGlassesText
   // Full rebuild on first use or ayah change; textContainerUpgrade for countdown (lightweight).
   // Full rebuild every 500ms overwhelmed BLE — display lagged. Use upgrade for countdown ticks.
+  // Every bridge call is a BLE round-trip and the queue is strictly serial, so
+  // enqueuing one update per state change let the backlog outgrow the drain
+  // rate — the glasses ended up minutes behind the phone, and taps queued
+  // behind the same backlog. Only the newest frame is worth drawing: keep one
+  // pending slot and let later frames overwrite it.
+  var _pendingGlasses = null;
+  var _glassesDraining = false;
+
   function glassesUpdate(display) {
     if (!S.bridge) return;
     if (typeof display === 'string') display = { hdr: '', body: display };
-    queueBridgeCall('glassesUpdate', function () {
+    _pendingGlasses = display;
+    if (_glassesDraining) return;          // in flight; it will pick this up
+    _glassesDraining = true;
+    queueBridgeCall('glassesUpdate', function drain() {
+      var next = _pendingGlasses;
+      _pendingGlasses = null;
+      if (!next) { _glassesDraining = false; return; }
+      return _writeGlasses(next).then(function () {
+        if (_pendingGlasses) return drain();
+        _glassesDraining = false;
+      }, function (e) {
+        _glassesDraining = false;
+        throw e;
+      });
+    });
+  }
+
+  /** Header-only repaint. The countdown ticks twice a minute per ayah and only
+   *  ever changes the header, so it must not force a full container rebuild. */
+  function glassesHeaderUpdate(hdr) {
+    if (!S.bridge || !S.displayRebuilt) return;   // no container yet: skip, a full write is coming
+    queueBridgeCall('glassesHeader', function () {
+      return S.bridge.textContainerUpgrade({
+        containerID: 1, containerName: 'hdr', content: (hdr || '').slice(0, 500),
+      });
+    });
+  }
+
+  function _writeGlasses(display) {
+    return Promise.resolve().then(function () {
       if (!S.displayRebuilt) {
         var hdrContent  = (display.hdr  || '').slice(0, 200);
         var bodyContent = (display.body || '').slice(0, MAX_REBUILD_CHARS - 200);
@@ -2329,8 +2366,10 @@ body {
     if (S.isG2 && S.bridge) {
       _cdTickCount++;
       if (_cdTickCount % 4 === 1) {
-        S.displayRebuilt = false;
-        glassesUpdate({ hdr: padded, body: _cdLastBody });
+        // Header only. This used to clear displayRebuilt and push a full
+        // rebuildPageContainer every 2s just to redraw the seconds counter,
+        // which saturated the BLE queue and made the glasses lag the phone.
+        glassesHeaderUpdate(padded);
       }
     }
     // Update app timer pill
@@ -3413,13 +3452,22 @@ body {
       log('Reused existing WS, sent start (' + _reciteMode + ')', 'ok');
     }
 
+    // Paint the glasses now. This used to sit inside the permission promise,
+    // so the phone said "Listening" instantly while the glasses stayed on
+    // "Stopped" until the bridge answered — the lag after a ring tap.
+    if (S.isG2) {
+      S.displayRebuilt = false;
+      showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0);
+      startSearchingDots();
+    }
+
     var btn = document.getElementById('recordBtn');
     btn.disabled = true;
     ensureMicPermissionForCurrentSource().then(function () {
       acquireWakeLock();
       var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
-      if (useBrowserMic) { startBrowserMic(); if (S.isG2) { showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); startSearchingDots(); } }
-      else { startG2Mic(); showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0); startSearchingDots(); }
+      if (useBrowserMic) startBrowserMic();
+      else startG2Mic();
 
       // Show matching panel, hide idle state
       document.getElementById('matchIdle').style.display = 'none';
@@ -3460,8 +3508,10 @@ body {
     var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
     if (useBrowserMic) stopBrowserMic();
     else stopG2Mic();
-    _closeWsSilently(S.ws);   // close without triggering reconnect loop
-    S.ws = null;
+    // Leave the socket open. "stop" already idles the pipeline server-side, and
+    // keeping it means resume is one message instead of a reconnect plus a full
+    // pipeline re-init — that round-trip was most of the lag on a resume tap.
+    // The keepalive ping holds it; onclose still reconnects if it really drops.
     S.pcmAccum = [];
 
     // Hide matching panel, show idle

@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.0.6 - 2026-08-22
+
+**Glasses now keep up with the phone.** Every bridge call is a BLE round-trip and the queue is strictly serial, so one write per state change let the backlog outgrow the drain rate and the display fell steadily further behind.
+
+- The countdown was the main source: it cleared `displayRebuilt` and pushed a full `rebuildPageContainer` — all three containers — every 2 seconds, only to redraw the seconds counter in the header. It is now a header-only `textContainerUpgrade`.
+- Glasses writes coalesce. Only the newest frame is worth drawing, so a pending frame is overwritten rather than queued. Measured with a simulated 200ms bridge: 20 rapid frames collapse to 4 writes, the queue stays serial, and the frame drawn last is always the newest.
+
+**Ring tap responds immediately.**
+
+- Starting used to paint the glasses inside the mic-permission promise, so the phone said "Listening" at once while the glasses stayed on "Stopped" until the bridge answered. The glasses are painted on the tap now.
+- Stopping closed the WebSocket, so resuming paid for a reconnect and a full pipeline re-init before anything happened. The socket now stays open — `stop` already idles the pipeline server-side — so resume is a single message. Taps also no longer queue behind the display backlog the countdown was generating.
+
+## 3.0.5 - 2026-08-22
+
+- **Bismillah never locks, in any mode.** 3.0.2 fixed the ordinary path but kept an exception for Taraweeh after ruku, where Fatiha genuinely is next. Taraweeh is the default mode and `_expectFatiha` is true from session start, so that exception *was* the live path — and `isTaraweehFatihaLock` never consulted the guard at all, locking 1:1 on a single win the moment the imam said bismillah.
+- The exception was wrong on its own terms: knowing Fatiha is next is no reason to lock on the formula, since the reciter is one breath from 1:2, which is real evidence. Bismillah is ambiguous unconditionally now.
+- The preamble is shown rather than swallowed — it emits match progress so the panel shows what was heard while the anchor stays in SEARCHING.
+- Backend-only: no repack was needed to pick this up.
+
 ## 3.0.4 - 2026-08-22
 
 - **"Test key" said network fetch failed on a key that works.** The JSON API sent no CORS headers — only `/mushaf` and `/fonts` did. Packed, the app runs on the Even Hub's origin, so every `/api` call is cross-origin: the browser blocked them while transcription kept working, because WebSockets ignore CORS. That one difference is why the key tested as broken and transcribed fine.
