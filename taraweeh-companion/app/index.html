@@ -825,7 +825,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.0.8</span>
+      <span class="version" id="versionEl">v3.0.9</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1168,7 +1168,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.0.8';
+  const APP_VERSION = 'v3.0.9';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1521,35 +1521,49 @@ body {
         _trace('storage.attach', 'hasGet=' + hasGet + ' hasSet=' + hasSet);
         if (!hasGet || !hasSet) return Promise.resolve();
 
-        // Flush any pending writes that happened before bridge attached
-        // (e.g. session-ID generated at module load, settings saved during
-        // the boot async window). These otherwise stay only in browser
-        // localStorage which is wiped on .ehpk WebView restart.
-        var flush = pendingWrites.splice(0).map(function (w) {
-          _trace('storage.flush', w.key);
-          return Promise.resolve(bridge.setLocalStorage(w.key, w.value)).then(
-            function (ok) { _trace('storage.flush.done', w.key + ' ok=' + ok); },
-            function (e) { _trace('storage.flush.err', w.key + ' ' + (e && e.message || e)); }
-          );
-        });
-
-        return Promise.all(flush).then(function () {
+        // Hydrate BEFORE flushing. Pending writes are made from pre-hydration
+        // state, and on a cold .ehpk start browser localStorage is wiped, so
+        // that state is the defaults — no API key. Boot calls saveSettings()
+        // (via setReciteMode) before the bridge attaches, so flushing first
+        // wrote those defaults over the good bridge value and hydration then
+        // read back the damage. That destroyed the saved key on every launch.
+        var bridgeHad = {};
+        return Promise.all(KNOWN_KEYS.map(function (k) {
+          return Promise.resolve(bridge.getLocalStorage(k)).then(function (v) {
+            if (v && v !== '') {
+              bridgeHad[k] = true;
+              _trace('storage.hydrate.has', k + ' len=' + v.length);
+              cache.set(k, v);
+              _writeBrowser(k, v);
+            } else {
+              _trace('storage.hydrate.empty', k);
+            }
+          }, function (e) { _trace('storage.hydrate.err', k + ' ' + (e && e.message || e)); });
+        })).then(function () {
+          // Now flush, but only for keys the bridge did not already hold.
+          // Those are genuine first-run migrations from a pre-bridge version.
+          // Anything else is a stale default that would clobber real data.
+          var queued = pendingWrites.splice(0);
+          return Promise.all(queued.map(function (w) {
+            if (bridgeHad[w.key]) {
+              _trace('storage.flush.skip', w.key + ' (bridge already has it)');
+              return null;
+            }
+            _trace('storage.flush', w.key);
+            return Promise.resolve(bridge.setLocalStorage(w.key, w.value)).then(
+              function (ok) { _trace('storage.flush.done', w.key + ' ok=' + ok); },
+              function (e) { _trace('storage.flush.err', w.key + ' ' + (e && e.message || e)); }
+            );
+          }));
+        }).then(function () {
+          // Migrate anything the bridge lacks but the browser cache holds.
           return Promise.all(KNOWN_KEYS.map(function (k) {
-            return Promise.resolve(bridge.getLocalStorage(k)).then(function (v) {
-              if (v && v !== '') {
-                _trace('storage.hydrate.has', k + ' len=' + v.length);
-                cache.set(k, v);
-                _writeBrowser(k, v);
-              } else if (cache.has(k)) {
-                _trace('storage.hydrate.migrate', k);
-                return Promise.resolve(bridge.setLocalStorage(k, cache.get(k))).then(
-                  function (ok) { _trace('storage.migrate.done', k + ' ok=' + ok); },
-                  function (e) { _trace('storage.migrate.err', k + ' ' + (e && e.message || e)); }
-                );
-              } else {
-                _trace('storage.hydrate.empty', k);
-              }
-            }, function (e) { _trace('storage.hydrate.err', k + ' ' + (e && e.message || e)); });
+            if (bridgeHad[k] || !cache.has(k)) return null;
+            _trace('storage.hydrate.migrate', k);
+            return Promise.resolve(bridge.setLocalStorage(k, cache.get(k))).then(
+              function (ok) { _trace('storage.migrate.done', k + ' ok=' + ok); },
+              function (e) { _trace('storage.migrate.err', k + ' ' + (e && e.message || e)); }
+            );
           }));
         });
       },

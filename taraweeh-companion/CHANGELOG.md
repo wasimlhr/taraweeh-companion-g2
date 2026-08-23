@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.9 - 2026-08-23
+
+- **The saved API key was destroyed on every launch.** Browser localStorage is wiped when the `.ehpk` WebView restarts, so the bridge is the only durable store — but `Storage.attach()` flushed queued writes *before* hydrating from it. Boot calls `saveSettings()` (through `setReciteMode`) before the bridge attaches, and at that point settings are the empty defaults, so the flush wrote a blank key over the good bridge value and hydration then read back what it had just destroyed. The key was gone permanently, not merely for that session, which is why the app asked for it every single time.
+- `attach()` now hydrates first, then flushes only keys the bridge did not already hold — genuine first-run migrations — matching the "bridge is the source of truth" rule the code already documented. Verified by replaying the exact cold-start sequence against both versions: before, key `(none)` in memory and on the bridge; after, preserved in both.
+
 ## 3.0.8 - 2026-08-23
 
 - **The version banner took over the app's status line.** `setStatus` writes to `#status` — the one element that carries "Listening", the locked verse and every other message — and nothing clears it. `backend_version` arrives on every connect and re-init, so a mismatch re-stamped a red banner there permanently and the app was left with no working status display. It was reported as cosmetic; it was not.
