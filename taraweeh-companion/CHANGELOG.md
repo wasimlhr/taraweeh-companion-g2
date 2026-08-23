@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.3 - 2026-08-22
+
+- **The packed .ehpk connects again.** 2.6.5 dialled Railway unconditionally. 2.6.22 added a same-origin branch so the local simulator would work — but the Even Hub serves the packed bundle from an `http(s)` origin of its own, so that branch matched there too and the app opened a socket against the Hub host, which has no `/ws`. Fixing the simulator had broken the pack.
+- Same-origin is now used only when the serving origin actually answers `/api/status`, probed once at boot. The simulator (loaded from the backend on :3001) still resolves same-origin; a packed build falls through to the hosted backend.
+- The hosted default is now `taraweeh-companion-g2-production-150e.up.railway.app`, and both it and the older `taraweeh.up.railway.app` are whitelisted in `app.json` over https and wss. Verified: the packed URL opens a socket and completes the handshake.
+- **Backend URL** is now an Advanced setting. Blank means auto; an explicit `http(s)://host` overrides everything, so a wrong guess on real hardware is recoverable without a repack. Settings shows which backend is in use and why.
+- Added `scripts/check-stale-backend.js` (from PR #11), which flags a Railway backend too old to report a version.
+
 ## 3.0.2 - 2026-08-22
 
 - **Bismillah no longer locks Al-Fatiha.** It opens every surah but At-Tawbah, so hearing it says nothing about which surah is being recited — yet it locked 1:1 on the *second* search window. The guard asked for two consecutive wins, but search windows overlap, so one utterance supplied both; and the main lock path (`isConsistentLock`) never consulted the guard at all.

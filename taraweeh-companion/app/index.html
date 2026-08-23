@@ -825,7 +825,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.0.2</span>
+      <span class="version" id="versionEl">v3.0.3</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1092,6 +1092,11 @@ body {
         <span class="s-hint" id="modelHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
       </div>
       <div class="s-row">
+        <span class="s-label">Backend URL</span>
+        <input id="settingBackendUrl" type="text" placeholder="auto" autocomplete="off" spellcheck="false" />
+        <span class="s-hint" id="backendUrlHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
+      </div>
+      <div class="s-row">
         <span class="s-label">Tracking style</span>
         <select id="settingPipeline">
           <option value="v4">V4 (Recommended)</option>
@@ -1163,7 +1168,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.0.2';
+  const APP_VERSION = 'v3.0.3';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1592,15 +1597,50 @@ body {
   }
 
   // ─── Settings ─────────────────────────────────────────────────────────────
+  var HOSTED_BACKEND = 'https://taraweeh-companion-g2-production-150e.up.railway.app';
+
+  // Set once at boot: true only when the origin that served this page also
+  // answers /api/status. A packed .ehpk is served by the Even Hub WebView, not
+  // by us — assuming same-origin there pointed the socket at a host with no
+  // /ws, which is why the packed app never connected.
+  var _originIsBackend = false;
+
+  function originBase() {
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') return '';
+    return location.protocol + '//' + location.host;
+  }
+
+  /** http(s) base URL of the backend, no trailing slash. */
+  function backendBase() {
+    var manual = (S.settings && S.settings.backendUrl || '').trim();
+    if (manual) return manual.replace(/\/+$/, '');
+    if (_originIsBackend) return originBase();
+    return HOSTED_BACKEND;
+  }
+
   function defaultWsUrl() {
-    // Same-origin whenever the app was loaded over HTTP(S) — localhost, LAN IP,
-    // or this Cloud Agent host. Railway is only a fallback for packed .ehpk
-    // (no http origin). Pointing the sim at 172.x / 192.168.x used to silently
-    // talk to Railway instead of the backend that served the page.
-    if (location.protocol === 'http:' || location.protocol === 'https:') {
-      return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
+    return backendBase().replace(/^http/, 'ws') + '/ws';
+  }
+
+  /**
+   * Probe the serving origin once. The local EvenHub simulator loads the app
+   * straight from the backend on :3001, so same-origin is right there; the
+   * packed .ehpk must fall through to the hosted backend.
+   */
+  async function detectOriginBackend() {
+    var base = originBase();
+    if (!base) return false;
+    try {
+      var ctrl = new AbortController();
+      var t = setTimeout(function () { ctrl.abort(); }, 2500);
+      var res = await fetch(base + '/api/status', { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!res.ok) return false;
+      var j = await res.json();
+      return !!(j && (j.version || j.appVersion || j.provider));
+    } catch (_) {
+      return false;
     }
-    return 'wss://taraweeh.up.railway.app/ws';
   }
 
   var DEFAULT_SETTINGS = {
@@ -1619,6 +1659,7 @@ body {
     transcriptionProvider: 'groq',
     transcriptionModel: '',         // active model; '' = engine default
     modelByProvider: {},            // last model chosen per engine
+    backendUrl: '',                 // '' = auto (serving origin, else hosted)
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
     reciteMode: 'taraweeh',
   };
@@ -3544,6 +3585,8 @@ body {
           if (surah) surah.value = S.settings.defaultSurah || '0';
           var pipe = document.getElementById('settingPipeline');
           if (pipe) pipe.value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
+          var bUrl = document.getElementById('settingBackendUrl');
+          if (bUrl && !bUrl.value) bUrl.value = S.settings.backendUrl || '';
           if (typeof setProvider === 'function')
             setProvider(sanitizeProvider(S.settings.transcriptionProvider), false);
         } catch (_) {}
@@ -3928,6 +3971,12 @@ body {
     if (dgInput) dgInput.value = S.settings.deepgramApiKey || '';
     var elInput = document.getElementById('settingElevenKey');
     if (elInput) elInput.value = S.settings.elevenlabsApiKey || '';
+    var bUrlEl = document.getElementById('settingBackendUrl');
+    if (bUrlEl) bUrlEl.value = S.settings.backendUrl || '';
+    var bHint = document.getElementById('backendUrlHint');
+    if (bHint) bHint.textContent = 'Now using ' + backendBase()
+      + (S.settings.backendUrl ? ' (manual)' : _originIsBackend ? ' (serving origin)' : ' (hosted default)')
+      + '. Leave blank for auto.';
     setProvider(sanitizeProvider(S.settings.transcriptionProvider), false);
     setKeyMode('byok', false);
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
@@ -3983,6 +4032,12 @@ body {
     S.settings.lang = sanitizeTranslationLang(document.getElementById('settingLang').value);
     S.settings.defaultSurah = document.getElementById('settingSurah').value;
     S.settings.pipelineVersion = sanitizePipelineVersion(document.getElementById('settingPipeline').value);
+    var bUrlSave = document.getElementById('settingBackendUrl');
+    if (bUrlSave) {
+      var raw = (bUrlSave.value || '').trim().replace(/\/+$/, '');
+      // Only accept an absolute http(s) URL; anything else means "auto".
+      S.settings.backendUrl = /^https?:\/\/[^\s]+$/i.test(raw) ? raw : '';
+    }
     S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
     var oaiEl = document.getElementById('settingOpenAIKey');
     S.settings.openaiApiKey = oaiEl ? (oaiEl.value || '').trim() : (S.settings.openaiApiKey || '');
@@ -4099,6 +4154,8 @@ body {
     }
 
     S.settings = loadSettings();
+    _originIsBackend = await detectOriginBackend();
+    log('Backend: ' + backendBase() + (_originIsBackend ? ' (serving origin)' : ' (hosted)'), 'ok');
     if (S.settings.reciteMode === 'practice' || S.settings.reciteMode === 'taraweeh') {
       _reciteMode = S.settings.reciteMode;
       _taraweehMode = _reciteMode === 'taraweeh';
