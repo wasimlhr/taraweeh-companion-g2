@@ -309,6 +309,7 @@ export class AudioPipeline {
     this.onStatus        = onStatus || (() => {});
     this.onError         = onError  || (() => {});
     this.preferredSurah  = preferredSurah;
+    this.restrictSurah   = 0;   // Practice: hard-pin the search to one surah
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
     this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
     // Each engine is independent. Groq uses a slightly wider send gap so free-tier
@@ -613,6 +614,8 @@ export class AudioPipeline {
   }
 
   setPreferredSurah(s) { this.preferredSurah = s; }
+  /** Practice only: pin the search to one surah instead of merely biasing it. */
+  setRestrictSurah(s) { this.restrictSurah = Number(s) || 0; }
 
   _startTimerHeartbeat() {
     this._stopTimerHeartbeat();
@@ -1487,6 +1490,9 @@ export class AudioPipeline {
         : expectFatiha ? 1
         : (this._arRahmanRefrainSeen ? 55 : this.preferredSurah);
       const opts = { preferredSurah, fastMode: this.fastMode, missBeforeResuming: MISSED_BEFORE_RESUMING_V3, missBeforeLost: MISSED_BEFORE_LOST_V3 };
+      // Only meaningful in Practice: Taraweeh follows an imam who chooses the
+      // surah, so pinning the search there would strand the display.
+      if (this.practiceMode && this.restrictSurah) opts.restrictSurah = this.restrictSurah;
       // Practice uses Taraweeh first-lock (do not pass practiceMode here).
       if (expectFatiha) opts.taraweehExpectFatiha = true;
       if (this.state.mode === 'RESUMING' && this._displaySurah > 0 && this._displayAyah > 0) {

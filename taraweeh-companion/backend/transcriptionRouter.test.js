@@ -449,6 +449,42 @@ describe('live preamble strip (isti\'adha / bismillah)', () => {
   });
 });
 
+describe('Practice: restricting the search to one surah', () => {
+  loadQuran();
+
+  // preferredSurah is only a bias — every search path falls back globally, so
+  // a near-miss can lock onto a similar ayah in another surah. restrictSurah
+  // removes that fallback for someone drilling a single surah.
+  function lockedWith(text, opts) {
+    let st = createState();
+    for (let i = 0; i < 4; i++) {
+      st = processWhisperResult(text, st, opts || {});
+      if (st.mode === 'LOCKED') return st.surah + ':' + st.ayah;
+    }
+    return null;
+  }
+
+  it('still locks a verse that is inside the restricted surah', () => {
+    assert.equal(lockedWith('والقرآن الحكيم', { restrictSurah: 36 }), '36:2');
+  });
+
+  it('refuses a verse from another surah when restricted', () => {
+    // Al-Ikhlas is a clear, unambiguous match — and must still be rejected
+    // while the reciter has pinned the search to Ya-Sin.
+    assert.equal(lockedWith('قل هو الله أحد', { restrictSurah: 36 }), null);
+  });
+
+  it('locks that same verse once the restriction is lifted', () => {
+    assert.equal(lockedWith('قل هو الله أحد', {}), '112:1');
+  });
+
+  it('preferredSurah alone still falls back globally', () => {
+    // The existing bias behaviour must not change — Taraweeh depends on it,
+    // since the imam may open a surah other than the one expected.
+    assert.equal(lockedWith('قل هو الله أحد', { preferredSurah: 36 }), '112:1');
+  });
+});
+
 describe('bismillah never identifies a surah', () => {
   loadQuran();
 

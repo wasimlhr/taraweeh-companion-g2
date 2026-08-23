@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.1.0 - 2026-08-23
+
+- **Practice can pin the search to a single surah.** `preferredSurah` was only ever a bias: every search path falls back to a global scan, so while drilling one surah a near-miss could lock onto a similar ayah elsewhere. Selecting a surah reads as "only this surah", so now it can actually mean that. `restrictSurah` removes the fallback — if the recitation is not in that surah, nothing locks.
+- Taraweeh is deliberately excluded: the imam chooses the surah, so pinning the search there would strand the display. The bias behaviour `preferredSurah` provides is unchanged, and a test now guards that.
+
 ## 3.0.9 - 2026-08-23
 
 - **The saved API key was destroyed on every launch.** Browser localStorage is wiped when the `.ehpk` WebView restarts, so the bridge is the only durable store — but `Storage.attach()` flushed queued writes *before* hydrating from it. Boot calls `saveSettings()` (through `setReciteMode`) before the bridge attaches, and at that point settings are the empty defaults, so the flush wrote a blank key over the good bridge value and hydration then read back what it had just destroyed. The key was gone permanently, not merely for that session, which is why the app asked for it every single time.

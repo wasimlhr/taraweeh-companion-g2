@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.0.9 — the saved API key survives a cold start
+ * v3.1.0 — Practice can pin the search to one surah
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -422,6 +422,15 @@ wss.on('connection', (ws, req) => {
       },
       onError: (err) => send({ type: 'error', error: err }),
     });
+    // Practice may pin the search to one surah. Validated the same way as
+    // preferredSurah so a bad value cannot reach the matcher.
+    if (typeof pipeline.setRestrictSurah === 'function') {
+      const rs = (typeof opts.restrictSurah === 'number' && opts.restrictSurah >= 1 && opts.restrictSurah <= 114)
+        ? opts.restrictSurah : 0;
+      pipeline.setRestrictSurah(rs);
+      if (rs) console.log(`[Init] Practice restricted to surah ${rs}`);
+    }
+
     // Honour client fast/slow explicitly. Slow mode now stretches the timer
     // on top of learned pace so the display lingers through slow recitations
     // instead of advancing at the naive measured rate.

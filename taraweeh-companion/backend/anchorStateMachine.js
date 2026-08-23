@@ -147,7 +147,19 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // EXCEPTION: after Fatiha (surah 1), skip the same-surah search entirely — the imam
   // will recite a completely different surah, so searching surah 1 is pure waste.
   let matches, keywords;
-  if (lastSurah > 0 && !postFatiha) {
+  if (opts.restrictSurah) {
+    // Hard restriction, used by Practice when the reciter picks one surah to
+    // drill. preferredSurah alone is only a bias: every other path here falls
+    // back to a global search, so a near-miss could lock onto a similar ayah
+    // in a different surah. With this set there is no fallback — if it is not
+    // in this surah, it is not a match.
+    const only = findAnchor(whisperText, opts.restrictSurah, seqHint);
+    matches = only.matches;
+    keywords = only.keywords;
+    if (!matches.length) {
+      console.log(`[Anchor] Restricted to surah ${opts.restrictSurah} — no match, not searching elsewhere`);
+    }
+  } else if (lastSurah > 0 && !postFatiha) {
     const sameSurahResult = findAnchor(whisperText, lastSurah, seqHint);
     matches  = sameSurahResult.matches;
     keywords = sameSurahResult.keywords;
