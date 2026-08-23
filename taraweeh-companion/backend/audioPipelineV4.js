@@ -1428,10 +1428,13 @@ export class AudioPipeline {
       // Otherwise bismillah-only is generic (could be any surah) — skip the matcher,
       // but still add to _lastSearchTexts so the NEXT chunk combines with it
       // (e.g. "بسم الله..." + "الحمد لله..." = strong Fatiha match).
-      if (isOpeningPreamble(cleaned) && this._taraweehPos !== 'RUKU') {
-        console.log(`[Pipeline] Opening preamble only — skipping matcher but keeping for combination`);
+      if (isOpeningPreamble(cleaned)) {
+        console.log(`[Pipeline] Opening preamble — showing it, never locking on it: "${cleaned}"`);
         this._lastSearchTexts.push(cleaned);
         if (this._lastSearchTexts.length > 3) this._lastSearchTexts.shift();
+        // Surface the text so the user can see the mic is working; the anchor
+        // stays in SEARCHING because bismillah identifies no surah.
+        this._emitMatchProgress(cleaned, rms, bufMs);
         this.onStatus({ component: 'search', status: 'noise', audioSec: bufMs / 1000 });
         if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
         return;

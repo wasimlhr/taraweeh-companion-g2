@@ -266,8 +266,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // ("الرحمن الرحيم"), which is wholly contained in it.
   const matchedFromBismillahOnly = (top.matchedWords || []).length > 0
     && (top.matchedWords || []).every((w) => BISMILLAH_WORDS.has(w));
-  const isBismillahAmbiguous = !taraweehExpectFatiha
-    && top.surah === 1
+  const isBismillahAmbiguous = top.surah === 1
     && (top.ayah === 1 || matchedFromBismillahOnly);
 
   const matchedWordCount = top.matchedWords?.length ?? 0;
@@ -453,7 +452,8 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && top.surah === 1
     && top.score >= 0.35
     && matchedWordCount >= 2
-    && wins >= 1;
+    && wins >= 1
+    && !isBismillahAmbiguous;   // express to Fatiha, but not off the bismillah
 
   // 80%+ on 2+ words with real coverage is a lock. Live OpenAI Ya-Sin sat at
   // "Auto locking 1/2 wins" at 90%/100% because garbled 36:3 tokens added a

@@ -494,8 +494,15 @@ describe('bismillah never identifies a surah', () => {
     assert.equal(locksAt('إنه من سليمان وإنه بسم الله الرحمن الرحيم'), '27:30');
   });
 
-  it('still locks Fatiha 1:1 in taraweeh, where Fatiha is known to be next', () => {
-    assert.equal(locksAt('بسم الله الرحمن الرحيم', { taraweehExpectFatiha: true }), '1:1');
+  it('does not lock on bismillah even in taraweeh, where Fatiha is expected', () => {
+    // Knowing Fatiha is next is not a reason to lock on the formula: the reciter
+    // is one breath from 1:2, which is real evidence. Locking early here is what
+    // put Fatiha on the glasses at the start of every surah.
+    assert.equal(locksAt('بسم الله الرحمن الرحيم', { taraweehExpectFatiha: true }), null);
+  });
+
+  it('still expresses to Fatiha in taraweeh once actual verse words arrive', () => {
+    assert.equal(locksAt('الحمد لله رب العالمين', { taraweehExpectFatiha: true }), '1:2');
   });
 
   it('does not let bismillah words alone lock 1:3 (الرحمن الرحيم)', () => {
