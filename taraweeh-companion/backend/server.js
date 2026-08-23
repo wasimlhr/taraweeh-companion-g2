@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.0.6 — G2 keeps up with the phone; tap responds at once
+ * v3.0.7 — base64 PCM ingest for MentraOS miniapp clients
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -291,6 +291,27 @@ if (existsSync(certPath) && existsSync(keyPath)) {
 }
 
 // WebSocket on both servers
+/**
+ * Cheap discriminator so a base64 audio frame is not parsed as JSON and a JSON
+ * control message is never mistaken for audio. Only the audio frames use this
+ * shape: {"t":"a","d":"<base64>"}.
+ */
+function isBase64Pcm(data) {
+  const s = data.toString('utf8', 0, 12);
+  return s.startsWith('{"t":"a"');
+}
+
+function decodeBase64Pcm(data) {
+  try {
+    const msg = JSON.parse(data.toString('utf8'));
+    if (msg.t !== 'a' || typeof msg.d !== 'string') return null;
+    const buf = Buffer.from(msg.d, 'base64');
+    return buf.length ? buf : null;
+  } catch {
+    return null;
+  }
+}
+
 const wss = new WebSocketServer({ noServer: true, path: '/ws' });
 function upgradeToWs(server) {
   server.on('upgrade', (req, socket, head) => {
@@ -439,6 +460,23 @@ wss.on('connection', (ws, req) => {
         pipeline.start();
       }
       if (pipeline) pipeline.ingest(data);
+    } else if (isBase64Pcm(data)) {
+      // MentraOS miniapps run in a bare JS engine (JavaScriptCore / QuickJS):
+      // no Node Buffer, and the native WebSocket bridge is not guaranteed to
+      // carry binary frames. They send PCM as base64 text instead; decode it
+      // here and feed the same pipeline the G2 binary path uses.
+      const pcm = decodeBase64Pcm(data);
+      if (pcm) {
+        if (!_binaryLogged) {
+          console.log(`[WS] First base64 PCM: ${pcm.length}B, active=${pipeline?.active}`);
+          _binaryLogged = true;
+        }
+        if (pipeline && !pipeline.active) {
+          console.log('[WS] PCM arrived before start msg — auto-activating pipeline');
+          pipeline.start();
+        }
+        if (pipeline) pipeline.ingest(pcm);
+      }
     } else {
       try {
         const msg = JSON.parse(data.toString());
