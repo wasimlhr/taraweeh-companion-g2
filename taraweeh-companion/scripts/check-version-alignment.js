@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const repo = join(root, '..');
-const EXPECTED = '3.0.3';
+const EXPECTED = '3.0.4';
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));

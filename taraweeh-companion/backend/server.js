@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.0.3 — packed .ehpk reaches the hosted backend again
+ * v3.0.4 — CORS on the JSON API so cross-origin Settings calls work
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -61,6 +61,19 @@ const APP_VERSION = (() => {
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
+
+// A packed .ehpk runs from the Even Hub's own origin, so every /api call is
+// cross-origin. WebSockets ignore CORS, which is why transcription worked while
+// "Test key" reported a network failure. The JSON POSTs send Content-Type:
+// application/json, so the preflight has to be answered too.
+app.use('/api', (req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 function sanitizePipelineVersion(version) {
   const v = String(version || '').toLowerCase().trim();
@@ -196,7 +209,11 @@ app.post('/api/transcription/compare', async (req, res) => {
     return res.status(400).json({ ok: false, message: 'Audio too short (need ~100ms+ of 16kHz PCM)' });
   }
   const whisperOpts = {
-    sharedMode: !req.body?.groqApiKey && !req.body?.openaiApiKey && !req.body?.deepgramApiKey && !req.body?.elevenlabsApiKey,
+    // Never fall back to SHARED_*_KEY here. This route is unauthenticated and
+    // publicly reachable, so a shared-key fallback would let anyone spend the
+    // host's Groq/OpenAI quota. Compare comes from Settings, where the user has
+    // already entered their own key.
+    sharedMode: false,
     groqApiKey: req.body?.groqApiKey || '',
     openaiApiKey: req.body?.openaiApiKey || '',
     deepgramApiKey: req.body?.deepgramApiKey || '',

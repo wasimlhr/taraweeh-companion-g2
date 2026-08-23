@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.4 - 2026-08-22
+
+- **"Test key" said network fetch failed on a key that works.** The JSON API sent no CORS headers — only `/mushaf` and `/fonts` did. Packed, the app runs on the Even Hub's origin, so every `/api` call is cross-origin: the browser blocked them while transcription kept working, because WebSockets ignore CORS. That one difference is why the key tested as broken and transcribed fine.
+- `/api/*` now sends `Access-Control-Allow-Origin` and answers the `OPTIONS` preflight, which the JSON POSTs need for their `Content-Type` header. This also un-breaks **Compare engines**, the backend status check, and endpoint warmup — all silently failing the same way.
+- **Hardening:** `/api/transcription/compare` no longer falls back to the host's `SHARED_*_KEY` when the caller sends no key. The route is unauthenticated and publicly reachable, so that fallback let anyone spend the host's Groq/OpenAI quota. Compare is reached from Settings, where the user has already entered their own key. `/api/transcription/test-key` only ever used the caller's key.
+
 ## 3.0.3 - 2026-08-22
 
 - **The packed .ehpk connects again.** 2.6.5 dialled Railway unconditionally. 2.6.22 added a same-origin branch so the local simulator would work — but the Even Hub serves the packed bundle from an `http(s)` origin of its own, so that branch matched there too and the app opened a socket against the Hub host, which has no `/ws`. Fixing the simulator had broken the pack.
