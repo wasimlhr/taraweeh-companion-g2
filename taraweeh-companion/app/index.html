@@ -2925,27 +2925,30 @@ body {
       }
       setPill('sPillConf', '', 'Match: --');
     } else if (msg.type === 'backend_version') {
-      // Only a backend OLDER than the app is a problem: it may be missing an
-      // endpoint or message this build expects. A newer backend is the normal
-      // state of affairs — recognition fixes deploy server-side and reach the
-      // packed app without a repack, so strict equality cried wolf on every
-      // backend-only release.
+      // Never write this to #status. That element is the app's only status
+      // line — it carries "Listening", the locked verse, everything — and
+      // nothing clears it. backend_version arrives on every connect and
+      // re-init, so putting a notice there re-stamped it permanently and left
+      // the app with no working status display at all.
+      //
+      // A backend running AHEAD of the app is also the normal state: recognition
+      // fixes deploy server-side and reach a packed .ehpk with no repack. Only a
+      // backend older than the app can actually be missing something, and even
+      // that belongs in the log and the model pill, not the status line.
       var uiVer = APP_VERSION.replace(/^v/i, '');
       var beVer = String(msg.version || '').replace(/^v/i, '');
       if (beVer && beVer !== uiVer) {
-        var cmp = function (a, b) {
-          var x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+        var cmpVer = function (x, y) {
+          var p1 = String(x).split('.').map(Number), p2 = String(y).split('.').map(Number);
           for (var i = 0; i < 3; i++) {
-            if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0) ? -1 : 1;
+            if ((p1[i] || 0) !== (p2[i] || 0)) return (p1[i] || 0) < (p2[i] || 0) ? -1 : 1;
           }
           return 0;
         };
-        if (cmp(beVer, uiVer) < 0) {
-          // A warning, not an error: nothing is blocked, recognition still runs.
-          setStatus('Backend v' + beVer + ' is older than this app — redeploy it', 'warn');
-          if (typeof log === 'function') log('Stale backend: UI=' + APP_VERSION + ' backend=' + beVer, 'err');
+        if (cmpVer(beVer, uiVer) < 0) {
+          if (typeof log === 'function') log('Backend v' + beVer + ' is older than app ' + APP_VERSION + ' — redeploy it', 'warn');
         } else if (typeof log === 'function') {
-          log('Backend v' + beVer + ' is newer than app ' + APP_VERSION + ' — fine, server-side fixes apply', 'ok');
+          log('Backend v' + beVer + ' (app ' + APP_VERSION + ') — server-side fixes apply', 'ok');
         }
       }
     } else if (msg.type === 'pipeline_version') {

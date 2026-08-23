@@ -2,7 +2,8 @@
 
 ## 3.0.8 - 2026-08-23
 
-- **A newer backend is no longer reported as a fault.** The version check was strict equality, so any difference raised a red "Version mismatch" banner. That contradicts how this project actually ships: recognition fixes deploy server-side and reach a packed app with no repack, so the backend is *expected* to run ahead of an installed `.ehpk`. Only the opposite case matters — a backend older than the app may lack an endpoint the app expects — and that is now a warning naming the fix, not an error. Nothing was ever blocked; the banner only looked like it.
+- **The version banner took over the app's status line.** `setStatus` writes to `#status` — the one element that carries "Listening", the locked verse and every other message — and nothing clears it. `backend_version` arrives on every connect and re-init, so a mismatch re-stamped a red banner there permanently and the app was left with no working status display. It was reported as cosmetic; it was not.
+- The notice now goes to the log only, never to the status line. It also no longer fires for the normal case: recognition fixes deploy server-side and reach a packed `.ehpk` without a repack, so a backend running *ahead* of an installed app is expected. Only a backend **older** than the app is worth mentioning, since it may lack an endpoint the app expects.
 
 ## 3.0.7 - 2026-08-22
 
