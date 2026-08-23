@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.8 - 2026-08-23
+
+- **A newer backend is no longer reported as a fault.** The version check was strict equality, so any difference raised a red "Version mismatch" banner. That contradicts how this project actually ships: recognition fixes deploy server-side and reach a packed app with no repack, so the backend is *expected* to run ahead of an installed `.ehpk`. Only the opposite case matters — a backend older than the app may lack an endpoint the app expects — and that is now a warning naming the fix, not an error. Nothing was ever blocked; the banner only looked like it.
+
+## 3.0.7 - 2026-08-22
+
+- Accepts base64-encoded PCM over the WebSocket (`{"t":"a","d":"<base64>"}`) alongside the existing binary frames, so MentraOS miniapps can share this backend. Their background layer is a bare JS engine with no `Buffer`, and the native WebSocket bridge is not guaranteed to carry binary. Verified end to end: frames decoded at the expected RMS, reached Whisper, matched.
+- `/api/transcription/compare` no longer falls back to the host's `SHARED_*_KEY` when the caller sends none — the route is unauthenticated and publicly reachable, so that let any caller spend the host's quota.
+
 ## 3.0.6 - 2026-08-22
 
 **Glasses now keep up with the phone.** Every bridge call is a BLE round-trip and the queue is strictly serial, so one write per state change let the backlog outgrow the drain rate and the display fell steadily further behind.

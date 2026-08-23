@@ -825,7 +825,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.0.7</span>
+      <span class="version" id="versionEl">v3.0.8</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1168,7 +1168,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.0.7';
+  const APP_VERSION = 'v3.0.8';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2925,11 +2925,28 @@ body {
       }
       setPill('sPillConf', '', 'Match: --');
     } else if (msg.type === 'backend_version') {
+      // Only a backend OLDER than the app is a problem: it may be missing an
+      // endpoint or message this build expects. A newer backend is the normal
+      // state of affairs — recognition fixes deploy server-side and reach the
+      // packed app without a repack, so strict equality cried wolf on every
+      // backend-only release.
       var uiVer = APP_VERSION.replace(/^v/i, '');
       var beVer = String(msg.version || '').replace(/^v/i, '');
       if (beVer && beVer !== uiVer) {
-        setStatus('Version mismatch — UI ' + APP_VERSION + ', backend v' + beVer, 'err');
-        if (typeof log === 'function') log('Version mismatch UI=' + APP_VERSION + ' backend=' + beVer, 'err');
+        var cmp = function (a, b) {
+          var x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+          for (var i = 0; i < 3; i++) {
+            if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0) ? -1 : 1;
+          }
+          return 0;
+        };
+        if (cmp(beVer, uiVer) < 0) {
+          // A warning, not an error: nothing is blocked, recognition still runs.
+          setStatus('Backend v' + beVer + ' is older than this app — redeploy it', 'warn');
+          if (typeof log === 'function') log('Stale backend: UI=' + APP_VERSION + ' backend=' + beVer, 'err');
+        } else if (typeof log === 'function') {
+          log('Backend v' + beVer + ' is newer than app ' + APP_VERSION + ' — fine, server-side fixes apply', 'ok');
+        }
       }
     } else if (msg.type === 'pipeline_version') {
       var pv = (msg.version || 'v3').toUpperCase();

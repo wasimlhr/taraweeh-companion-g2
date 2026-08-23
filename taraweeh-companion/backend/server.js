@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.0.7 — base64 PCM ingest for MentraOS miniapp clients
+ * v3.0.8 — only a stale backend is a version problem
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
