@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.1.1 - 2026-08-24
+
+- **Settings can now pin Practice to one surah.** 3.1.0 added `restrictSurah` to the shared engine but only the MentraOS tile exposed it. Picking a Default Surah now reveals **Only this surah** / **Allow any surah**, defaulting to restricting, because that is what choosing a surah already implies. Taraweeh never sends it and the hint says so — the imam picks the surah there, so pinning would strand the display.
+- **Default Surah applies as soon as you pick it.** It was written only when the Settings panel closed, so the new toggle, and the init payload, read a stale value while the panel was open.
+
 ## 3.1.0 - 2026-08-23
 
 - **Practice can pin the search to a single surah.** `preferredSurah` was only ever a bias: every search path falls back to a global scan, so while drilling one surah a near-miss could lock onto a similar ayah elsewhere. Selecting a surah reads as "only this surah", so now it can actually mean that. `restrictSurah` removes the fallback — if the recitation is not in that surah, nothing locks.

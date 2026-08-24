@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.1.0 — Practice can pin the search to one surah
+ * v3.1.1 — G2 exposes the Practice surah restriction
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';

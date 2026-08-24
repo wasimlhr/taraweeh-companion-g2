@@ -825,7 +825,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.1.0</span>
+      <span class="version" id="versionEl">v3.1.1</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1053,7 +1053,14 @@ body {
   <div class="s-card">
     <div class="s-row">
       <span class="s-label">Default Surah</span>
-      <select id="settingSurah"><option value="0">Any Surah</option></select>
+      <select id="settingSurah" onchange="updateSurahScope()"><option value="0">Any Surah</option></select>
+      <div id="surahScopeRow" style="display:none;margin-top:8px">
+        <div class="toggle-group" role="group">
+          <button type="button" class="toggle-btn" id="btnSurahOnly" onclick="setSurahScope(true)">Only this surah</button>
+          <button type="button" class="toggle-btn" id="btnSurahAny" onclick="setSurahScope(false)">Allow any surah</button>
+        </div>
+        <span class="s-hint" id="surahScopeHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
+      </div>
     </div>
     <div class="s-row">
       <span class="s-label">Translation</span>
@@ -1168,7 +1175,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.1.0';
+  const APP_VERSION = 'v3.1.1';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1660,6 +1667,7 @@ body {
   var DEFAULT_SETTINGS = {
     lang: '',
     defaultSurah: '0',
+    onlyDefaultSurah: true,   // Practice: pin the search rather than bias it
     pipelineVersion: 'v4',  // V4: Word-level tracking
     forcePhoneMic: false,
     fastMode: false,
@@ -1977,6 +1985,51 @@ body {
 
   // ─── Surah names ──────────────────────────────────────────────────────────
   const SURAHS = ['','Al-Fatiha','Al-Baqarah','Ali Imran','An-Nisa','Al-Maida','Al-Anam','Al-Araf','Al-Anfal','At-Tawbah','Yunus','Hud','Yusuf','Ar-Rad','Ibrahim','Al-Hijr','An-Nahl','Al-Isra','Al-Kahf','Maryam','Ta-Ha','Al-Anbiya','Al-Hajj','Al-Muminun','An-Nur','Al-Furqan','Ash-Shuara','An-Naml','Al-Qasas','Al-Ankabut','Ar-Rum','Luqman','As-Sajda','Al-Ahzab','Saba','Fatir','Ya-Sin','As-Saffat','Sad','Az-Zumar','Ghafir','Fussilat','Ash-Shura','Az-Zukhruf','Ad-Dukhan','Al-Jathiya','Al-Ahqaf','Muhammad','Al-Fath','Al-Hujurat','Qaf','Adh-Dhariyat','At-Tur','An-Najm','Al-Qamar','Ar-Rahman','Al-Waqia','Al-Hadid','Al-Mujadila','Al-Hashr','Al-Mumtahina','As-Saf','Al-Jumuah','Al-Munafiqun','At-Taghabun','At-Talaq','At-Tahrim','Al-Mulk','Al-Qalam','Al-Haqqa','Al-Maarij','Nuh','Al-Jinn','Al-Muzzammil','Al-Muddaththir','Al-Qiyama','Al-Insan','Al-Mursalat','An-Naba','An-Naziat','Abasa','At-Takwir','Al-Infitar','Al-Mutaffifin','Al-Inshiqaq','Al-Buruj','At-Tariq','Al-Ala','Al-Ghashiya','Al-Fajr','Al-Balad','Ash-Shams','Al-Layl','Ad-Duha','Ash-Sharh','At-Tin','Al-Alaq','Al-Qadr','Al-Bayyina','Az-Zalzala','Al-Adiyat','Al-Qaria','At-Takathur','Al-Asr','Al-Humaza','Al-Fil','Quraysh','Al-Maun','Al-Kawthar','Al-Kafirun','An-Nasr','Al-Masad','Al-Ikhlas','Al-Falaq','An-Nas'];
+
+  /**
+   * Only Practice pins the search. Taraweeh follows an imam who chooses the
+   * surah, so restricting there would strand the display — the backend ignores
+   * it outside Practice, and this keeps the wire honest about that.
+   */
+  function restrictSurahValue() {
+    var n = parseInt(S.settings.defaultSurah || '0') || 0;
+    if (!n || !S.settings.onlyDefaultSurah) return 0;
+    return _practiceMode ? n : 0;
+  }
+
+  window.updateSurahScope = function () {
+    var sel = document.getElementById('settingSurah');
+    var row = document.getElementById('surahScopeRow');
+    if (!sel || !row) return;
+    // Take the choice immediately. defaultSurah used to be written only when
+    // Settings closed, so both this toggle and the init payload read a stale
+    // value while the panel was open.
+    if (S.settings.defaultSurah !== sel.value) {
+      S.settings.defaultSurah = sel.value;
+      try { saveSettings(); } catch (_) {}
+      scheduleReinit('Surah: ' + (sel.value === '0' ? 'any' : sel.options[sel.selectedIndex].textContent));
+    }
+    var picked = sel.value !== '0';
+    row.style.display = picked ? '' : 'none';
+    var only = S.settings.onlyDefaultSurah !== false;
+    var a = document.getElementById('btnSurahOnly');
+    var b = document.getElementById('btnSurahAny');
+    if (a) a.classList.toggle('active', only);
+    if (b) b.classList.toggle('active', !only);
+    var hint = document.getElementById('surahScopeHint');
+    if (hint) {
+      hint.textContent = !picked ? ''
+        : only ? 'Practice: matches only inside this surah — nothing else can lock. Taraweeh ignores this and follows the imam.'
+               : 'Prefers this surah but will still lock a verse from another.';
+    }
+  };
+
+  window.setSurahScope = function (only) {
+    S.settings.onlyDefaultSurah = !!only;
+    saveSettings();
+    updateSurahScope();
+    scheduleReinit('Surah scope: ' + (only ? 'only this surah' : 'any surah'));
+  };
 
   function populateSurahs() {
     ['settingSurah'].forEach(function (id) {
@@ -2809,6 +2862,7 @@ body {
         sessionId: _clientSessionId,
         audioSource: currentAudioSource(),
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
+      restrictSurah: restrictSurahValue(),
         lang: (S.settings.lang || '').trim() || null,
         pipelineVersion: S.settings.pipelineVersion || 'v4',
         fastMode: _fastMode,
@@ -4047,6 +4101,7 @@ body {
     document.getElementById('settingsView').style.display = 'block';
     document.getElementById('settingLang').value = sanitizeTranslationLang(S.settings.lang || '');
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
+    updateSurahScope();
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
     var oaiInput = document.getElementById('settingOpenAIKey');
@@ -4099,6 +4154,7 @@ body {
       sessionId: _clientSessionId,
       audioSource: currentAudioSource(),
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
+      restrictSurah: restrictSurahValue(),
       lang: (S.settings.lang || '').trim() || null,
       pipelineVersion: S.settings.pipelineVersion || 'v4',
       fastMode: _fastMode,
