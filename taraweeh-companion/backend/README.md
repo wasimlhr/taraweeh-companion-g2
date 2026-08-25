@@ -44,3 +44,8 @@ Expects `data/quran-full.json` and `data/verses-display.json` (full Quran from q
 - **URL**: `ws://localhost:3001/ws`
 - **Send**: Raw PCM bytes (16kHz, 16-bit mono)
 - **Receive**: `{ type: "state", state: { mode, surah, ayah, confidence, nonQuranText } }`
+# Local TLS
+
+Railway provides managed TLS and does not use files under `backend/certs`. For local browser microphone testing, run `node genCerts.js` to create ignored development-only certificates. Plain HTTP remains supported on `localhost`; never configure a non-loopback HTTP backend when using BYOK credentials.
+
+Shared provider keys are disabled for clients unless `SHARED_ACCESS_TOKEN` is configured and the same token is supplied during WebSocket initialization. Railway deployments can tune the `WS_MAX_*` and `SHARED_*_CALLS_PER_MINUTE` / `SHARED_*_CONCURRENCY` limits for their plan. BYOK calls do not consume shared quotas.

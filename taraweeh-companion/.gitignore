@@ -23,6 +23,9 @@ backend/debug_*.wav
 # Baseline pipeline copy materialised by scripts/run-lock-bench.sh
 backend/.bench-baseline-pipeline.js
 
+# Developer TLS certificates are generated locally; Railway terminates TLS.
+backend/certs/*.pem
+
 # Build artifacts
 *.tar.gz
 tar-extract/

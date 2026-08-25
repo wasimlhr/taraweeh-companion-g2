@@ -4,6 +4,7 @@
  */
 import { pcmToWav } from './pcmToWav.js';
 import { httpError } from './httpRetry.js';
+import { fetchWithDeadline } from './requestControl.js';
 
 const ELEVEN_URL = 'https://api.elevenlabs.io/v1/speech-to-text';
 const ELEVEN_MODEL = 'scribe_v2';
@@ -14,7 +15,7 @@ const ELEVEN_MODEL = 'scribe_v2';
  * @param {Function} [emit]
  * @returns {Promise<{text: string, words: Array, provider: 'elevenlabs'}>}
  */
-export async function transcribeWithElevenLabs(pcmBuffer, apiKey, emit = null) {
+export async function transcribeWithElevenLabs(pcmBuffer, apiKey, emit = null, extra = {}) {
   if (!apiKey) {
     throw new Error('ElevenLabs API key missing. Set it in app settings or SHARED_ELEVENLABS_KEY.');
   }
@@ -31,11 +32,11 @@ export async function transcribeWithElevenLabs(pcmBuffer, apiKey, emit = null) {
   emit?.({ component: 'model', status: 'pending', provider: 'elevenlabs' });
 
   const t0 = Date.now();
-  const res = await fetch(ELEVEN_URL, {
+  const res = await fetchWithDeadline('ElevenLabs', ELEVEN_URL, {
     method: 'POST',
     headers: { 'xi-api-key': apiKey },
     body: form,
-  });
+  }, { signal: extra.signal, timeoutMs: extra.timeoutMs });
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -70,10 +71,10 @@ export async function transcribeWithElevenLabs(pcmBuffer, apiKey, emit = null) {
   return { text, words, provider: 'elevenlabs' };
 }
 
-export async function probeElevenLabsKey(apiKey) {
-  const res = await fetch('https://api.elevenlabs.io/v1/user', {
+export async function probeElevenLabsKey(apiKey, options = {}) {
+  const res = await fetchWithDeadline('ElevenLabs probe', 'https://api.elevenlabs.io/v1/user', {
     headers: { 'xi-api-key': apiKey },
-  });
+  }, options);
   const body = await res.text().catch(() => '');
   if (!res.ok) throw httpError('ElevenLabs', res, body);
   let email = '';

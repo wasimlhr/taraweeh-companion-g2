@@ -9,6 +9,7 @@
  * provider: 'hf-public' | 'hf-dedicated' | 'modal' | 'custom'
  */
 import { pcmToWav } from './pcmToWav.js';
+import { delayWithSignal, fetchWithDeadline } from './requestControl.js';
 
 const USE_LOCAL     = process.env.USE_LOCAL_WHISPER === 'true';
 const LOCAL_URL     = process.env.LOCAL_WHISPER_URL || 'http://localhost:8000/transcribe';
@@ -44,15 +45,14 @@ function getWhisperConfig(opts = {}) {
 }
 
 /** Call the local Python Whisper server (multipart form or raw WAV) */
-async function callLocal(wavBuffer, emit = null) {
+async function callLocal(wavBuffer, emit = null, opts = {}) {
   emit?.({ component: 'model', status: 'pending' });
   const t0 = Date.now();
-  const response = await fetch(LOCAL_URL, {
+  const response = await fetchWithDeadline('Local Whisper', LOCAL_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'audio/wav' },
     body: wavBuffer,
-    signal: AbortSignal.timeout(30000),
-  });
+  }, { signal: opts.signal, timeoutMs: opts.timeoutMs || 30000 });
   if (!response.ok) {
     const body = await response.text();
     emit?.({ component: 'model', status: 'error', message: `Local ${response.status}` });
@@ -119,7 +119,7 @@ function parseTranscription(result) {
   return { text: String(text).trim(), words };
 }
 
-async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) {
+async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null, opts = {}) {
   // HF Inference Endpoints default toolkit doesn't accept language/task as query params
   // The model is fine-tuned for Arabic so no need to force language
   const fullUrl = url;
@@ -130,20 +130,19 @@ async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) 
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const t0 = Date.now();
-  const response = await fetch(fullUrl, {
+  const response = await fetchWithDeadline('Whisper', fullUrl, {
     method: 'POST',
     headers,
     body: wavBuffer,
-    signal: AbortSignal.timeout(35000),
-  });
+  }, { signal: opts.signal, timeoutMs: opts.timeoutMs || 35000 });
 
   // HF/Modal cold-start: emit loading status, wait, then retry
   if (response.status === 503) {
     const retryIn = parseInt(response.headers.get('retry-after') || '20', 10);
     console.log(`[Whisper] Model loading, retrying in ${retryIn}s...`);
     emit?.({ component: 'model', status: 'loading', retryIn });
-    await new Promise((r) => setTimeout(r, retryIn * 1000));
-    return callRaw(url, wavBuffer, token, forceArabic, emit);
+    await delayWithSignal(Math.min(retryIn, 60) * 1000, opts.signal, 'Whisper');
+    return callRaw(url, wavBuffer, token, forceArabic, emit, opts);
   }
 
   const body = await response.text();
@@ -167,7 +166,7 @@ async function callRaw(url, wavBuffer, token, forceArabic = false, emit = null) 
 }
 
 /** Call Modal web endpoint (no HF Bearer; optional Modal proxy auth; language=ar, return_timestamps=true) */
-async function callModal(url, wavBuffer, modalKey, modalSecret, emit = null) {
+async function callModal(url, wavBuffer, modalKey, modalSecret, emit = null, opts = {}) {
   const params = new URLSearchParams();
   params.set('language', 'ar');
   params.set('task', 'transcribe');
@@ -184,19 +183,18 @@ async function callModal(url, wavBuffer, modalKey, modalSecret, emit = null) {
   }
 
   const t0 = Date.now();
-  const response = await fetch(fullUrl, {
+  const response = await fetchWithDeadline('Modal Whisper', fullUrl, {
     method: 'POST',
     headers,
     body: wavBuffer,
-    signal: AbortSignal.timeout(35000),
-  });
+  }, { signal: opts.signal, timeoutMs: opts.timeoutMs || 35000 });
 
   if (response.status === 503) {
     const retryIn = parseInt(response.headers.get('retry-after') || '20', 10);
     console.log(`[Whisper] Modal cold-start, retrying in ${retryIn}s...`);
     emit?.({ component: 'model', status: 'loading', retryIn });
-    await new Promise((r) => setTimeout(r, retryIn * 1000));
-    return callModal(url, wavBuffer, modalKey, modalSecret, emit);
+    await delayWithSignal(Math.min(retryIn, 60) * 1000, opts.signal, 'Modal Whisper');
+    return callModal(url, wavBuffer, modalKey, modalSecret, emit, opts);
   }
 
   const body = await response.text();
@@ -256,12 +254,11 @@ export async function probeWhisperEndpoint(optsOrToken, emit) {
     }
 
     const t0 = Date.now();
-    const res = await fetch(url, {
+    const res = await fetchWithDeadline('Whisper probe', url, {
       method: 'POST',
       headers,
       body: PROBE_WAV_BUFFER,
-      signal: AbortSignal.timeout(15000),
-    });
+    }, { signal: opts.signal, timeoutMs: opts.timeoutMs || 15000 });
     const latencyMs = Date.now() - t0;
 
     if (res.status === 503) {
@@ -277,6 +274,7 @@ export async function probeWhisperEndpoint(optsOrToken, emit) {
   } catch (err) {
     emit({ component: 'model', status: 'error', provider, message: err.message.slice(0, 100) });
     console.warn(`[Whisper] Probe: ${provider} unreachable — ${err.message}`);
+    if (err.code === 'PROVIDER_CANCELLED' || err.code === 'PROVIDER_TIMEOUT') throw err;
   }
 }
 
@@ -302,10 +300,11 @@ export async function transcribeWithWhisper(pcmBuffer, optsOrToken, emit = null)
   if (USE_LOCAL) {
     try {
       console.log(`[Whisper] Local → ${wavBuffer.length}B`);
-      const result = await callLocal(wavBuffer, emit);
+      const result = await callLocal(wavBuffer, emit, opts);
       if (!isNoise(result.text)) return result;
       console.log(`[Whisper] Local noise/empty — falling through to HF`);
     } catch (err) {
+      if (err.code === 'PROVIDER_CANCELLED' || err.code === 'PROVIDER_TIMEOUT') throw err;
       console.warn(`[Whisper] Local failed: ${err.message} — falling back to HF`);
       emit?.({ component: 'model', status: 'fallback', message: 'Local server unavailable' });
     }
@@ -317,12 +316,13 @@ export async function transcribeWithWhisper(pcmBuffer, optsOrToken, emit = null)
       const label = cfg.isModal ? 'Modal' : cfg.isCustom ? 'Custom' : 'HF';
       console.log(`[Whisper] Dedicated (${label}) → ${wavBuffer.length}B`);
       const result = cfg.isModal
-        ? await callModal(cfg.endpointUrl, wavBuffer, cfg.modalKey, cfg.modalSecret, emit)
-        : await callRaw(cfg.endpointUrl, wavBuffer, cfg.apiKey, false, emit);
+        ? await callModal(cfg.endpointUrl, wavBuffer, cfg.modalKey, cfg.modalSecret, emit, opts)
+        : await callRaw(cfg.endpointUrl, wavBuffer, cfg.apiKey, false, emit, opts);
       if (!isNoise(result.text)) return result;
       console.log(`[Whisper] Dedicated noise/empty — trying fallback`);
       emit?.({ component: 'model', status: 'fallback', message: 'Dedicated returned noise' });
     } catch (err) {
+      if (err.code === 'PROVIDER_CANCELLED' || err.code === 'PROVIDER_TIMEOUT') throw err;
       console.warn(`[Whisper] Dedicated failed: ${err.message}`);
       emit?.({ component: 'model', status: 'fallback', message: err.message.slice(0, 80) });
     }
@@ -331,5 +331,5 @@ export async function transcribeWithWhisper(pcmBuffer, optsOrToken, emit = null)
   // ── Mode 3: HuggingFace public fallback ────────────────────────────────────
   if (!cfg.apiKey) throw new Error('API key required for HF public fallback');
   console.log(`[Whisper] Fallback → ${wavBuffer.length}B`);
-  return await callRaw(FALLBACK_URL, wavBuffer, cfg.apiKey, true, emit);
+  return await callRaw(FALLBACK_URL, wavBuffer, cfg.apiKey, true, emit, opts);
 }

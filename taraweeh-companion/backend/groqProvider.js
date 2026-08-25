@@ -6,6 +6,7 @@
  */
 import { pcmToWav } from './pcmToWav.js';
 import { httpError } from './httpRetry.js';
+import { fetchWithDeadline } from './requestControl.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const GROQ_MODEL = 'whisper-large-v3-turbo';
@@ -38,11 +39,11 @@ export async function transcribeWithGroq(pcmBuffer, apiKey, emit = null, extra =
   emit?.({ component: 'model', status: 'pending', provider: 'groq' });
 
   const t0 = Date.now();
-  const res = await fetch(GROQ_URL, {
+  const res = await fetchWithDeadline('Groq', GROQ_URL, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}` },
     body: form,
-  });
+  }, { signal: extra.signal, timeoutMs: extra.timeoutMs });
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');

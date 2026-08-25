@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test transcriptionRouter.test.js",
+    "test": "node --test --test-isolation=none --test-concurrency=1 *.test.js",
     "test-pipeline": "node testPipeline.js"
   },
   "dependencies": {

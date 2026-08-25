@@ -11,6 +11,7 @@ import { transcribeWithGroq } from './groqProvider.js';
 import { transcribeWithOpenAI } from './openaiProvider.js';
 import { transcribeWithDeepgram, probeDeepgramKey } from './deepgramProvider.js';
 import { transcribeWithElevenLabs, probeElevenLabsKey } from './elevenlabsProvider.js';
+import { fetchWithDeadline } from './requestControl.js';
 
 export const PROVIDER = (process.env.TRANSCRIPTION_PROVIDER || 'groq').toLowerCase();
 export const STT_ENGINES = ['groq', 'openai', 'deepgram', 'elevenlabs'];
@@ -82,7 +83,7 @@ async function callProvider(name, pcmBuffer, apiKey, emit, extra = {}) {
     case 'deepgram':
       return transcribeWithDeepgram(pcmBuffer, apiKey, emit, extra);
     case 'elevenlabs':
-      return transcribeWithElevenLabs(pcmBuffer, apiKey, emit);
+      return transcribeWithElevenLabs(pcmBuffer, apiKey, emit, extra);
     case 'openai':
       return transcribeWithOpenAI(pcmBuffer, apiKey, emit, extra);
     default:
@@ -116,18 +117,26 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
     throw new Error(msg);
   }
 
+  const release = opts.beforeProviderCall?.() || (() => {});
   const extra = {};
   if (opts.prompt) extra.prompt = opts.prompt;
   if (opts.model) extra.model = opts.model;
-  return callProvider(name, pcmBuffer, apiKey, emit, extra);
+  if (opts.signal) extra.signal = opts.signal;
+  if (opts.timeoutMs) extra.timeoutMs = opts.timeoutMs;
+  try {
+    return await callProvider(name, pcmBuffer, apiKey, emit, extra);
+  } finally {
+    release();
+  }
 }
 
 export async function compareProviders(pcmBuffer, whisperOpts, emit = null) {
-  const keys = collectKeys(whisperOpts || {});
+  const opts = whisperOpts || {};
+  const keys = collectKeys(opts);
   const jobs = STT_ENGINES.filter((p) => keys[p]).map(async (name) => {
     const t0 = Date.now();
     try {
-      const result = await callProvider(name, pcmBuffer, keys[name], emit, {});
+      const result = await callProvider(name, pcmBuffer, keys[name], emit, { signal: opts.signal, timeoutMs: opts.timeoutMs });
       return {
         provider: name,
         ok: true,
@@ -148,30 +157,30 @@ export async function compareProviders(pcmBuffer, whisperOpts, emit = null) {
   return Promise.all(jobs);
 }
 
-export async function probeProviderKey(provider, apiKey) {
+export async function probeProviderKey(provider, apiKey, options = {}) {
   const key = (apiKey || '').trim();
   if (!key) throw new Error('API key missing');
   switch (provider) {
     case 'groq': {
-      const res = await fetch('https://api.groq.com/openai/v1/models', {
+      const res = await fetchWithDeadline('Groq probe', 'https://api.groq.com/openai/v1/models', {
         headers: { Authorization: `Bearer ${key}` },
-      });
+      }, options);
       if (!res.ok) throw new Error(`Groq HTTP ${res.status}`);
       const data = await res.json();
       return { ok: true, models: (data.data || []).length };
     }
     case 'openai': {
-      const res = await fetch('https://api.openai.com/v1/models', {
+      const res = await fetchWithDeadline('OpenAI probe', 'https://api.openai.com/v1/models', {
         headers: { Authorization: `Bearer ${key}` },
-      });
+      }, options);
       if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
       const data = await res.json();
       return { ok: true, models: (data.data || []).length };
     }
     case 'deepgram':
-      return probeDeepgramKey(key);
+      return probeDeepgramKey(key, options);
     case 'elevenlabs':
-      return probeElevenLabsKey(key);
+      return probeElevenLabsKey(key, options);
     default:
       throw new Error(`Cannot probe provider: ${provider}`);
   }

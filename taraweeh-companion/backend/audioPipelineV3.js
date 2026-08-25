@@ -6,27 +6,11 @@
  * - Bump threshold: only bump when remaining ≥12s (was 8s)
  * - Re-lock: pass display position into RESUMING for better resync when display ahead
  */
-import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { transcribe } from './transcriptionRouter.js';
 import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah } from './anchorStateMachine.js';
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
 import { findAnchor, isRefrain } from './keywordMatcher.js';
-
-// ── Position persistence across restarts ────────────────────────────────────
-const POS_FILE = '/tmp/taraweeh_position.json';
-function _savePosition(surah, ayah, pace) {
-  try { writeFileSync(POS_FILE, JSON.stringify({ surah, ayah, pace, ts: Date.now() })); } catch (_) {}
-}
-function _loadPosition() {
-  try {
-    if (!existsSync(POS_FILE)) return null;
-    const d = JSON.parse(readFileSync(POS_FILE, 'utf8'));
-    if (Date.now() - d.ts > 30 * 60 * 1000) return null; // stale after 30 min
-    if (d.surah > 0 && d.ayah > 0) return d;
-  } catch (_) {}
-  return null;
-}
 
 const SAMPLE_RATE      = 16000;
 const BYTES_PER_SAMPLE = 2;
@@ -197,13 +181,15 @@ function isTakbeer(text) {
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, translationLang = '', hfToken, whisperOpts }) {
+  constructor({ onStateUpdate, onStatus, onError, onRecoveryState, recoveryState, preferredSurah = 0, translationLang = '', hfToken, whisperOpts }) {
     this.onStateUpdate   = onStateUpdate;
     this.onStatus        = onStatus || (() => {});
     this.onError         = onError  || (() => {});
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
-    this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
+    this._abortController = new AbortController();
+    this.whisperOpts     = { ...(whisperOpts || (hfToken ? { apiKey: hfToken } : {})), signal: this._abortController.signal };
+    this.onRecoveryState = onRecoveryState || (() => {});
 
     this.state     = createState();
     this.active    = false;
@@ -212,7 +198,7 @@ export class AudioPipeline {
     this._completedSurah = 0;
 
     // Restore last known position from disk (survives restarts)
-    const restored = _loadPosition();
+    const restored = recoveryState;
     if (restored) {
       console.log(`[Pipeline] Restored position: ${restored.surah}:${restored.ayah} (pace=${restored.pace || 0}ms/w)`);
     }
@@ -547,6 +533,7 @@ export class AudioPipeline {
   }
 
   destroy() {
+    this._abortController.abort(new Error('Pipeline destroyed'));
     this.active = false;           // stop all processing & stale-check in-flight Whisper
     this._stopTimerHeartbeat();     // kill 500ms emit interval
     this._cancelReadAdvance();      // clear display-advance & smooth-advance timers
@@ -1638,7 +1625,7 @@ export class AudioPipeline {
       console.log(`[Emit] LOCKED ${displaySurah}:${displayAyah} "${(lockedVerse?.translation || '').substring(0, 50)}"`);
       this._completedSurah = 0;
       // Persist position for restart recovery
-      _savePosition(displaySurah, displayAyah, this._measuredMsPerWord);
+      this.onRecoveryState({ surah: displaySurah, ayah: displayAyah, pace: this._measuredMsPerWord, ts: Date.now() });
     } else if (isCandidate) {
       console.log(`[Emit] CANDIDATE ${topMatch.surah}:${topMatch.ayah} score=${topScore.toFixed(2)} "${(lockedVerse?.translation || '').substring(0, 50)}"`);
     }

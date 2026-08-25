@@ -1487,7 +1487,7 @@ body {
   var Storage = (function () {
     var cache = new Map();
     var bridge = null;
-    var KNOWN_KEYS = ['qlive_settings', 'qc_theme', 'taraweeh_session_id'];
+    var KNOWN_KEYS = ['qlive_settings', 'qc_theme', 'taraweeh_session_id', 'taraweeh_recovery_state'];
 
     function _readBrowser(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
     function _writeBrowser(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
@@ -1634,9 +1634,24 @@ body {
   /** http(s) base URL of the backend, no trailing slash. */
   function backendBase() {
     var manual = (S.settings && S.settings.backendUrl || '').trim();
-    if (manual) return manual.replace(/\/+$/, '');
+    if (manual && isSecureBackendUrl(manual)) return manual.replace(/\/+$/, '');
     if (_originIsBackend) return originBase();
     return HOSTED_BACKEND;
+  }
+
+  function isSecureBackendUrl(value) {
+    try {
+      var url = new URL(value);
+      var loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+      return url.protocol === 'https:' || (url.protocol === 'http:' && loopback);
+    } catch (_) { return false; }
+  }
+
+  function recoveryState() {
+    try {
+      var raw = Storage.getItem('taraweeh_recovery_state');
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) { return null; }
   }
 
   function defaultWsUrl() {
@@ -2860,6 +2875,7 @@ body {
       S.ws.send(JSON.stringify({
         type: 'init',
         sessionId: _clientSessionId,
+        recoveryState: recoveryState(),
         audioSource: currentAudioSource(),
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       restrictSurah: restrictSurahValue(),
@@ -3029,6 +3045,8 @@ body {
       handleSysStatus(msg);
     } else if (msg.type === 'match_progress') {
       if (S.isRecording) updateMatchPanel(msg);
+    } else if (msg.type === 'recovery_state') {
+      if (msg.state) Storage.setItem('taraweeh_recovery_state', JSON.stringify(msg.state));
     } else if (msg.type === 'state') {
       if (msg.whisperText) {
         log('Heard: ' + msg.whisperText.slice(0, 60), 'w');
@@ -4152,6 +4170,7 @@ body {
     S.ws.send(JSON.stringify(Object.assign({
       type: 'init',
       sessionId: _clientSessionId,
+      recoveryState: recoveryState(),
       audioSource: currentAudioSource(),
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       restrictSurah: restrictSurahValue(),
@@ -4175,8 +4194,9 @@ body {
     var bUrlSave = document.getElementById('settingBackendUrl');
     if (bUrlSave) {
       var raw = (bUrlSave.value || '').trim().replace(/\/+$/, '');
-      // Only accept an absolute http(s) URL; anything else means "auto".
-      S.settings.backendUrl = /^https?:\/\/[^\s]+$/i.test(raw) ? raw : '';
+      // BYOK secrets may only travel over TLS, except to a loopback dev server.
+      S.settings.backendUrl = isSecureBackendUrl(raw) ? raw : '';
+      if (raw && !S.settings.backendUrl) setStatus('Custom backend must use HTTPS (HTTP is allowed only on loopback)', 'err');
     }
     S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
     var oaiEl = document.getElementById('settingOpenAIKey');

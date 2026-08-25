@@ -6,6 +6,7 @@
  */
 import { pcmToWav } from './pcmToWav.js';
 import { httpError } from './httpRetry.js';
+import { fetchWithDeadline } from './requestControl.js';
 
 const OPENAI_URL = 'https://api.openai.com/v1/audio/transcriptions';
 const OPENAI_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe';
@@ -42,11 +43,11 @@ export async function transcribeWithOpenAI(pcmBuffer, apiKey, emit = null, extra
   emit?.({ component: 'model', status: 'pending', provider: 'openai' });
 
   const t0 = Date.now();
-  const res = await fetch(OPENAI_URL, {
+  const res = await fetchWithDeadline('OpenAI', OPENAI_URL, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}` },
     body: form,
-  });
+  }, { signal: extra.signal, timeoutMs: extra.timeoutMs });
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');

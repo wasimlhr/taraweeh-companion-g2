@@ -14,10 +14,12 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { loadQuran } from './keywordMatcher.js';
 import { buildMushafIndex } from './mushafIndex.js';
-import { closeTranscription, PROVIDER, sharedKeyAvailability, compareProviders, probeProviderKey, STT_ENGINES } from './transcriptionRouter.js';
+import { closeTranscription, PROVIDER, sharedKeyAvailability, compareProviders, probeProviderKey, resolveProvider, STT_ENGINES } from './transcriptionRouter.js';
 import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
 import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
+import { MAX_WS_PAYLOAD, validPcm, validRecoveryState, tokenMatches, tokenPrincipal, SlidingQuota, ConcurrencyCeiling } from './security.js';
+import { delayWithSignal } from './requestControl.js';
 
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
@@ -28,6 +30,18 @@ const SHARED_OPENAI_KEY = (process.env.SHARED_OPENAI_KEY || '').trim();
 const SHARED_DEEPGRAM_KEY = (process.env.SHARED_DEEPGRAM_KEY || '').trim();
 const SHARED_ELEVENLABS_KEY = (process.env.SHARED_ELEVENLABS_KEY || '').trim();
 const HAS_ANY_SHARED_KEY = !!(SHARED_GROQ_KEY || SHARED_OPENAI_KEY || SHARED_DEEPGRAM_KEY || SHARED_ELEVENLABS_KEY);
+const SHARED_ACCESS_TOKEN = (process.env.SHARED_ACCESS_TOKEN || '').trim();
+const MAX_CONNECTIONS = Number(process.env.WS_MAX_CONNECTIONS) || 100;
+const MAX_CONNECTIONS_PER_IP = Number(process.env.WS_MAX_CONNECTIONS_PER_IP) || 5;
+const MAX_MESSAGES_PER_MINUTE = Number(process.env.WS_MAX_MESSAGES_PER_MINUTE) || 600;
+const SHARED_GLOBAL_CALLS_PER_MINUTE = Number(process.env.SHARED_GLOBAL_CALLS_PER_MINUTE) || 60;
+const SHARED_PRINCIPAL_CALLS_PER_MINUTE = Number(process.env.SHARED_PRINCIPAL_CALLS_PER_MINUTE) || 20;
+const SHARED_GLOBAL_CONCURRENCY = Number(process.env.SHARED_GLOBAL_CONCURRENCY) || 8;
+const SHARED_PRINCIPAL_CONCURRENCY = Number(process.env.SHARED_PRINCIPAL_CONCURRENCY) || 2;
+const messageQuota = new SlidingQuota({ limit: MAX_MESSAGES_PER_MINUTE, windowMs: 60_000 });
+const sharedGlobalQuota = new SlidingQuota({ limit: SHARED_GLOBAL_CALLS_PER_MINUTE, windowMs: 60_000 });
+const sharedPrincipalQuota = new SlidingQuota({ limit: SHARED_PRINCIPAL_CALLS_PER_MINUTE, windowMs: 60_000 });
+const sharedConcurrency = new ConcurrencyCeiling({ globalLimit: SHARED_GLOBAL_CONCURRENCY, principalLimit: SHARED_PRINCIPAL_CONCURRENCY });
 const SAMPLE_RATE = 16000;
 const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
 const ENDPOINT_ON_DEMAND_ENABLED = process.env.ENDPOINT_ON_DEMAND_ENABLED === 'true';
@@ -188,8 +202,11 @@ app.post('/api/transcription/test-key', async (req, res) => {
   if (!STT_ENGINES.includes(provider)) {
     return res.status(400).json({ ok: false, message: 'Unknown provider' });
   }
+  const controller = new AbortController();
+  req.once('aborted', () => controller.abort());
+  res.once('close', () => { if (!res.writableEnded) controller.abort(); });
   try {
-    const result = await probeProviderKey(provider, apiKey);
+    const result = await probeProviderKey(provider, apiKey, { signal: controller.signal });
     res.json({ ok: true, provider, ...result });
   } catch (err) {
     res.status(400).json({ ok: false, provider, message: err.message || 'Key check failed' });
@@ -219,6 +236,10 @@ app.post('/api/transcription/compare', async (req, res) => {
     deepgramApiKey: req.body?.deepgramApiKey || '',
     elevenlabsApiKey: req.body?.elevenlabsApiKey || '',
   };
+  const controller = new AbortController();
+  req.once('aborted', () => controller.abort());
+  res.once('close', () => { if (!res.writableEnded) controller.abort(); });
+  whisperOpts.signal = controller.signal;
   try {
     const results = await compareProviders(pcm, whisperOpts);
     res.json({ ok: true, results });
@@ -235,12 +256,15 @@ app.get('/api/endpoint/warmup', async (req, res) => {
     });
   }
 
+  const controller = new AbortController();
+  req.once('aborted', () => controller.abort());
+  res.once('close', () => { if (!res.writableEnded) controller.abort(); });
   try {
     let latest = null;
     const maxAttempts = 6;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       latest = null;
-      await probeWhisperEndpoint({ ...(buildWhisperOpts() || {}), forceProbe: true }, (s) => {
+      await probeWhisperEndpoint({ ...(buildWhisperOpts() || {}), forceProbe: true, signal: controller.signal }, (s) => {
         latest = s;
         updateEndpointLifecycle(s, 'warmup');
       });
@@ -249,7 +273,7 @@ app.get('/api/endpoint/warmup', async (req, res) => {
       if (status === 'error') break;
       const retryIn = Number(latest?.retryIn || 2);
       const delayMs = Math.max(1000, Math.min(retryIn * 1000, 8000));
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await delayWithSignal(delayMs, controller.signal, 'Whisper warmup');
     }
     res.json({
       ok: true,
@@ -312,10 +336,17 @@ function decodeBase64Pcm(data) {
   }
 }
 
-const wss = new WebSocketServer({ noServer: true, path: '/ws' });
+const wss = new WebSocketServer({ noServer: true, path: '/ws', maxPayload: MAX_WS_PAYLOAD });
 function upgradeToWs(server) {
   server.on('upgrade', (req, socket, head) => {
-    if (req.url === '/ws') wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    if (req.url !== '/ws') return socket.destroy();
+    const ip = req.socket.remoteAddress || 'unknown';
+    const sameIp = [...wss.clients].filter((client) => client._clientIp === ip).length;
+    if (wss.clients.size >= MAX_CONNECTIONS || sameIp >= MAX_CONNECTIONS_PER_IP) {
+      socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+      return socket.destroy();
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   });
 }
 upgradeToWs(httpServer);
@@ -330,21 +361,19 @@ const keepaliveInterval = setInterval(() => {
 }, 30000);
 
 wss.on('close', () => clearInterval(keepaliveInterval));
-
-// Session dedup by client-supplied session ID (not IP — prod users share NAT/carrier
-// IPs and would cannibalise each other). Clients send a stable per-install ID on init;
-// if the SAME session ID is already connected, close the stale one. Different users
-// have different IDs so they never interfere.
-const _activeSessions = new Map(); // sessionId → ws
+wss.on('error', (error) => console.error('[WS] Server error:', error.message));
 
 wss.on('connection', (ws, req) => {
   const clientIp = req.socket.remoteAddress;
+  ws._clientIp = clientIp;
   console.log(`[WS] Client connected from ${clientIp}`);
   let pipeline = null;
   let sessionId = null;
 
   function send(msg) {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg), (error) => {
+      if (error) console.warn(`[WS] Send failed for ${clientIp}: ${error.message}`);
+    });
   }
 
   let pipelineVersion = 'v4';
@@ -364,8 +393,15 @@ wss.on('connection', (ws, req) => {
     const openaiKey = (typeof opts?.openaiApiKey === 'string') ? opts.openaiApiKey.trim() : '';
     const deepgramKey = (typeof opts?.deepgramApiKey === 'string') ? opts.deepgramApiKey.trim() : '';
     const elevenlabsKey = (typeof opts?.elevenlabsApiKey === 'string') ? opts.elevenlabsApiKey.trim() : '';
-    const hasByok = !!(groqKey || openaiKey || deepgramKey || elevenlabsKey);
-    const useSharedMode = !hasByok && HAS_ANY_SHARED_KEY;
+    const byokKeys = { groq: groqKey, openai: openaiKey, deepgram: deepgramKey, elevenlabs: elevenlabsKey };
+    const initiallySelected = resolveProvider(clientProvider, byokKeys);
+    const selectedByok = byokKeys[initiallySelected] || '';
+    const useSharedMode = !selectedByok && HAS_ANY_SHARED_KEY && tokenMatches(opts.sharedAccessToken, SHARED_ACCESS_TOKEN);
+    // The authenticated token digest is stable across reconnects and cannot be
+    // reset with a spoofed client session ID. A single configured token is one
+    // deliberately shared principal; deployments needing separation issue
+    // distinct server instances/tokens.
+    const quotaPrincipal = tokenPrincipal(opts.sharedAccessToken);
 
     whisperOpts = {
       ...whisperOpts,
@@ -375,10 +411,31 @@ wss.on('connection', (ws, req) => {
       deepgramApiKey: deepgramKey,
       elevenlabsApiKey: elevenlabsKey,
       sharedMode: useSharedMode,
+      beforeProviderCall: useSharedMode ? () => {
+        if (!sharedGlobalQuota.take('global') || !sharedPrincipalQuota.take(quotaPrincipal)) {
+          const error = new Error('Shared transcription quota exceeded');
+          error.code = 'SHARED_QUOTA_EXCEEDED';
+          throw error;
+        }
+        const release = sharedConcurrency.acquire(quotaPrincipal);
+        if (!release) {
+          const error = new Error('Shared transcription concurrency exceeded');
+          error.code = 'SHARED_CONCURRENCY_EXCEEDED';
+          throw error;
+        }
+        return release;
+      } : undefined,
       model: clientModel || undefined,
     };
 
-    const selected = clientProvider === 'auto' ? 'groq' : clientProvider;
+    const effectiveKeys = useSharedMode ? {
+      groq: groqKey || SHARED_GROQ_KEY,
+      openai: openaiKey || SHARED_OPENAI_KEY,
+      deepgram: deepgramKey || SHARED_DEEPGRAM_KEY,
+      elevenlabs: elevenlabsKey || SHARED_ELEVENLABS_KEY,
+    } : byokKeys;
+    const selected = resolveProvider(clientProvider, effectiveKeys);
+
     const selectedKey = selected === 'groq' ? (groqKey || (useSharedMode ? SHARED_GROQ_KEY : ''))
       : selected === 'openai' ? (openaiKey || (useSharedMode ? SHARED_OPENAI_KEY : ''))
       : selected === 'deepgram' ? (deepgramKey || (useSharedMode ? SHARED_DEEPGRAM_KEY : ''))
@@ -391,7 +448,7 @@ wss.on('connection', (ws, req) => {
       // 2.6.26 reported Ready for whichever button was lit even when that
       // engine had no key. Search then threw on every chunk with no pill
       // change, so the panel sat at 0.0s / Window 1/5.
-      console.log(`[Init] No ${selected} key (byok=${hasByok} shared=${useSharedMode}) — transcribe will fail`);
+      console.log(`[Init] No ${selected} key (byok=${!!selectedByok} shared=${useSharedMode}) — transcribe will fail`);
       send({
         type: 'sys_status',
         component: 'model',
@@ -421,6 +478,8 @@ wss.on('connection', (ws, req) => {
         send({ type: 'sys_status', ...s });
       },
       onError: (err) => send({ type: 'error', error: err }),
+      recoveryState: validRecoveryState(opts.recoveryState),
+      onRecoveryState: (state) => send({ type: 'recovery_state', state }),
     });
     // Practice may pin the search to one surah. Validated the same way as
     // preferredSurah so a bad value cannot reach the matcher.
@@ -456,10 +515,18 @@ wss.on('connection', (ws, req) => {
 
   let _binaryLogged = false;
   ws.on('message', (data, isBinary) => {
+    if (!messageQuota.take(clientIp || 'unknown')) {
+      send({ type: 'error', code: 'RATE_LIMITED', error: 'Message rate limit exceeded' });
+      return ws.close(1008, 'rate limit');
+    }
     // ws library delivers ALL frames as Buffers — use isBinary flag to distinguish.
     // Without this, JSON control messages leak into the PCM audio buffer, corrupting
     // audio and inflating RMS (ASCII bytes interpreted as 16-bit PCM samples).
     if (isBinary) {
+      if (!validPcm(data)) {
+        send({ type: 'error', code: 'INVALID_PCM', error: 'PCM must be non-empty 16-bit mono and within the frame limit' });
+        return;
+      }
       if (!_binaryLogged) {
         console.log(`[WS] First PCM: ${data.length}B, active=${pipeline?.active}`);
         _binaryLogged = true;
@@ -475,7 +542,7 @@ wss.on('connection', (ws, req) => {
       // carry binary frames. They send PCM as base64 text instead; decode it
       // here and feed the same pipeline the G2 binary path uses.
       const pcm = decodeBase64Pcm(data);
-      if (pcm) {
+      if (validPcm(pcm)) {
         if (!_binaryLogged) {
           console.log(`[WS] First base64 PCM: ${pcm.length}B, active=${pipeline?.active}`);
           _binaryLogged = true;
@@ -485,28 +552,28 @@ wss.on('connection', (ws, req) => {
           pipeline.start();
         }
         if (pipeline) pipeline.ingest(pcm);
+      } else {
+        send({ type: 'error', code: 'INVALID_PCM', error: 'PCM must be valid base64 16-bit mono and within the frame limit' });
       }
     } else {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type !== 'ping') console.log(`[WS] msg type=${msg.type}`);
+        if (!msg || typeof msg.type !== 'string') {
+          send({ type: 'error', code: 'INVALID_MESSAGE', error: 'Message type is required' });
+          return;
+        }
         switch (msg.type) {
           case 'init': {
             const surah = (typeof msg.preferredSurah === 'number' && msg.preferredSurah >= 1 && msg.preferredSurah <= 114)
               ? msg.preferredSurah : 0;
             const requestedVer = sanitizePipelineVersion(msg.pipelineVersion);
             const ver = requestedVer;
-            // Session dedup: if client re-opened without closing the old WS, kill it.
+            // Client IDs are diagnostic only. They are never an ownership token,
+            // lookup key, or authority to close another socket. Recovery is
+            // carried by fresh validated client-owned state in this init message.
             const incomingSid = typeof msg.sessionId === 'string' ? msg.sessionId : '';
-            if (incomingSid) {
-              const stale = _activeSessions.get(incomingSid);
-              if (stale && stale !== ws && stale.readyState === stale.OPEN) {
-                console.log(`[WS] Session ${incomingSid.slice(0,8)}… reopened — closing stale connection`);
-                try { stale.close(1000, 'superseded by new connection'); } catch (_) {}
-              }
-              sessionId = incomingSid;
-              _activeSessions.set(sessionId, ws);
-            }
+            sessionId = incomingSid.slice(0, 128);
             console.log(`[Init] preferredSurah=${surah} pipeline=${ver} sid=${sessionId ? sessionId.slice(0,8) : '(none)'} (client requested: ${requestedVer})`);
             createPipeline(surah, msg, ver);
             _binaryLogged = false;
@@ -531,15 +598,22 @@ wss.on('connection', (ws, req) => {
           case 'set_verse_hold_mode': pipeline?.setPracticeMode?.(msg.enabled); break;
           case 'pace_nudge': pipeline?.paceNudge?.(Number(msg.factor) || 1.0); break;
           case 'reset_rakat': pipeline?.resetRakat(); break;
+          default: send({ type: 'error', code: 'UNKNOWN_MESSAGE', error: 'Unknown message type' });
         }
-      } catch {}
+      } catch {
+        send({ type: 'error', code: 'INVALID_JSON', error: 'Invalid JSON message' });
+      }
     }
+  });
+
+  ws.on('error', (error) => {
+    console.warn(`[WS] Socket error from ${clientIp}: ${error.message}`);
+    if (pipeline) { pipeline.destroy(); pipeline = null; }
   });
 
   ws.on('close', () => {
     console.log(`[WS] Client disconnected from ${clientIp}`);
     if (pipeline) { pipeline.destroy(); pipeline = null; }
-    if (sessionId && _activeSessions.get(sessionId) === ws) _activeSessions.delete(sessionId);
   });
 
   send({ type: 'connected', sampleRate: SAMPLE_RATE });

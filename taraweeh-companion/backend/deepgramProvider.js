@@ -6,6 +6,7 @@
  * Docs: https://developers.deepgram.com/docs/models-languages-overview
  */
 import { httpError } from './httpRetry.js';
+import { fetchWithDeadline } from './requestControl.js';
 
 const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen';
 const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || 'nova-3';
@@ -37,14 +38,14 @@ export async function transcribeWithDeepgram(pcmBuffer, apiKey, emit = null, ext
   emit?.({ component: 'model', status: 'pending', provider: 'deepgram' });
 
   const t0 = Date.now();
-  const res = await fetch(`${DEEPGRAM_URL}?${params}`, {
+  const res = await fetchWithDeadline('Deepgram', `${DEEPGRAM_URL}?${params}`, {
     method: 'POST',
     headers: {
       Authorization: `Token ${apiKey}`,
       'Content-Type': 'audio/raw',
     },
     body: pcmBuffer,
-  });
+  }, { signal: extra.signal, timeoutMs: extra.timeoutMs });
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -79,10 +80,10 @@ export async function transcribeWithDeepgram(pcmBuffer, apiKey, emit = null, ext
   return { text, words, provider: 'deepgram' };
 }
 
-export async function probeDeepgramKey(apiKey) {
-  const res = await fetch('https://api.deepgram.com/v1/projects', {
+export async function probeDeepgramKey(apiKey, options = {}) {
+  const res = await fetchWithDeadline('Deepgram probe', 'https://api.deepgram.com/v1/projects', {
     headers: { Authorization: `Token ${apiKey}` },
-  });
+  }, options);
   const body = await res.text().catch(() => '');
   if (!res.ok) throw httpError('Deepgram', res, body);
   let projects = 0;
