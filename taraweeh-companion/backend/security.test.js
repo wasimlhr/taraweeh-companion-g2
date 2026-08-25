@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { validPcm, validRecoveryState, tokenMatches, tokenPrincipal, SlidingQuota, ConcurrencyCeiling, MAX_PCM_FRAME } from './security.js';
 import { fetchWithDeadline } from './requestControl.js';
 import { collectKeys, resolveProvider } from './transcriptionRouter.js';
+import { AudioPipeline } from './audioPipelineV3.js';
 
 test('recovery is accepted only as fresh client-owned structured state', () => {
   const now = 1_000_000_000;
@@ -92,4 +93,23 @@ test('provider lifecycle cancellation aborts stalled fetch without timeout class
     controller.abort();
     await assert.rejects(pending, { code: 'PROVIDER_CANCELLED' });
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('disconnect/re-init destruction aborts each pipeline lifecycle', () => {
+  const previous = process.env.WHISPER_PROBE_ON_INIT;
+  process.env.WHISPER_PROBE_ON_INIT = 'false';
+  const makePipeline = () => new AudioPipeline({ onStateUpdate() {}, whisperOpts: { provider: 'groq', groqApiKey: 'test-only' } });
+  try {
+    const oldPipeline = makePipeline();
+    const oldSignal = oldPipeline.whisperOpts.signal;
+    oldPipeline.destroy();
+    assert.equal(oldSignal.aborted, true);
+    const replacement = makePipeline();
+    assert.equal(replacement.whisperOpts.signal.aborted, false);
+    replacement.destroy();
+    assert.equal(replacement.whisperOpts.signal.aborted, true);
+  } finally {
+    if (previous === undefined) delete process.env.WHISPER_PROBE_ON_INIT;
+    else process.env.WHISPER_PROBE_ON_INIT = previous;
+  }
 });

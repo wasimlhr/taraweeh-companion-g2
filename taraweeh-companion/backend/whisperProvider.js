@@ -241,7 +241,7 @@ export async function probeWhisperEndpoint(optsOrToken, emit) {
     provider = 'fallback'; url = FALLBACK_URL;
   }
 
-  emit({ component: 'model', status: 'probing', provider, url: (url || '').replace(/\/\/.*@/, '//***@') });
+  emit?.({ component: 'model', status: 'probing', provider, url: (url || '').replace(/\/\/.*@/, '//***@') });
   console.log(`[Whisper] Probing ${provider} → ${url}`);
 
   try {
@@ -263,16 +263,16 @@ export async function probeWhisperEndpoint(optsOrToken, emit) {
 
     if (res.status === 503) {
       const retryIn = parseInt(res.headers.get('retry-after') || '30', 10);
-      emit({ component: 'model', status: 'loading', provider, retryIn, latencyMs });
+      emit?.({ component: 'model', status: 'loading', provider, retryIn, latencyMs });
       console.log(`[Whisper] Probe: ${provider} loading (retry ${retryIn}s, ${latencyMs}ms)`);
       return;
     }
 
     const status = res.ok ? 'ready' : 'standby';
-    emit({ component: 'model', status, provider, latencyMs, httpStatus: res.status });
+    emit?.({ component: 'model', status, provider, latencyMs, httpStatus: res.status });
     console.log(`[Whisper] Probe: ${provider} reachable (HTTP ${res.status}, ${latencyMs}ms)`);
   } catch (err) {
-    emit({ component: 'model', status: 'error', provider, message: err.message.slice(0, 100) });
+    emit?.({ component: 'model', status: 'error', provider, message: err.message.slice(0, 100) });
     console.warn(`[Whisper] Probe: ${provider} unreachable — ${err.message}`);
     if (err.code === 'PROVIDER_CANCELLED' || err.code === 'PROVIDER_TIMEOUT') throw err;
   }

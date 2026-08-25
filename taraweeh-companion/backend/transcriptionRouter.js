@@ -102,7 +102,7 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
   const opts = (whisperOpts && typeof whisperOpts === 'object') ? whisperOpts : {};
 
   if (opts.provider === 'gemini' || PROVIDER === 'gemini') {
-    return transcribeWithGemini(pcmBuffer);
+    return transcribeWithGemini(pcmBuffer, { signal: opts.signal, timeoutMs: opts.timeoutMs });
   }
   if (opts.provider === 'whisper' || PROVIDER === 'whisper') {
     return transcribeWithWhisper(pcmBuffer, whisperOpts, emit);

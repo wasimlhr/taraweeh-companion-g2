@@ -4,13 +4,11 @@
  * No WAV conversion needed — accepts raw PCM.
  */
 import { GoogleGenAI } from '@google/genai';
+import { ProviderTimeoutError, requestSignal } from './requestControl.js';
 
 const GEMINI_MODEL = 'gemini-2.0-flash-live-001';
 
 let ai = null;
-let session = null;
-let sessionPromise = null;
-
 function getClient() {
   if (!ai) {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -20,15 +18,10 @@ function getClient() {
   return ai;
 }
 
-async function getSession() {
-  if (session) return session;
-  if (sessionPromise) return sessionPromise;
-
-  sessionPromise = (async () => {
-    console.log('[Gemini] Opening Live API session...');
-    const client = getClient();
-
-    session = await client.live.connect({
+async function openSession() {
+  console.log('[Gemini] Opening isolated Live API session...');
+  const client = getClient();
+  const liveSession = await client.live.connect({
       model: GEMINI_MODEL,
       config: {
         responseModalities: ['TEXT'],
@@ -39,26 +32,15 @@ async function getSession() {
           }],
         },
       },
-    });
-
-    console.log('[Gemini] Live session ready');
-    sessionPromise = null;
-
-    session.on?.('close', () => {
-      console.log('[Gemini] Session closed, will reopen on next chunk');
-      session = null;
-    });
-
-    return session;
-  })();
-
-  return sessionPromise;
+  });
+  console.log('[Gemini] Isolated Live session ready');
+  return liveSession;
 }
 
 async function collectTranscription(liveSession, timeoutMs = 15000) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let transcription = '';
-    const timer = setTimeout(() => resolve(transcription), timeoutMs);
+    const timer = setTimeout(() => reject(new ProviderTimeoutError('Gemini receive', timeoutMs)), timeoutMs);
 
     (async () => {
       try {
@@ -87,30 +69,31 @@ async function collectTranscription(liveSession, timeoutMs = 15000) {
  * @param {Buffer} pcmBuffer - Raw PCM S16LE 16kHz mono
  * @returns {Promise<{text: string, provider: string}>}
  */
-export async function transcribeWithGemini(pcmBuffer) {
-  const liveSession = await getSession();
-  const base64Audio = pcmBuffer.toString('base64');
-
-  await liveSession.sendRealtimeInput({
-    audio: {
-      data: base64Audio,
-      mimeType: 'audio/pcm;rate=16000',
-    },
-  });
-
-  await liveSession.sendClientContent({
-    turns: [],
-    turnComplete: true,
-  });
-
-  const text = await collectTranscription(liveSession);
-  console.log(`[Gemini] "${text.substring(0, 80)}"`);
-  return { text, provider: 'gemini' };
+export async function transcribeWithGemini(pcmBuffer, options = {}) {
+  const request = requestSignal('Gemini', options.signal, options.timeoutMs || 30_000);
+  let liveSession = null;
+  const aborted = new Promise((_, reject) => request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true }));
+  try {
+    const connecting = openSession();
+    connecting.then((opened) => { if (request.signal.aborted) opened.close().catch(() => {}); }).catch(() => {});
+    liveSession = await Promise.race([connecting, aborted]);
+    if (request.signal.aborted) throw request.signal.reason;
+    const work = (async () => {
+      await liveSession.sendRealtimeInput({ audio: { data: pcmBuffer.toString('base64'), mimeType: 'audio/pcm;rate=16000' } });
+      await liveSession.sendClientContent({ turns: [], turnComplete: true });
+      return collectTranscription(liveSession, options.timeoutMs || 15_000);
+    })();
+    const text = await Promise.race([work, aborted]);
+    console.log(`[Gemini] "${text.substring(0, 80)}"`);
+    return { text, provider: 'gemini' };
+  } catch (error) {
+    throw request.classify(error);
+  } finally {
+    request.cleanup();
+    try { await liveSession?.close(); } catch (_) {}
+  }
 }
 
 export async function closeGeminiSession() {
-  if (session) {
-    try { await session.close(); } catch (_) {}
-    session = null;
-  }
+  // Sessions are request-scoped so there is no process-global stream to close.
 }
