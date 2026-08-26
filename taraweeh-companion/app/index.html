@@ -275,6 +275,38 @@ body {
   height: 100%; background: var(--tc-gold); border-radius: 2px;
   transition: width 0.3s ease;
 }
+/* Live "what the engine hears" preview — raw transcript shown while searching,
+   before any verse is locked (ported from the MentraOS tile). */
+.match-heard-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; color: var(--tc-2); font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.match-live-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--tc-gold);
+  display: inline-block; margin-right: 6px; vertical-align: 1px;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.match-heard {
+  font-family: 'Amiri', serif; font-size: 19px; direction: rtl; text-align: right;
+  color: var(--tc-1); line-height: 1.9; min-height: 1.9em;
+  padding: 8px 12px; border-radius: var(--r);
+  background: var(--bc-1); border: 1px dashed var(--bc-4);
+  transition: opacity 0.4s ease; word-break: break-word;
+}
+.match-heard:empty::before { content: '\2026'; color: var(--tc-2); }
+.match-heard.dim { opacity: 0.4; }
+/* Recognized pre-recitation phrase (isti'adhah / bismillah) */
+.match-preamble {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 12px; border-radius: var(--r);
+  background: var(--bc-accent); border: 1px solid var(--tc-gold);
+  font-size: 12px; font-weight: 600; color: var(--tc-1);
+}
+.match-preamble .ar {
+  font-family: 'Amiri', serif; direction: rtl; margin-left: auto;
+  font-weight: 400; font-size: 14px; color: var(--tc-2);
+}
 /* Candidate rows */
 .match-cand {
   display: flex; flex-direction: column; gap: 2px;
@@ -825,7 +857,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.1.1</span>
+      <span class="version" id="versionEl">v3.2.0</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -880,6 +912,15 @@ body {
           <span id="matchWindowLabel" style="color:var(--tc-gold)">Window 1/5</span>
         </div>
         <div class="match-audio-bar"><div class="match-audio-fill" id="matchAudioFill"></div></div>
+        <div class="match-heard-row">
+          <span><span class="match-live-dot"></span>Hearing</span>
+          <span id="matchHeardMeta"></span>
+        </div>
+        <div class="match-heard" id="matchHeard" dir="rtl" lang="ar"></div>
+        <div class="match-preamble" id="matchPreamble" style="display:none">
+          <span id="matchPreambleLabel"></span>
+          <span class="ar" id="matchPreambleAr"></span>
+        </div>
         <div id="matchCands"></div>
         <div class="lock-progress" id="lockProgress" style="display:none">
           <div class="lock-row">
@@ -956,8 +997,6 @@ body {
     <div class="mv-toggle-group" role="group" aria-label="Transcription provider" style="flex-wrap:wrap">
       <button type="button" class="mv-toggle-btn active" id="btnProviderGroqMain" onclick="setProvider('groq')">Groq</button>
       <button type="button" class="mv-toggle-btn" id="btnProviderOpenAIMain" onclick="setProvider('openai')">OpenAI</button>
-      <button type="button" class="mv-toggle-btn" id="btnProviderDeepgramMain" onclick="setProvider('deepgram')">Deepgram</button>
-      <button type="button" class="mv-toggle-btn" id="btnProviderElevenMain" onclick="setProvider('elevenlabs')">ElevenLabs</button>
     </div>
   </div>
 
@@ -1006,8 +1045,6 @@ body {
       <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
         <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
         <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
-        <button type="button" class="toggle-btn" id="btnProviderDeepgram" onclick="setProvider('deepgram')">Deepgram</button>
-        <button type="button" class="toggle-btn" id="btnProviderEleven" onclick="setProvider('elevenlabs')">ElevenLabs</button>
       </div>
       <span class="s-hint" id="engineHint" style="font-size:11px;display:block;margin-top:8px;line-height:1.5"></span>
 
@@ -1025,22 +1062,6 @@ body {
           <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testSttKey('openai')" style="font-size:13px">Test key</button>
           <span id="openaiTestResult" style="font-size:12px;color:var(--tc-2)">&mdash;</span>
           <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key &rarr;</a>
-        </div>
-      </div>
-      <div id="deepgramKeyRow" style="margin-top:10px;display:none">
-        <input id="settingDeepgramKey" type="password" placeholder="Deepgram API key" autocomplete="off" spellcheck="false" />
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
-          <button type="button" class="back-btn btn-arrow" onclick="testSttKey('deepgram')" style="font-size:13px">Test key</button>
-          <span id="deepgramTestResult" style="font-size:12px;color:var(--tc-2)">&mdash;</span>
-          <a href="https://console.deepgram.com/" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key &rarr;</a>
-        </div>
-      </div>
-      <div id="elevenKeyRow" style="margin-top:10px;display:none">
-        <input id="settingElevenKey" type="password" placeholder="ElevenLabs API key" autocomplete="off" spellcheck="false" />
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
-          <button type="button" class="back-btn btn-arrow" onclick="testSttKey('elevenlabs')" style="font-size:13px">Test key</button>
-          <span id="elevenTestResult" style="font-size:12px;color:var(--tc-2)">&mdash;</span>
-          <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key &rarr;</a>
         </div>
       </div>
       <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
@@ -1175,7 +1196,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.1.1';
+  const APP_VERSION = 'v3.2.0';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1676,8 +1697,6 @@ body {
     keyMode: 'byok',      // 'shared' = use server-held free key; 'byok' = user key
     groqApiKey: '',
     openaiApiKey: '',
-    deepgramApiKey: '',
-    elevenlabsApiKey: '',
     transcriptionProvider: 'groq',
     transcriptionModel: '',         // active model; '' = engine default
     modelByProvider: {},            // last model chosen per engine
@@ -1691,7 +1710,10 @@ body {
     return ALLOWED_PIPELINES.has(normalized) ? normalized : 'v4';
   }
 
-  var STT_PROVIDERS = ['groq', 'openai', 'deepgram', 'elevenlabs'];
+  // Groq and OpenAI only: the other engines measured worse on Quran Arabic and
+  // are no longer offered. sanitizeProvider collapses any stored value for a
+  // removed engine back to groq.
+  var STT_PROVIDERS = ['groq', 'openai'];
   function sanitizeProvider(p) {
     p = String(p || '').toLowerCase();
     if (p === 'auto' || p === 'shared') return 'groq';
@@ -1714,12 +1736,6 @@ body {
         note: '~1.4s, no word timings. Higher accuracy claim than mini.' },
       { id: 'whisper-1', label: 'whisper-1 (legacy)',
         note: 'The only OpenAI model returning word timings, but ~1.25s and dearest.' },
-    ],
-    deepgram: [
-      { id: 'nova-3', label: 'nova-3 (default)',
-        note: "~450ms with word timings. Deepgram's own Arabic model." },
-      { id: 'whisper-large', label: 'whisper-large',
-        note: 'Deepgram-hosted Whisper. Similar latency, Whisper transcripts.' },
     ],
   };
 
@@ -1754,16 +1770,12 @@ body {
       transcriptionModel: normalizeModel(S.settings.transcriptionProvider, S.settings.transcriptionModel),
       groqApiKey: byok ? (S.settings.groqApiKey || '').trim() : '',
       openaiApiKey: byok ? (S.settings.openaiApiKey || '').trim() : '',
-      deepgramApiKey: byok ? (S.settings.deepgramApiKey || '').trim() : '',
-      elevenlabsApiKey: byok ? (S.settings.elevenlabsApiKey || '').trim() : '',
     };
   }
   function providerLabel(p) {
     p = String(p || '').toLowerCase();
     if (p === 'groq') return 'Groq';
     if (p === 'openai') return 'OpenAI';
-    if (p === 'deepgram') return 'Deepgram';
-    if (p === 'elevenlabs') return 'ElevenLabs';
     return p ? p : 'Engine';
   }
 
@@ -2455,6 +2467,19 @@ body {
     if (pill) pill.style.display = 'none';
   }
 
+  // 1:1 IS the basmala, and it locks whenever a reciter opens with
+  // "بسم الله الرحمن الرحيم" (e.g. Fatiha in every rak'ah). Branding that lock
+  // "Al-Fatihah — Ayah 1 of 7" reads wrong when the reciter may be opening any
+  // surah, so every ref label shows it as plain "Bismillah" instead.
+  function isBasmalaPos(state) {
+    return !!state && Number(state.surah) === 1 && Number(state.ayah) === 1;
+  }
+  function glassesRef(state) {
+    if (isBasmalaPos(state)) return 'Bismillah';
+    var name = state.surahName ? clip(state.surahName, 14) : 'Quran';
+    return name + ' ' + state.surah + ':' + state.ayah;
+  }
+
   // ─── Glasses text builder ─────────────────────────────────────────────────
   // Returns { hdr, pages } for the 2-container G2 layout.
   // pages is an array of body strings. For short ayahs it's 1 page.
@@ -2466,8 +2491,7 @@ body {
     switch (state.mode) {
       case 'SEARCHING':
         if (state.isCandidate && (state.translation || state.translationGlasses)) {
-          var cName = state.surahName ? clip(state.surahName, 14) : 'Quran';
-          var cRef  = cName + ' ' + state.surah + ':' + state.ayah;
+          var cRef  = glassesRef(state);
           var cPct  = 'Match: ' + (state.candidateScore || 0) + '%';
           var cPad  = Math.max(1, G2_CHARS - cRef.length - cPct.length - 3);
           var cHdr  = '\u25CB ' + cRef + ' '.repeat(cPad) + cPct;
@@ -2484,8 +2508,7 @@ body {
         }
         // Practice: keep current verse on glasses while listening for next (fresh surah jump).
         if (state.userSearching && (state.translation || state.translationGlasses)) {
-          var uName = state.surahName ? clip(state.surahName, 14) : 'Quran';
-          var uRef  = uName + ' ' + state.surah + ':' + state.ayah;
+          var uRef  = glassesRef(state);
           var uPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
           var uPad  = Math.max(1, G2_CHARS - uRef.length - uPct.length - 3);
           var uHdr  = '\u25CF ' + uRef + ' '.repeat(uPad) + uPct;
@@ -2496,8 +2519,7 @@ body {
         return { hdr: 'Listening', pages: ['\nSearching\u2026'] };
 
       case 'LOCKED': {
-        var lName = state.surahName ? clip(state.surahName, 14) : 'Quran';
-        var lRef  = lName + ' ' + state.surah + ':' + state.ayah;
+        var lRef  = glassesRef(state);
         var lPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
         var lPad  = Math.max(1, G2_CHARS - lRef.length - lPct.length - 3);
         var lHdr  = '\u25CF ' + lRef + ' '.repeat(lPad) + lPct;
@@ -2505,8 +2527,8 @@ body {
       }
 
       case 'PAUSED': {
-        var pName = state.surahName ? clip(state.surahName, 14) : 'Quran';
-        var pRef  = pName + ' ' + (state.surah ? state.surah + ':' + state.ayah : '');
+        var pRef  = state.surah ? glassesRef(state)
+          : (state.surahName ? clip(state.surahName, 14) : 'Quran');
         var pHdr  = '\u23F8 PAUSED  ' + pRef;
         var transForPaused = state.translationGlasses ?? state.translation;
         var pBody = transForPaused || 'Single-tap to resume';
@@ -2518,9 +2540,7 @@ body {
       case 'RESUMING': {
         // Keep showing the last verse — don't flash "Resynchronizing" on the glasses
         if (state.translation || state.translationGlasses || state.transliteration) {
-          var rName = state.surahName ? clip(state.surahName, 14) : 'Quran';
-          var rRef  = rName + ' ' + state.surah + ':' + state.ayah;
-          var rHdr  = '\u21BB ' + rRef;
+          var rHdr  = '\u21BB ' + glassesRef(state);
           return { hdr: rHdr, pages: buildPages(transForGlasses, state.transliteration) };
         }
         var rName2 = state.surahName ? clip(state.surahName, 14) : 'Quran';
@@ -2694,8 +2714,9 @@ body {
       var isCandidate = state.isCandidate;
       var isUserSearching = state.userSearching;
       var scoreLabel = (isCandidate && !_practiceMode) ? ' \u007e' + (state.candidateScore || '') + '%' : (isUserSearching && !_practiceMode ? ' (Auto locking…)' : '');
-      versePosEl.textContent =
-        (state.surahName || '') + '  \u2022  Ayah ' + (state.ayah || '') + ' of ' + (state.ayahTotal || '?') + scoreLabel;
+      versePosEl.textContent = isBasmalaPos(state)
+        ? 'Bismillah' + scoreLabel
+        : (state.surahName || '') + '  \u2022  Ayah ' + (state.ayah || '') + ' of ' + (state.ayahTotal || '?') + scoreLabel;
       versePosEl.style.opacity = (isCandidate || isUserSearching) && !_practiceMode ? '0.75' : '1';
 
       document.getElementById('verseArabic').textContent = state.arabic || '';
@@ -2714,14 +2735,17 @@ body {
       document.getElementById('confPct').textContent = conf + '%';
       confRow.style.display = (state.mode === 'LOCKED' || isCandidate || isUserSearching) ? 'flex' : 'none';
 
+      var posText = isBasmalaPos(state)
+        ? 'Bismillah'
+        : (state.surahName || '') + ' \u2022 ' + (state.ayah || '');
       var statusLabel = state.syncing
         ? 'Syncing recitation\u2026 Heard ' + (state.whisperSurah || '?') + ':' + (state.whisperAyah || '?')
           + ' \u2022 Shown ' + (state.surah || '?') + ':' + (state.ayah || '?')
         : (_practiceMode && (state.surahName || state.surah))
-          ? (state.surahName || '') + ' \u2022 ' + (state.ayah || '')
+          ? posText
         : (isCandidate || state.userSearching)
-          ? 'Auto locking\u2026 ' + (state.surahName || '') + ' \u2022 ' + (state.ayah || '') + (isCandidate ? ' (' + (state.candidateScore || '') + '%)' : '')
-          : (state.surahName || '') + ' \u2022 ' + (state.ayah || '');
+          ? 'Auto locking\u2026 ' + posText + (isCandidate ? ' (' + (state.candidateScore || '') + '%)' : '')
+          : posText;
       setStatus(statusLabel, (state.syncing || ((isCandidate || state.userSearching) && !_practiceMode)) ? '' : 'result');
     } else {
       locked.style.display = 'none';
@@ -2915,12 +2939,64 @@ body {
     };
   }
 
+  // ── Live "hearing" preview (ported from the MentraOS tile) ────────────────
+  // Raw transcript of what the engine hears while SEARCHING, shown before any
+  // verse locks so the user can see the mic + transcription are alive.
+  var _heardDimTimer = null;
+  function setHeardPreview(text) {
+    var el = document.getElementById('matchHeard');
+    if (!el || !text) return;
+    el.textContent = text;
+    el.classList.remove('dim');
+    if (_heardDimTimer) clearTimeout(_heardDimTimer);
+    // Fade stale text so it is never mistaken for what is being recited now.
+    _heardDimTimer = setTimeout(function () { el.classList.add('dim'); }, 6000);
+  }
+
+  var PREAMBLE_LABELS = {
+    istiadhah: { en: "A'udhu billah", ar: 'أعوذ بالله من الشيطان الرجيم' },
+    bismillah: { en: 'Bismillah', ar: 'بسم الله الرحمن الرحيم' },
+  };
+  // Fallback for older backends that don't send msg.preamble yet: recognize the
+  // isti'adhah / bismillah opening in the raw transcript (display-only).
+  function detectPreamble(text) {
+    if (!text) return '';
+    var t = String(text).replace(/[ً-ٰٟ]/g, '').trim();
+    var istiRe = /^(اعوذ|أعوذ)\s+بالله(\s+السميع)?(\s+العليم)?(\s+من)?(\s+الشيطان)?(\s+الرجيم)?[\s.،,]*/;
+    var isti = istiRe.test(t);
+    var rest = isti ? t.replace(istiRe, '').trim() : t;
+    var bismMatch = rest.match(/^بسم\s*الله\s+الرحمن\s+الرحيم[\sۙ،.،]*/);
+    if (bismMatch && rest.slice(bismMatch[0].length).trim().length < 5) return 'bismillah';
+    if (isti && rest.length < 3) return 'istiadhah';
+    return '';
+  }
+
+  var _preambleShownAt = 0;
+  function setPreambleChip(kind) {
+    var wrap = document.getElementById('matchPreamble');
+    if (!wrap) return;
+    var info = kind && PREAMBLE_LABELS[kind];
+    if (info) {
+      _preambleShownAt = Date.now();
+      document.getElementById('matchPreambleLabel').textContent = info.en + ' ✓';
+      document.getElementById('matchPreambleAr').textContent = info.ar;
+      wrap.style.display = '';
+    } else if (wrap.style.display !== 'none' && Date.now() - _preambleShownAt > 4000) {
+      // Keep the chip up briefly so a one-window detection doesn't just flash.
+      wrap.style.display = 'none';
+    }
+  }
+
   function resetMatchPanel() {
     document.getElementById('matchAudioLabel').textContent = '0.0s';
     document.getElementById('matchWindowLabel').textContent = 'Window 1/5';
     document.getElementById('matchAudioFill').style.width = '0%';
     document.getElementById('matchCands').innerHTML = '';
     document.getElementById('lockProgress').style.display = 'none';
+    document.getElementById('matchHeard').textContent = '';
+    document.getElementById('matchPreamble').style.display = 'none';
+    _preambleShownAt = 0;
+    if (_heardDimTimer) { clearTimeout(_heardDimTimer); _heardDimTimer = null; }
   }
 
   function updateMatchPanel(msg) {
@@ -2928,6 +3004,11 @@ body {
     var maxSec = 30;
     document.getElementById('matchAudioLabel').textContent = audioSec.toFixed(1) + 's';
     document.getElementById('matchAudioFill').style.width = Math.min(100, (audioSec / maxSec) * 100) + '%';
+
+    if (msg.whisperText) {
+      setHeardPreview(msg.whisperText);
+      setPreambleChip(msg.preamble || detectPreamble(msg.whisperText));
+    }
 
     var w = msg.lockProgress && msg.lockProgress.wins !== undefined
       ? 'Window ' + Math.min(msg.lockProgress.wins + 1, 5) + '/5' : '';
@@ -3032,6 +3113,11 @@ body {
     } else if (msg.type === 'state') {
       if (msg.whisperText) {
         log('Heard: ' + msg.whisperText.slice(0, 60), 'w');
+        // Keep the live "hearing" preview fresh from state packets too — during
+        // search they carry the same transcript as match_progress.
+        if (S.isRecording && msg.state && msg.state.mode === 'SEARCHING') {
+          setHeardPreview(msg.whisperText);
+        }
       }
       // Update confidence pill
       var _conf = msg.state.isCandidate
@@ -3508,7 +3594,7 @@ body {
     if (S.settings.keyMode === 'byok') {
       var provSel = sanitizeProvider(S.settings.transcriptionProvider);
       var keys = sttPayload();
-      var keyForProv = keys[provSel === 'elevenlabs' ? 'elevenlabsApiKey' : provSel + 'ApiKey'] || '';
+      var keyForProv = keys[provSel + 'ApiKey'] || '';
       if (!keyForProv) {
         setStatus(providerLabel(provSel) + ' API key required — opening settings', 'warn');
         if (typeof log === 'function') log('No STT key set — open Settings and enter one', 'warn');
@@ -3713,10 +3799,6 @@ body {
           if (gKey && !gKey.value) gKey.value = S.settings.groqApiKey || '';
           var oKey = document.getElementById('settingOpenAIKey');
           if (oKey && !oKey.value) oKey.value = S.settings.openaiApiKey || '';
-          var dKey = document.getElementById('settingDeepgramKey');
-          if (dKey && !dKey.value) dKey.value = S.settings.deepgramApiKey || '';
-          var eKey = document.getElementById('settingElevenKey');
-          if (eKey && !eKey.value) eKey.value = S.settings.elevenlabsApiKey || '';
           var lang = document.getElementById('settingLang');
           if (lang) lang.value = sanitizeTranslationLang(S.settings.lang || '');
           var surah = document.getElementById('settingSurah');
@@ -3812,8 +3894,6 @@ body {
   var ENGINE_NOTES = {
     groq: 'Fastest (~350ms) with word timings. Sign-ups may be closed.',
     openai: 'Reliable and widely available. ~450ms on the default model.',
-    deepgram: 'Fast (~450ms) with word timings, using its own Arabic model.',
-    elevenlabs: 'Extra engine. No model choice and no word timings.',
   };
 
   function refreshModelChoices() {
@@ -3858,8 +3938,6 @@ body {
     var ids = {
       groq: ['btnProviderGroq', 'btnProviderGroqMain'],
       openai: ['btnProviderOpenAI', 'btnProviderOpenAIMain'],
-      deepgram: ['btnProviderDeepgram', 'btnProviderDeepgramMain'],
-      elevenlabs: ['btnProviderEleven', 'btnProviderElevenMain'],
     };
     STT_PROVIDERS.forEach(function (name) {
       (ids[name] || []).forEach(function (id) {
@@ -3868,12 +3946,8 @@ body {
       });
     });
     var gRow = document.getElementById('groqKeyRow');
-    var dRow = document.getElementById('deepgramKeyRow');
-    var eRow = document.getElementById('elevenKeyRow');
     var oRow = document.getElementById('openaiKeyRow');
     if (gRow) gRow.style.display = (p === 'groq') ? '' : 'none';
-    if (dRow) dRow.style.display = (p === 'deepgram') ? '' : 'none';
-    if (eRow) eRow.style.display = (p === 'elevenlabs') ? '' : 'none';
     if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
     refreshModelChoices();
     try { saveSettings(); } catch (_) {}
@@ -3889,8 +3963,8 @@ body {
 
   window.testSttKey = async function (provider) {
     provider = sanitizeProvider(provider);
-    var inputIds = { groq: 'settingGroqKey', openai: 'settingOpenAIKey', deepgram: 'settingDeepgramKey', elevenlabs: 'settingElevenKey' };
-    var resultIds = { groq: 'groqTestResult', openai: 'openaiTestResult', deepgram: 'deepgramTestResult', elevenlabs: 'elevenTestResult' };
+    var inputIds = { groq: 'settingGroqKey', openai: 'settingOpenAIKey' };
+    var resultIds = { groq: 'groqTestResult', openai: 'openaiTestResult' };
     var keyEl = document.getElementById(inputIds[provider]);
     var resultEl = document.getElementById(resultIds[provider]);
     if (!resultEl) return;
@@ -4106,10 +4180,6 @@ body {
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
     var oaiInput = document.getElementById('settingOpenAIKey');
     if (oaiInput) oaiInput.value = S.settings.openaiApiKey || '';
-    var dgInput = document.getElementById('settingDeepgramKey');
-    if (dgInput) dgInput.value = S.settings.deepgramApiKey || '';
-    var elInput = document.getElementById('settingElevenKey');
-    if (elInput) elInput.value = S.settings.elevenlabsApiKey || '';
     var bUrlEl = document.getElementById('settingBackendUrl');
     if (bUrlEl) bUrlEl.value = S.settings.backendUrl || '';
     var bHint = document.getElementById('backendUrlHint');
@@ -4181,10 +4251,6 @@ body {
     S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
     var oaiEl = document.getElementById('settingOpenAIKey');
     S.settings.openaiApiKey = oaiEl ? (oaiEl.value || '').trim() : (S.settings.openaiApiKey || '');
-    var dgEl = document.getElementById('settingDeepgramKey');
-    S.settings.deepgramApiKey = dgEl ? (dgEl.value || '').trim() : (S.settings.deepgramApiKey || '');
-    var elEl = document.getElementById('settingElevenKey');
-    S.settings.elevenlabsApiKey = elEl ? (elEl.value || '').trim() : (S.settings.elevenlabsApiKey || '');
     // setProvider() is the source of truth for the engine; the dropdown only
     // ever contributes a model, and only one this engine actually offers.
     S.settings.transcriptionProvider = sanitizeProvider(S.settings.transcriptionProvider);

@@ -26,9 +26,10 @@ const NOISE_PHRASES = [
 
 const QURAN_MARKS_RE = /[\u064B-\u065F\u0610-\u061A\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u0615\u0652\u06D9\uFE70-\uFEFF]/g;
 const BISMILLAH_NORM_RE = /^بسم\s*الله\s+الرحمن\s+الرحيم[\s\u06D9\u060C.،]*/;
-// Leading isti'adha only (the recitation preamble). Do not match mid-verse
+// Leading isti'adha only (the recitation preamble), including the extended
+// "أعوذ بالله السميع العليم…" form some reciters use. Do not match mid-verse
 // "الشيطان الرجيم" (16:98, 7:200) — those are Quran, not a skip cue.
-const ISTI_ADHA_PREFIX_RE = /^(اعوذ|أعوذ)\s+بالله(\s+من)?(\s+الشيطان)?(\s+الرجيم)?[\s.،,]*/;
+const ISTI_ADHA_PREFIX_RE = /^(اعوذ|أعوذ)\s+بالله(\s+السميع)?(\s+العليم)?(\s+من)?(\s+الشيطان)?(\s+الرجيم)?[\s.،,]*/;
 
 const AMEEN_RE = /^(آمين|أمين|امين)(\s+(آمين|أمين|امين))*$/;
 

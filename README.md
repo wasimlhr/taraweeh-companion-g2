@@ -127,15 +127,13 @@ Create a `.env` file in `taraweeh-companion/backend/`:
 ```env
 # Shared keys for free mode (each engine is independent — pick one in Settings)
 SHARED_GROQ_KEY=gsk_your_groq_key_here
-SHARED_DEEPGRAM_KEY=your_deepgram_key_here
-SHARED_ELEVENLABS_KEY=your_elevenlabs_key_here
 SHARED_OPENAI_KEY=sk_your_openai_key_here
 
 # Optional: Gemini for non-Quran detection (tasbeeh, takbeer)
 # GEMINI_API_KEY=your_gemini_key
 ```
 
-Users can also bring their own Groq, Deepgram, ElevenLabs, or OpenAI key in **Settings → Use my own key**.
+Users can also bring their own Groq or OpenAI key in **Settings → Use my own key**.
 
 ### Run
 
@@ -170,7 +168,7 @@ Open `https://<your-lan-ip>:3443` in your phone browser (accept the self-signed 
 
 ## Deployment
 
-Users need to **host the app** (backend + frontend). Transcription runs via Groq, Deepgram, ElevenLabs, or OpenAI — no GPU hosting required.
+Users need to **host the app** (backend + frontend). Transcription runs via Groq or OpenAI — no GPU hosting required.
 
 ### 1. Host the app
 
@@ -178,7 +176,7 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 
 | Platform | Notes |
 |----------|-------|
-| **Railway** | One-click from GitHub. Add `SHARED_GROQ_KEY`, `SHARED_DEEPGRAM_KEY`, `SHARED_ELEVENLABS_KEY`, and/or `SHARED_OPENAI_KEY` in Variables. |
+| **Railway** | One-click from GitHub. Add `SHARED_GROQ_KEY` and/or `SHARED_OPENAI_KEY` in Variables. |
 | **Render** | Web Service, set env vars in dashboard |
 | **Fly.io** | `fly launch` then `fly secrets set SHARED_GROQ_KEY=... SHARED_OPENAI_KEY=...` |
 
@@ -219,14 +217,12 @@ Tracking accuracy is a tie; everything else favours Groq.
 
 ### 2. Transcription providers
 
-Pick one engine and one model in **Settings**. Each engine must lock verses on its own.
+Pick one engine and one model in **Settings**. Each engine must lock verses on its own. Since 3.2.0 the app offers **Groq and OpenAI only** — Deepgram and ElevenLabs measured worse on Quran Arabic (table above) and were removed from the UI; the backend still accepts them from older installed clients.
 
 | Provider | Default model | Notes |
 |----------|-------|-------|
 | **Groq** | `whisper-large-v3-turbo` | Fastest and cheapest; 20 rpm / 2,000/day |
 | **OpenAI** | `gpt-4o-mini-transcribe` | No practical rate limit; `whisper-1` still selectable |
-| **Deepgram** | `nova-3` | ~450ms with word timings; `whisper-large` also Arabic |
-| **ElevenLabs** | `scribe_v2` | Optional extra engine, not a backup |
 
 Set any `SHARED_*_KEY` on the server for free/shared mode. Sessions are capped at `MAX_MIN_PER_SESSION` minutes (default 90). Use **Settings → Compare providers** to see which engine hears a short recitation best.
 

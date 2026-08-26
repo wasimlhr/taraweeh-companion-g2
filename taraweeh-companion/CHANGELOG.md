@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.0 - 2026-08-25
+
+- **Live "hearing" preview while searching.** The match panel now shows the raw transcript of what the engine hears — RTL Arabic, faded once it goes stale — before any verse locks, matching the MentraOS tile. Previously the transcript went only to the debug log, so a working mic and a dead mic looked identical until the first lock.
+- **Isti'adhah and bismillah are recognized by name.** When the reciter opens with "أعوذ بالله…" or "بسم الله الرحمن الرحيم", the panel shows an *A'udhu billah ✓* / *Bismillah ✓* chip instead of silently skipping the window. The backend tags the window (`match_progress.preamble`) and the app also detects it client-side so it works against an older deployed backend. The isti'adhah pattern now also covers the extended "أعوذ بالله السميع العليم…" form, which previously fell through to the matcher as noise.
+- **A basmala lock reads "Bismillah", not "Al-Fatihah 1:1".** 1:1 locks whenever a reciter opens any surah with the basmala, so branding it "Al-Fatihah — Ayah 1 of 7" was wrong most of the time. Phone card, status line and glasses header all show "Bismillah"; the next ayah restores normal surah refs.
+- **Groq and OpenAI are the only engines offered.** Deepgram and ElevenLabs measured worse on Quran Arabic and are gone from the main screen and Settings. A stored selection for a removed engine falls back to Groq. The backend still accepts every engine, so older installed clients keep working.
+
 ## 3.1.1 - 2026-08-24
 
 - **Settings can now pin Practice to one surah.** 3.1.0 added `restrictSurah` to the shared engine but only the MentraOS tile exposed it. Picking a Default Surah now reveals **Only this surah** / **Allow any surah**, defaulting to restricting, because that is what choosing a surah already implies. Taraweeh never sends it and the hint says so — the imam picks the surah there, so pinning would strand the display.

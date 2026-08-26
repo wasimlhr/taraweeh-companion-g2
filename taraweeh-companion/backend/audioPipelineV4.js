@@ -17,6 +17,7 @@ import { findAnchor, isRefrain, getAyah, spotCheck, ayahWordsCovered } from './k
 import {
   prepareMatcherText,
   isBismillahOnly,
+  isIstiAdhaOnly,
   isOpeningPreamble,
   isPreRecitationPhrase,
   isAmeen,
@@ -1064,6 +1065,25 @@ export class AudioPipeline {
     this._emitState(null, null);
   }
 
+  /**
+   * While PAUSED the mic keeps running so audioReturn() can snap forward to
+   * wherever the reciter is now. Update only the whisper-heard position —
+   * conservatively: same surah as the pause and a solid score, because
+   * audioReturn() snaps exclusively forward and a miss just resumes in place.
+   */
+  _trackPausedPosition(cleaned) {
+    if (!cleaned || isNoise(cleaned) || isOpeningPreamble(cleaned)) return;
+    const anchorSurah = this._pausedDisplaySurah || this.state.surah || 0;
+    if (!anchorSurah) return;
+    const { matches } = findAnchor(cleaned, anchorSurah);
+    const top = matches && matches[0];
+    if (top && top.surah === anchorSurah && top.score >= 0.45) {
+      this._whisperSurah = top.surah;
+      this._whisperAyah  = top.ayah;
+      console.log(`[Pipeline] PAUSED tracking: reciter at ${top.surah}:${top.ayah} (score=${top.score.toFixed(2)})`);
+    }
+  }
+
   reset() {
     this._cancelReadAdvance();
     this._resetSearchBuf();
@@ -1247,10 +1267,30 @@ export class AudioPipeline {
       : this._lockedBuf;
     const chunk = Buffer.from(sendSlice);
     const bufMs = Math.round(chunk.length / BYTES_PER_MS);
-    // Per-session budget cap (shared mode only). Hard-stop at 100% so a single
-    // session can't drain the host's monthly transcription budget. Warn at 80%
-    // so the user sees it coming and can stop / switch to BYOK.
+    if (!this._chargeSessionBudget(bufMs)) return false;
+    const seq = ++this._lockedSeq;
+    if (!freshVoice) {
+      this._cappedRecoveryChecks++;
+      console.log(`[Pipeline] Capped recovery check ${this._cappedRecoveryChecks}/${CAPPED_RECOVERY_MAX_CHECKS}`);
+    }
+    this._lastLockedCall = now;
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
+    this._lockedInFlight++;
+    console.log(`[Pipeline] Locked chunk #${seq} ${bufMs}ms (${Math.round(chunk.length/1024)}KB) gap=${Math.round(timeSinceLastSend)}ms tail=${Math.round(LOCKED_SEND_MS / 1000)}s inFlight=${this._lockedInFlight}/${LOCKED_MAX_INFLIGHT}`);
+    this._processLockedChunk(chunk, seq);
+    return true;
+  }
+
+  /**
+   * Per-session budget cap (shared mode only). Hard-stop at 100% so a single
+   * session can't drain the host's monthly transcription budget; warn at 80%.
+   * Charged by BOTH the locked spot-checks and the search ladder — a session
+   * that never locked used to bypass the cap entirely.
+   */
+  _chargeSessionBudget(bufMs) {
     if (this._sessionCapMs > 0) {
+      if (this._sessionCapReached) return false;
       this._sessionAudioMs += bufMs;
       const pct = this._sessionAudioMs / this._sessionCapMs;
       if (pct >= 0.8 && !this._sessionWarned80) {
@@ -1270,17 +1310,6 @@ export class AudioPipeline {
       }
       if (this._sessionCapReached) return false;
     }
-    const seq = ++this._lockedSeq;
-    if (!freshVoice) {
-      this._cappedRecoveryChecks++;
-      console.log(`[Pipeline] Capped recovery check ${this._cappedRecoveryChecks}/${CAPPED_RECOVERY_MAX_CHECKS}`);
-    }
-    this._lastLockedCall = now;
-    this._lockedVoicedMs = 0;
-    this._lockedLastVoiceAt = 0;
-    this._lockedInFlight++;
-    console.log(`[Pipeline] Locked chunk #${seq} ${bufMs}ms (${Math.round(chunk.length/1024)}KB) gap=${Math.round(timeSinceLastSend)}ms tail=${Math.round(LOCKED_SEND_MS / 1000)}s inFlight=${this._lockedInFlight}/${LOCKED_MAX_INFLIGHT}`);
-    this._processLockedChunk(chunk, seq);
     return true;
   }
 
@@ -1351,6 +1380,10 @@ export class AudioPipeline {
       : this._searchBuf;
     const searchChunk = Buffer.from(sendSlice);
     const sendMs = Math.round(searchChunk.length / BYTES_PER_MS);
+    if (!this._chargeSessionBudget(sendMs)) {
+      this.processing = false;
+      return;
+    }
     const rms = computeRms(searchChunk);
     this._lastSearchCall = now;
     this._searchVoicedMs = 0;
@@ -1436,8 +1469,10 @@ export class AudioPipeline {
         this._lastSearchTexts.push(cleaned);
         if (this._lastSearchTexts.length > 3) this._lastSearchTexts.shift();
         // Surface the text so the user can see the mic is working; the anchor
-        // stays in SEARCHING because bismillah identifies no surah.
-        this._emitMatchProgress(cleaned, rms, bufMs);
+        // stays in SEARCHING because bismillah identifies no surah. The kind
+        // tag lets the UI name what it recognized (isti'adhah vs bismillah).
+        this._emitMatchProgress(cleaned, rms, bufMs,
+          isIstiAdhaOnly(cleaned) ? 'istiadhah' : 'bismillah');
         this.onStatus({ component: 'search', status: 'noise', audioSec: bufMs / 1000 });
         if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
         return;
@@ -1638,7 +1673,7 @@ export class AudioPipeline {
 
       const lockedSilenceGate = 0.002;
       if (rms < lockedSilenceGate && !displayCapped) {
-        const newState = transition(this.state, { type: 'SILENCE' });
+        const newState = transition(this.state, { type: 'SILENCE', missBeforeResuming: MISSED_BEFORE_RESUMING_V3 });
         if (newState.mode !== this.state.mode) {
           this.state = newState;
           this._emitState(null, rms);
@@ -1666,7 +1701,19 @@ export class AudioPipeline {
         return;
       }
 
-      if (!this.active || this.state.mode !== 'LOCKED') {
+      if (!this.active) {
+        console.log('[Pipeline] Stale locked-check result discarded');
+        return;
+      }
+      if (this.state.mode === 'PAUSED') {
+        // pause() promises "keep listening; on resume snap to the latest
+        // Whisper position" — but results here used to be discarded wholesale,
+        // freezing the snap target at the pre-pause ayah while the provider
+        // was still being paid. Track position only; the display stays frozen.
+        this._trackPausedPosition(prepareMatcherText(text.trim()));
+        return;
+      }
+      if (this.state.mode !== 'LOCKED') {
         console.log('[Pipeline] Stale locked-check result discarded');
         return;
       }
@@ -2585,7 +2632,15 @@ export class AudioPipeline {
       this._displayAdvanceTimer = null;
       this._nextAdvanceMs  = 0;
       this._timerStartedAt = 0;
-      if (!this._canDisplayAdvance()) return;
+      if (!this._canDisplayAdvance()) {
+        // The timer is gone — its progress interval must not keep emitting
+        // stale wordProgress at 5 Hz until some later reschedule clears it.
+        if (this._wordProgressInterval) {
+          clearInterval(this._wordProgressInterval);
+          this._wordProgressInterval = null;
+        }
+        return;
+      }
 
       const nextAyahData = getVerseData(this._displaySurah, this._displayAyah + 1, this.translationLang);
       if (!nextAyahData) {
@@ -2880,7 +2935,7 @@ export class AudioPipeline {
     }
   }
 
-  _emitMatchProgress(whisperText, rms, bufMs) {
+  _emitMatchProgress(whisperText, rms, bufMs, preamble = null) {
     const matches = (this.state._matches || []).slice(0, 3);
     const top    = matches[0];
     const second = matches[1];
@@ -2896,6 +2951,7 @@ export class AudioPipeline {
       type: 'match_progress',
       audioSec: Math.round(bufMs / 100) / 10,
       whisperText,
+      preamble: preamble || undefined,
       candidates,
       lockProgress: {
         wins: this.state._wins || 0,

@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.1.1 — G2 exposes the Practice surah restriction
+ * v3.2.0 — live "hearing" preview, Bismillah lock label, Groq/OpenAI only in the UI
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -14,7 +14,7 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { loadQuran } from './keywordMatcher.js';
 import { buildMushafIndex } from './mushafIndex.js';
-import { closeTranscription, PROVIDER, sharedKeyAvailability, compareProviders, probeProviderKey, STT_ENGINES } from './transcriptionRouter.js';
+import { closeTranscription, PROVIDER, sharedKeyAvailability, compareProviders, probeProviderKey, STT_ENGINES, collectKeys, resolveProvider } from './transcriptionRouter.js';
 import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
 import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
@@ -277,7 +277,15 @@ app.use('/fonts', express.static(join(__dirname, 'public', 'fonts'), {
   setHeaders: (res) => { res.set('Access-Control-Allow-Origin', '*'); },
 }));
 
-app.use(express.static(rootDir));
+// Serve ONLY the client-facing files. `express.static` on the repo root also
+// exposed the backend source, the corpus data and the self-signed TLS private
+// key (backend/certs/key.pem) to anyone who requested the path.
+app.get('/app.json', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(join(rootDir, 'app.json'));
+});
+app.get('/app/index.html', sendAppHtml);
+app.use('/app', express.static(join(rootDir, 'app')));
 
 const httpServer = createHttpServer(app);
 
@@ -312,10 +320,18 @@ function decodeBase64Pcm(data) {
   }
 }
 
-const wss = new WebSocketServer({ noServer: true, path: '/ws' });
+// maxPayload: real audio frames are a few KB; without a cap the ws default
+// accepts 100 MiB frames that get copied several times before any trimming.
+const wss = new WebSocketServer({ noServer: true, path: '/ws', maxPayload: 1024 * 1024 });
 function upgradeToWs(server) {
   server.on('upgrade', (req, socket, head) => {
-    if (req.url === '/ws') wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    if (req.url === '/ws') {
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    } else {
+      // Once an 'upgrade' listener exists, unanswered sockets are ours to
+      // close — otherwise each stray upgrade request leaks an open TCP socket.
+      socket.destroy();
+    }
   });
 }
 upgradeToWs(httpServer);
@@ -378,12 +394,12 @@ wss.on('connection', (ws, req) => {
       model: clientModel || undefined,
     };
 
-    const selected = clientProvider === 'auto' ? 'groq' : clientProvider;
-    const selectedKey = selected === 'groq' ? (groqKey || (useSharedMode ? SHARED_GROQ_KEY : ''))
-      : selected === 'openai' ? (openaiKey || (useSharedMode ? SHARED_OPENAI_KEY : ''))
-      : selected === 'deepgram' ? (deepgramKey || (useSharedMode ? SHARED_DEEPGRAM_KEY : ''))
-      : selected === 'elevenlabs' ? (elevenlabsKey || (useSharedMode ? SHARED_ELEVENLABS_KEY : ''))
-      : '';
+    // Resolve exactly the way transcribe() will at runtime, so the reported
+    // status can never disagree with actual behavior ('auto' used to hardcode
+    // Groq here and report a fatal key error while OpenAI transcribed fine).
+    const resolvedKeys = collectKeys(whisperOpts);
+    const selected = resolveProvider(clientProvider, resolvedKeys);
+    const selectedKey = resolvedKeys[selected] || '';
     if (selectedKey) {
       console.log(`[Init] ${useSharedMode ? 'SHARED' : 'BYOK'} engine provider=${selected} model=${clientModel || '(default)'}`);
       send({ type: 'sys_status', component: 'model', status: 'ready', provider: selected, byok: !useSharedMode });
@@ -497,12 +513,17 @@ wss.on('connection', (ws, req) => {
             const requestedVer = sanitizePipelineVersion(msg.pipelineVersion);
             const ver = requestedVer;
             // Session dedup: if client re-opened without closing the old WS, kill it.
-            const incomingSid = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+            const incomingSid = typeof msg.sessionId === 'string' ? msg.sessionId.slice(0, 128) : '';
             if (incomingSid) {
               const stale = _activeSessions.get(incomingSid);
               if (stale && stale !== ws && stale.readyState === stale.OPEN) {
                 console.log(`[WS] Session ${incomingSid.slice(0,8)}… reopened — closing stale connection`);
                 try { stale.close(1000, 'superseded by new connection'); } catch (_) {}
+              }
+              // One entry per socket: a connection that rotates its sessionId
+              // must not strand its previous entry in the map forever.
+              if (sessionId && sessionId !== incomingSid && _activeSessions.get(sessionId) === ws) {
+                _activeSessions.delete(sessionId);
               }
               sessionId = incomingSid;
               _activeSessions.set(sessionId, ws);
@@ -539,7 +560,11 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     console.log(`[WS] Client disconnected from ${clientIp}`);
     if (pipeline) { pipeline.destroy(); pipeline = null; }
-    if (sessionId && _activeSessions.get(sessionId) === ws) _activeSessions.delete(sessionId);
+    // Sweep every entry this socket owns, not just the latest sessionId —
+    // earlier IDs sent on the same socket must not outlive it.
+    for (const [sid, sock] of _activeSessions) {
+      if (sock === ws) _activeSessions.delete(sid);
+    }
   });
 
   send({ type: 'connected', sampleRate: SAMPLE_RATE });
