@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.3.1 — tashkeel everywhere: diacritized hearing preview, marks toggle
+ * v3.3.2 — karaoke guard fix; tile ayah bar sweeps once per ayah
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';

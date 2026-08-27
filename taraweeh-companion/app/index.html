@@ -872,7 +872,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.3.1</span>
+      <span class="version" id="versionEl">v3.3.2</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1219,7 +1219,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.3.1';
+  const APP_VERSION = 'v3.3.2';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -3351,8 +3351,10 @@ body {
 
   // V4: Update word progress bar + karaoke highlight
   function _updateWordProgress(msg) {
+    // The karaoke key carries a tashkeel suffix (":t"/":p") — match on the
+    // ayah prefix, or the 5 Hz stream never reaches the highlight.
     if (typeof msg.wordIndex === 'number' && msg.totalWords > 0
-        && _kState.key === (msg.surah || 0) + ':' + (msg.ayah || 0)) {
+        && _kState.key.indexOf((msg.surah || 0) + ':' + (msg.ayah || 0) + ':') === 0) {
       setKaraokeWord(msg.wordIndex, msg.totalWords);
     }
     var progressDiv = document.getElementById('wordProgress');

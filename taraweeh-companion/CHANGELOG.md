@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.3.2 - 2026-08-26
+
+- **The karaoke highlight moves again.** 3.3.1 added a tashkeel suffix to
+  the karaoke key but the wordProgress handler still compared the bare
+  `surah:ayah`, so the 5 Hz stream never reached the highlight and it only
+  jumped on state packets. The guard now matches on the ayah prefix.
+
 ## 3.3.1 - 2026-08-26
 
 - **The live hearing preview now shows real Quranic marks.** Whisper output
