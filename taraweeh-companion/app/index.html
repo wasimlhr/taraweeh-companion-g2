@@ -872,7 +872,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.3.3</span>
+      <span class="version" id="versionEl">v3.3.4</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1219,7 +1219,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.3.3';
+  const APP_VERSION = 'v3.3.4';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2709,8 +2709,9 @@ body {
     var key = (state.surah || 0) + ':' + (state.ayah || 0)
       + (S.settings.showTashkeel === false ? ':p' : ':t');
     // Karaoke only when truly locked — a forming candidate must not pretend
-    // word-level certainty, so it renders as plain text.
-    var karaoke = state.mode === 'LOCKED' && !state.isCandidate && text;
+    // word-level certainty. Not in Practice either: nothing advances the
+    // word position there, so the verse would sit dimmed on word one forever.
+    var karaoke = state.mode === 'LOCKED' && !state.isCandidate && !_practiceMode && text;
     if (!karaoke) {
       if (_kState.key !== 'plain:' + key || el.textContent !== text) {
         el.textContent = text;
@@ -3044,11 +3045,13 @@ body {
   function setHeardPreview(text, marked) {
     var el = document.getElementById('matchHeard');
     if (!el || !text) return;
-    var useMarked = marked && S.settings.showTashkeel !== false;
+    var tashkeelOn = S.settings.showTashkeel !== false;
+    var useMarked = marked && tashkeelOn;
     // State packets carry only the raw text and interleave with match_progress
     // (which carries the diacritized version) — don't let a raw repeat of the
-    // same transcript strip the marks off again.
-    if (!useMarked && text === _heardRawLast && el.textContent && el.textContent !== text) {
+    // same transcript strip the marks off again. Only while the user wants
+    // marks: after toggling them off, the downgrade is the point.
+    if (!useMarked && tashkeelOn && text === _heardRawLast && el.textContent && el.textContent !== text) {
       return;
     }
     _heardRawLast = text;
@@ -3067,7 +3070,7 @@ body {
   // isti'adhah / bismillah opening in the raw transcript (display-only).
   function detectPreamble(text) {
     if (!text) return '';
-    var t = String(text).replace(/[ً-ٰٟ]/g, '').trim();
+    var t = String(text).replace(/[\u064B-\u065F\u0670]/g, '').trim();
     var istiRe = /^(اعوذ|أعوذ)\s+بالله(\s+السميع)?(\s+العليم)?(\s+من)?(\s+الشيطان)?(\s+الرجيم)?[\s.،,]*/;
     var isti = istiRe.test(t);
     var rest = isti ? t.replace(istiRe, '').trim() : t;

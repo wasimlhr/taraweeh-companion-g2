@@ -1,5 +1,43 @@
 # Changelog
 
+## 3.3.4 - 2026-08-26
+
+Audited release: two independent line-by-line reviews of everything changed
+since 3.1.1, plus a new invariant bench (`scripts/wordclock-invariant-bench.js`)
+that replays scripted recitations through the REAL pipeline and asserts the
+field-reported failures can't recur. All five scenarios (Qul Ahad end-to-end,
+sequential transitions, repeated ayah, skip-ahead, tail echo) pass all five
+invariants; 52/52 unit tests.
+
+- **Tail-echo guard — the "last ayah reset twice" root cause.** After a
+  surah's timer completed it, Whisper's lag still delivered its closing
+  words and the search path re-locked the final ayah via strong-score-lock,
+  restarting its display and timer. Locks onto the just-completed surah's
+  final ayah are now ignored for `TAIL_ECHO_MS` (8 s); an earlier ayah or
+  another surah still locks normally. Reproduced in the bench (the anchor
+  re-locked 112:4 at score 0.87) and verified blocked.
+- **Real word counts everywhere.** All word tracking used the matcher's
+  deduplicated two-normalization scoring bag, which differs from the real
+  word count on 4189 of 6236 ayahs (up to 28 words) — "Word X/Y" showed
+  wrong totals, the highlight parked at 100% two-thirds through long ayahs,
+  and the corpus-weight timing gate never matched, so weighted karaoke
+  timing never ran. Everything now uses `canonicalWordCount`; weighted
+  timing is active corpus-wide.
+- **The Whisper word snap actually runs now.** The "perfect reciter sync"
+  block was unreachable — every on-track confirmation returned before it.
+  The live snap now happens inside the on-track rule using
+  `ayahWordsCovered`, which counts from the AYAH's start (window word
+  counts would over-snap across ayah boundaries). Forward-only, and the
+  word clock is floored so the weighted remap can't step backward after a
+  snap (caught by the bench).
+- On a re-lock where the display stays ahead, the Whisper words belong to
+  an earlier ayah and no longer plant a mid-word highlight on the displayed
+  one; practice-mode snaps stamp the word clock so they survive re-sync;
+  the 5 Hz word interval is cleared on the surah-completion path; karaoke
+  is disabled in Practice (nothing advances the position there); toggling
+  tashkeel off takes effect immediately on the heard line; the preamble
+  fallback regex no longer swallows Arabic-Indic digits.
+
 ## 3.3.3 - 2026-08-26
 
 - **New ayahs no longer appear already highlighted at a middle word.**

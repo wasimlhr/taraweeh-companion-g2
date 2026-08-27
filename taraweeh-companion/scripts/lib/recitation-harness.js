@@ -10,7 +10,7 @@
  */
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const backendDir = join(__dirname, '..', '..', 'backend');
@@ -166,9 +166,10 @@ export function installGroqStub(timeline, { latencyMs = 350, verbose = false } =
 }
 
 export async function loadPipeline(file) {
-  const { loadQuran } = await import(join(backendDir, 'keywordMatcher.js'));
+  // pathToFileURL: bare absolute paths are not valid ESM specifiers on Windows.
+  const { loadQuran } = await import(pathToFileURL(join(backendDir, 'keywordMatcher.js')).href);
   loadQuran();
-  const { AudioPipeline } = await import(join(backendDir, file));
+  const { AudioPipeline } = await import(pathToFileURL(join(backendDir, file)).href);
   return AudioPipeline;
 }
 

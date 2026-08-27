@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.3.3 — word clock restarts per displayed ayah; no more mid-word appearances
+ * v3.3.4 — audited release: tail-echo guard, real word counts, live word snap
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';

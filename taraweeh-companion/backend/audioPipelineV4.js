@@ -85,6 +85,10 @@ const SEARCH_VOICE_GATE_BYPASS_MS = parseInt(process.env.SEARCH_VOICE_GATE_BYPAS
 const SIGNAL_PRESENT_RMS = parseFloat(process.env.SIGNAL_PRESENT_RMS || '0.0003');
 const SEARCH_SEND_BYTES = Math.floor(BYTES_PER_MS * SEARCH_SEND_MS);
 const SEARCH_PREROLL_BYTES = Math.floor(BYTES_PER_MS * SEARCH_PREROLL_MS);
+// The imam's last words keep arriving for a few seconds after a surah's timer
+// completed it; ignore search locks onto that just-finished final ayah for
+// this long, or its display and timer restart ("the last ayah reset twice").
+const TAIL_ECHO_MS = parseInt(process.env.TAIL_ECHO_MS || '8000', 10);
 // Practice: pause after a shown verse → next recitation is a fresh global search (surah jumps).
 const PRACTICE_FRESH_SILENCE_MS = parseInt(process.env.PRACTICE_FRESH_SILENCE_MS || '2500', 10);
 const PRACTICE_FRESH_MIN_HOLD_MS = parseInt(process.env.PRACTICE_FRESH_MIN_HOLD_MS || '1200', 10);
@@ -778,10 +782,13 @@ export class AudioPipeline {
     if (words.length > 0) {
       this._wordTimestamps = words;
       const ayahData = getAyah(surah, ayah);
-      const totalWords = ayahData?.words?.length ?? 0;
+      const totalWords = ayahData ? (ayahData.canonicalWordCount || ayahData.words?.length || 0) : 0;
       if (totalWords > 0) {
         const whisperWordIndex = Math.min(words.length, totalWords) - 1;
         this._currentWordIndex = Math.max(this._currentWordIndex, Math.min(whisperWordIndex, totalWords - 1));
+        // Survive _syncWordClock — this is a deliberate mid-word position.
+        this._lockTime = Date.now() - this._currentWordIndex * (this._measuredMsPerWord || 700);
+        this._wordClockKey = `${surah}:${ayah}`;
       }
     }
     this._practiceLastMatchMs = Date.now();
@@ -876,6 +883,7 @@ export class AudioPipeline {
     if (!nextAyahData) {
       const prevSurah = this._displaySurah;
       this._completedSurah = prevSurah;
+      this._completedAt = Date.now();
       this._restorePreRukuIfNeeded(prevSurah);
       // Taraweeh khatam: after Fatiha manual-advance past 1:7, jump to continuation
       const taraweehResume = this.taraweehMode && prevSurah === 1 && this._preRukuSurah > 1;
@@ -1550,6 +1558,22 @@ export class AudioPipeline {
       this._emitMatchProgress(text, rms, bufMs);
 
       if (this.state.mode === 'LOCKED') {
+        // Tail echo: after a surah completes, Whisper's lag still delivers its
+        // closing words, and the search path happily re-locks the final ayah —
+        // restarting its display and timer. Ignore locks onto the completed
+        // surah's FINAL ayah while the echo window is open; an earlier ayah or
+        // another surah is a genuine new recitation.
+        const isFinalAyah = !getAyah(this.state.surah, this.state.ayah + 1);
+        if (this._completedSurah
+            && this.state.surah === this._completedSurah
+            && isFinalAyah
+            && Date.now() - (this._completedAt || 0) < TAIL_ECHO_MS) {
+          console.log(`[Pipeline] Tail echo of completed surah ${this.state.surah}:${this.state.ayah} — staying in search`);
+          this.state = { ...this.state, mode: 'SEARCHING', _wins: 0, _pendingMatch: null };
+          this._emitMatchProgress(text, rms, bufMs);
+          if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
+          return;
+        }
         this._arRahmanRefrainSeen = false;  // ayah lock achieved
         this._expectFatiha = false;          // Fatiha (or any verse) locked — clear flag
         this._resetSearchBuf();
@@ -1566,9 +1590,11 @@ export class AudioPipeline {
         const sameSurahRelock = this.state.surah === this._displaySurah
           && this._displayAyah > 0;
         const relockGap = this._displayAyah - this.state.ayah;
+        let displayKeptAhead = false;
         if (sameSurahRelock && this.state.ayah < this._displayAyah && relockGap < 10 && !this.practiceMode) {
           console.log(`[Pipeline] LOCKED on ${this.state.surah}:${this.state.ayah} after ${bufMs}ms — display stays at :${this._displayAyah} (not going back, gap=${relockGap})`);
           this._userSearchingDisplay = false;
+          displayKeptAhead = true;
           this.state = { ...this.state, surah: this._displaySurah, ayah: this._displayAyah,
             lastLockedSurah: this._displaySurah, lastLockedAyah: this._displayAyah };
         } else {
@@ -1581,20 +1607,31 @@ export class AudioPipeline {
         }
 
         this._ayahStartTime = Date.now();
-        this._currentWordIndex = 0;  // V4: default; snap from Whisper words if available
-        const ayah = getAyah(this.state.surah, this.state.ayah);
-        const totalWords = ayah?.words?.length ?? 0;
-        if (totalWords > 0 && words.length > 0) {
-          this._wordTimestamps = words;
-          this._learnWordPaceFromTimestamps();
-          this._currentWordIndex = Math.min(words.length, totalWords) - 1;
-          const msPerWord = this._measuredMsPerWord || 700;
-          this._lockTime = Date.now() - this._currentWordIndex * msPerWord;
+        if (displayKeptAhead) {
+          // The Whisper words that produced this lock belong to an EARLIER
+          // ayah than the display kept — snapping them onto the display's
+          // ayah planted its word highlight mid-word. Its own clock keeps
+          // running; learn pace from the timestamps but touch nothing else.
+          if (words.length > 0) {
+            this._wordTimestamps = words;
+            this._learnWordPaceFromTimestamps();
+          }
         } else {
-          this._lockTime = this._ayahStartTime;
+          this._currentWordIndex = 0;  // V4: default; snap from Whisper words if available
+          const ayah = getAyah(this.state.surah, this.state.ayah);
+          const totalWords = ayah ? (ayah.canonicalWordCount || ayah.words?.length || 0) : 0;
+          if (totalWords > 0 && words.length > 0) {
+            this._wordTimestamps = words;
+            this._learnWordPaceFromTimestamps();
+            this._currentWordIndex = Math.min(words.length, totalWords) - 1;
+            const msPerWord = this._measuredMsPerWord || 700;
+            this._lockTime = Date.now() - this._currentWordIndex * msPerWord;
+          } else {
+            this._lockTime = this._ayahStartTime;
+          }
+          // This deliberate mid-word entry must survive _syncWordClock.
+          this._wordClockKey = `${this.state.surah}:${this.state.ayah}`;
         }
-        // This deliberate mid-word entry must survive _syncWordClock.
-        this._wordClockKey = `${this.state.surah}:${this.state.ayah}`;
         this._measuredWps            = READ_WORDS_PER_SEC;
         this._whisperLastConfirmMs   = Date.now();
         this._whisperLastConfirmAyah = this.state.ayah;
@@ -1992,6 +2029,29 @@ export class AudioPipeline {
     if (confirmedAyah === this._displayAyah) {
       this._driftMult = 1.0;
       if (realMatch) this._sameAyahStreak++;
+      // V4: karaoke sync — advance the word position from what Whisper
+      // actually heard OF THIS AYAH. ayahWordsCovered counts from the ayah's
+      // start, so a rolling tail window that straddles the previous ayah
+      // cannot over-snap. Forward-only; the pace clock re-anchors so the
+      // 5 Hz interpolation continues from the confirmed word.
+      if (realMatch) {
+        if (words.length > 0) {
+          this._wordTimestamps = words;
+          this._learnWordPaceFromTimestamps();
+        }
+        const heardPos = ayahWordsCovered(confirmedSurah, confirmedAyah, text);
+        if (heardPos.total > 0 && heardPos.covered > 0) {
+          this._syncWordClock();
+          const idx = Math.min(heardPos.covered - 1, heardPos.total - 1);
+          if (idx > (this._currentWordIndex || 0)) {
+            this._currentWordIndex = idx;
+            const msPerWord = this._measuredMsPerWord || 700;
+            this._lockTime = Date.now() - idx * msPerWord;
+            this._wordClockKey = `${this._displaySurah}:${this._displayAyah}`;
+            this._updateWordProgress();
+          }
+        }
+      }
       if (this._displayAdvanceTimer && this._timerStartedAt) {
         const elapsed = Date.now() - this._timerStartedAt;
         const remaining = Math.max(0, this._nextAdvanceMs - elapsed);
@@ -2105,33 +2165,12 @@ export class AudioPipeline {
       this._smoothAdvanceTo(confirmedSurah, confirmedAyah, stepMs);
     }
 
-    // V4: Word-level tracking - learn pace and snap current word from Whisper timestamps
-    if (words.length > 0 && realMatch) {
-      this._wordTimestamps = words;
-      this._learnWordPaceFromTimestamps();
-      // Perfect reciter sync: snap current word from Whisper when we're on this ayah
-      if (confirmedSurah === this._displaySurah && confirmedAyah === this._displayAyah) {
-        // Fresh clock first: after an ayah change the "never go backward" max
-        // below must not inherit the previous ayah's high word index.
-        this._syncWordClock();
-        const ayah = getAyah(this._displaySurah, this._displayAyah);
-        const totalWords = ayah?.words?.length ?? 0;
-        if (totalWords > 0) {
-          // Use word count from Whisper (never go backward) for reciter sync
-          const whisperWordIndex = Math.min(words.length, totalWords) - 1;
-          this._currentWordIndex = Math.max(this._currentWordIndex, Math.min(whisperWordIndex, totalWords - 1));
-          // Align lock time so timer-based progress continues from this word (smooth advance)
-          const msPerWord = this._measuredMsPerWord || 700;
-          this._lockTime = Date.now() - this._currentWordIndex * msPerWord;
-          // This deliberate mid-word alignment must survive _syncWordClock.
-          this._wordClockKey = `${this._displaySurah}:${this._displayAyah}`;
-        }
-      }
-    }
-    // Update word progress display
-    if (confirmedSurah === this._displaySurah && confirmedAyah === this._displayAyah) {
-      this._updateWordProgress();
-    }
+    // (The former "snap current word from Whisper" block that sat here was
+    // unreachable: every on-track confirmation returns inside Rule 3 above,
+    // so confirmed===display could never hold at this point. The live snap
+    // now happens inside Rule 3 via ayahWordsCovered, which counts words
+    // from the AYAH's start — window word counts don't, and would over-snap
+    // whenever a rolling tail window straddled the previous ayah.)
   }
 
   _updateWpsClock(confirmedSurah, confirmedAyah) {
@@ -2284,11 +2323,22 @@ export class AudioPipeline {
     const ayah = getAyah(this._displaySurah, this._displayAyah);
     if (!ayah) return;
 
-    const totalWords = ayah.words.length;
+    // canonicalWordCount, NOT words.length: `words` is the matcher's deduped
+    // two-normalization scoring bag and differs from the real word count on
+    // 4189 of 6236 ayahs (up to 28 words) — the highlight ran ahead and
+    // parked at 100% two-thirds through long ayahs, and the corpus-weight
+    // gate below never matched.
+    const totalWords = ayah.canonicalWordCount || ayah.words.length;
     if (totalWords === 0) return;
 
     const elapsedMs = Date.now() - this._lockTime;
     const msPerWord = this._measuredMsPerWord || 700;
+    // Forward-only within an ayah: a Whisper snap places the index on the
+    // uniform clock, and the weighted mapping below can land one word earlier
+    // for the same elapsed time — without this floor the highlight stepped
+    // backward by one right after every snap. Ayah changes reset via
+    // _syncWordClock above, so the floor never crosses ayahs.
+    const floorIdx = this._currentWordIndex || 0;
 
     // Use corpus weights for proportional word timing
     const wordData = getWordData(this._displaySurah, this._displayAyah);
@@ -2304,10 +2354,10 @@ export class AudioPipeline {
         if (elapsedMs < wordEndMs) { wordIdx = i; break; }
         wordIdx = i;
       }
-      this._currentWordIndex = Math.max(0, Math.min(wordIdx, totalWords - 1));
+      this._currentWordIndex = Math.max(floorIdx, Math.min(wordIdx, totalWords - 1));
     } else {
       // Fallback: uniform word timing
-      this._currentWordIndex = Math.max(0, Math.min(
+      this._currentWordIndex = Math.max(floorIdx, Math.min(
         Math.floor(elapsedMs / msPerWord),
         totalWords - 1
       ));
@@ -2678,6 +2728,7 @@ export class AudioPipeline {
         const prevSurah = this._displaySurah;
         const prevAyah  = this._displayAyah;
         this._completedSurah = prevSurah;
+      this._completedAt = Date.now();
         this._driftMult    = 1.0;
         this._measuredWps  = READ_WORDS_PER_SEC;
         this._behindRepeatCount = 0;
@@ -2723,6 +2774,9 @@ export class AudioPipeline {
           this.state = { ...createState(), mode: 'SEARCHING',
             lastLockedSurah: prevSurah, lastLockedAyah: prevAyah };
           this._resetSearchBuf();
+          // The advance timer consumed itself; without this the 5 Hz word
+          // interval keeps firing no-ops until the next lock.
+          if (this._wordProgressInterval) { clearInterval(this._wordProgressInterval); this._wordProgressInterval = null; }
           console.log(`[Pipeline] End of surah ${prevSurah} — searching for next`);
         }
         this._restorePreRukuIfNeeded(prevSurah);
@@ -2764,6 +2818,7 @@ export class AudioPipeline {
       const prevSurah = this._displaySurah;
       const prevAyah  = this._displayAyah;
       this._completedSurah = prevSurah;
+      this._completedAt = Date.now();
       this._driftMult    = 1.0;
       this._measuredWps  = READ_WORDS_PER_SEC;
       this._behindRepeatCount = 0;
@@ -3071,8 +3126,9 @@ export class AudioPipeline {
     if (this.state.mode === 'LOCKED' && this._displaySurah && this._displayAyah) {
       this._syncWordClock();
       const ayah = getAyah(this._displaySurah, this._displayAyah);
-      if (ayah?.words?.length) {
-        stateTotalWords = ayah.words.length;
+      const realCount = ayah ? (ayah.canonicalWordCount || ayah.words?.length || 0) : 0;
+      if (realCount > 0) {
+        stateTotalWords = realCount;
         stateWordIndex = Math.max(0, Math.min(this._currentWordIndex ?? 0, stateTotalWords - 1));
       }
     }
