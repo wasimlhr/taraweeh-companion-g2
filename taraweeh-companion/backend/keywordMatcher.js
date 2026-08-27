@@ -23,7 +23,7 @@ const TATWEEL          = /\u0640/g;
 const SMALL_MARKS      = /[\u06D6-\u06DC\u06DF-\u06E8\u06EA-\u06ED]/g;
 const DAGGER_ALEF      = /\u0670/g;  // Arabic superscript small alef (Uthmani script)
 
-function normalize(text) {
+export function normalize(text) {
   return String(text)
     .replace(ARABIC_DIACRITICS, '')
     .replace(SMALL_MARKS, '')
@@ -41,7 +41,7 @@ function normalize(text) {
  * Current normalize() strips dagger alef as a diacritic → "انسن" ≠ Whisper's "انسان".
  * This alternate form converts dagger→alef first so both forms enter the index.
  */
-function normalizeDaggerAlef(text) {
+export function normalizeDaggerAlef(text) {
   return String(text)
     .replace(DAGGER_ALEF, '\u0627')   // dagger alef → regular alef (keep as letter)
     .replace(ARABIC_DIACRITICS, '')

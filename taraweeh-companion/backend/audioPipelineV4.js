@@ -13,7 +13,7 @@ import { transcribe, collectKeys, resolveProvider } from './transcriptionRouter.
 import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah } from './anchorStateMachine.js';
 import { getVerseData } from './verseData.js';
 import { probeWhisperEndpoint } from './whisperProvider.js';
-import { findAnchor, isRefrain, getAyah, spotCheck, ayahWordsCovered } from './keywordMatcher.js';
+import { findAnchor, isRefrain, getAyah, spotCheck, ayahWordsCovered, normalize as normalizeArabic, normalizeDaggerAlef } from './keywordMatcher.js';
 import {
   prepareMatcherText,
   isBismillahOnly,
@@ -1470,9 +1470,14 @@ export class AudioPipeline {
         if (this._lastSearchTexts.length > 3) this._lastSearchTexts.shift();
         // Surface the text so the user can see the mic is working; the anchor
         // stays in SEARCHING because bismillah identifies no surah. The kind
-        // tag lets the UI name what it recognized (isti'adhah vs bismillah).
-        this._emitMatchProgress(cleaned, rms, bufMs,
-          isIstiAdhaOnly(cleaned) ? 'istiadhah' : 'bismillah');
+        // tag lets the UI name what it recognized (isti'adhah vs bismillah),
+        // and the marked override shows the phrase with full tashkeel — the
+        // basmala straight from the corpus (1:1), the isti'adhah vocalized.
+        const preambleKind = isIstiAdhaOnly(cleaned) ? 'istiadhah' : 'bismillah';
+        const preambleMarked = preambleKind === 'bismillah'
+          ? (getAyah(1, 1)?.text || null)
+          : 'أَعُوذُ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيمِ';
+        this._emitMatchProgress(cleaned, rms, bufMs, preambleKind, preambleMarked);
         this.onStatus({ component: 'search', status: 'noise', audioSec: bufMs / 1000 });
         if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
         return;
@@ -2935,7 +2940,46 @@ export class AudioPipeline {
     }
   }
 
-  _emitMatchProgress(whisperText, rms, bufMs, preamble = null) {
+  /**
+   * Map each heard (bare Whisper) word to its diacritized corpus spelling so
+   * the live preview can show real Quranic marks for words the matcher
+   * recognizes. Vocabulary comes from the current top candidates (plus each
+   * one's next ayah — search windows straddle boundaries) and the locked
+   * position. Unrecognized words stay exactly as Whisper wrote them.
+   */
+  _markHeardText(rawText) {
+    if (!rawText) return null;
+    const vocab = new Map();
+    const addAyahWords = (s, a) => {
+      const ay = s > 0 && a > 0 ? getAyah(s, a) : null;
+      if (!ay?.text) return;
+      for (const w of String(ay.text).split(/\s+/)) {
+        // Index under both normal forms: the corpus writes some alefs as
+        // dagger alef, which Whisper writes as a plain alef.
+        for (const key of [normalizeArabic(w), normalizeDaggerAlef(w)]) {
+          if (key && !vocab.has(key)) vocab.set(key, w);
+        }
+      }
+    };
+    for (const m of (this.state._matches || []).slice(0, 3)) {
+      addAyahWords(m.surah, m.ayah);
+      addAyahWords(m.surah, m.ayah + 1);
+    }
+    if (this._displaySurah && this._displayAyah) {
+      addAyahWords(this._displaySurah, this._displayAyah);
+      addAyahWords(this._displaySurah, this._displayAyah + 1);
+    }
+    if (!vocab.size) return null;
+    let any = false;
+    const out = String(rawText).split(/\s+/).map((w) => {
+      const hit = vocab.get(normalizeArabic(w));
+      if (hit) { any = true; return hit; }
+      return w;
+    });
+    return any ? out.join(' ') : null;
+  }
+
+  _emitMatchProgress(whisperText, rms, bufMs, preamble = null, markedOverride = null) {
     const matches = (this.state._matches || []).slice(0, 3);
     const top    = matches[0];
     const second = matches[1];
@@ -2951,6 +2995,7 @@ export class AudioPipeline {
       type: 'match_progress',
       audioSec: Math.round(bufMs / 100) / 10,
       whisperText,
+      whisperTextMarked: (markedOverride ?? this._markHeardText(whisperText)) || undefined,
       preamble: preamble || undefined,
       candidates,
       lockProgress: {

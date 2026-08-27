@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.3.1 - 2026-08-26
+
+- **The live hearing preview now shows real Quranic marks.** Whisper output
+  is always bare; the backend now maps each heard word to its diacritized
+  corpus spelling (`match_progress.whisperTextMarked`) using the current
+  candidates and locked position — indexed under both normal forms because
+  the corpus writes some alefs as dagger alef. Unrecognized words stay
+  exactly as Whisper wrote them, so hallucinations remain visibly bare. A
+  recognized isti'adhah/bismillah shows the fully vocalized phrase (the
+  basmala straight from corpus 1:1).
+- **Settings → Quranic marks (tashkeel), on by default.** "Full marks"
+  keeps the corpus Uthmani tashkeel on the verse card and the preview;
+  "Plain text" strips the combining marks for display (word count is
+  untouched, so karaoke indexes are unaffected).
+
 ## 3.3.0 - 2026-08-26
 
 - **Karaoke word tracking in the locked Arabic text.** Words already recited

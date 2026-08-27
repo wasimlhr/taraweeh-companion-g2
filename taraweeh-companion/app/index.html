@@ -872,7 +872,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.3.0</span>
+      <span class="version" id="versionEl">v3.3.1</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1118,6 +1118,14 @@ body {
       <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Bundled locally. Urdu, Bengali and Arabic show English on the glasses.</span>
     </div>
     <div class="s-row">
+      <span class="s-label">Quranic marks (tashkeel)</span>
+      <div class="toggle-group" role="group">
+        <button type="button" class="toggle-btn active" id="btnTashkeelOn" onclick="setTashkeel(true)">Full marks</button>
+        <button type="button" class="toggle-btn" id="btnTashkeelOff" onclick="setTashkeel(false)">Plain text</button>
+      </div>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Madd, zabar, zer and the other marks on the verse text — and on the live hearing preview for recognized words.</span>
+    </div>
+    <div class="s-row">
       <span class="s-label">Second line on glasses</span>
       <div class="toggle-group" role="group">
         <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
@@ -1211,7 +1219,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.3.0';
+  const APP_VERSION = 'v3.3.1';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1718,6 +1726,7 @@ body {
     backendUrl: '',                 // '' = auto (serving origin, else hosted)
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
     reciteMode: 'taraweeh',
+    showTashkeel: true,   // Quranic marks (madd, harakat) on Arabic text + hearing preview
   };
 
   function sanitizePipelineVersion(v) {
@@ -2681,11 +2690,24 @@ body {
   // spans once per ayah and move the highlight.
   var _kState = { key: '', count: 0, lastIdx: -1 };
 
+  // Quranic marks (madd, harakat…). The corpus text carries them; when the
+  // user prefers plain text we strip the combining marks for display only —
+  // word count is unchanged, so karaoke indexes are unaffected.
+  var AR_MARKS_RE = /[\u064B-\u065F\u0670\u06D6-\u06ED]/g;
+  function displayArabic(text) {
+    text = text || '';
+    return S.settings.showTashkeel === false ? text.replace(AR_MARKS_RE, '') : text;
+  }
+
+  var _lastVerseState = null;
+
   function renderVerseArabic(state) {
     var el = document.getElementById('verseArabic');
     if (!el) return;
-    var text = state.arabic || '';
-    var key = (state.surah || 0) + ':' + (state.ayah || 0);
+    _lastVerseState = state;
+    var text = displayArabic(state.arabic);
+    var key = (state.surah || 0) + ':' + (state.ayah || 0)
+      + (S.settings.showTashkeel === false ? ':p' : ':t');
     // Karaoke only when truly locked — a forming candidate must not pretend
     // word-level certainty, so it renders as plain text.
     var karaoke = state.mode === 'LOCKED' && !state.isCandidate && text;
@@ -3018,10 +3040,19 @@ body {
   // Raw transcript of what the engine hears while SEARCHING, shown before any
   // verse locks so the user can see the mic + transcription are alive.
   var _heardDimTimer = null;
-  function setHeardPreview(text) {
+  var _heardRawLast = '';
+  function setHeardPreview(text, marked) {
     var el = document.getElementById('matchHeard');
     if (!el || !text) return;
-    el.textContent = text;
+    var useMarked = marked && S.settings.showTashkeel !== false;
+    // State packets carry only the raw text and interleave with match_progress
+    // (which carries the diacritized version) — don't let a raw repeat of the
+    // same transcript strip the marks off again.
+    if (!useMarked && text === _heardRawLast && el.textContent && el.textContent !== text) {
+      return;
+    }
+    _heardRawLast = text;
+    el.textContent = useMarked ? marked : text;
     el.classList.remove('dim');
     if (_heardDimTimer) clearTimeout(_heardDimTimer);
     // Fade stale text so it is never mistaken for what is being recited now.
@@ -3081,7 +3112,7 @@ body {
     document.getElementById('matchAudioFill').style.width = Math.min(100, (audioSec / maxSec) * 100) + '%';
 
     if (msg.whisperText) {
-      setHeardPreview(msg.whisperText);
+      setHeardPreview(msg.whisperText, msg.whisperTextMarked);
       setPreambleChip(msg.preamble || detectPreamble(msg.whisperText));
     }
 
@@ -3970,6 +4001,20 @@ body {
   };
 
 
+  window.setTashkeel = function (on) {
+    on = on !== false;
+    if (S.settings.showTashkeel === on) return;
+    S.settings.showTashkeel = on;
+    try { saveSettings(); } catch (_) {}
+    var bOn = document.getElementById('btnTashkeelOn');
+    var bOff = document.getElementById('btnTashkeelOff');
+    if (bOn) bOn.classList.toggle('active', on);
+    if (bOff) bOff.classList.toggle('active', !on);
+    // Repaint the current verse immediately instead of waiting for the next
+    // state packet; the karaoke key includes the flag so spans rebuild.
+    if (_lastVerseState) renderVerseArabic(_lastVerseState);
+  };
+
   var ENGINE_NOTES = {
     groq: 'Fastest (~350ms) with word timings. Sign-ups may be closed.',
     openai: 'Reliable and widely available. ~450ms on the default model.',
@@ -4269,6 +4314,11 @@ body {
     setKeyMode('byok', false);
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
     setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
+    var tOn = S.settings.showTashkeel !== false;
+    var bTOn = document.getElementById('btnTashkeelOn');
+    var bTOff = document.getElementById('btnTashkeelOff');
+    if (bTOn) bTOn.classList.toggle('active', tOn);
+    if (bTOff) bTOff.classList.toggle('active', !tOn);
     document.getElementById('settingsVersion').textContent = APP_VERSION + ' \u2022 ' + new Date().toLocaleDateString();
     updateTranslationDesc();
     checkBackend();
