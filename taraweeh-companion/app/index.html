@@ -327,6 +327,21 @@ body {
   font-family: 'Amiri', serif; font-size: 14px; direction: rtl;
   text-align: right; color: var(--tc-2); line-height: 1.5;
 }
+/* Karaoke word tracking inside the locked Arabic text: words already recited
+   at full strength, the current word in gold, upcoming words dimmed. Driven by
+   the backend's 5 Hz wordProgress stream (pace-interpolated server-side). */
+.verse-arabic .k-word {
+  opacity: 0.45;
+  transition: opacity 0.25s ease, color 0.25s ease;
+}
+.verse-arabic .k-word.done { opacity: 0.9; }
+.verse-arabic .k-word.now {
+  opacity: 1;
+  color: var(--tc-gold);
+}
+@media (prefers-reduced-motion: reduce) {
+  .verse-arabic .k-word { transition: none; }
+}
 /* Lock progress */
 .lock-progress {
   padding: 8px 10px; border-radius: var(--r);
@@ -857,7 +872,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.2.0</span>
+      <span class="version" id="versionEl">v3.3.0</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1196,7 +1211,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.2.0';
+  const APP_VERSION = 'v3.3.0';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -2658,6 +2673,66 @@ body {
     if (_lockingDotsTimer) { clearInterval(_lockingDotsTimer); _lockingDotsTimer = null; }
   }
 
+  // ─── Karaoke word tracking (locked Arabic text) ───────────────────────────
+  // The verse text is known once locked, so highlighting is an alignment
+  // problem, not a recognition one: the backend interpolates the current word
+  // from its measured pace and snap-corrects from Whisper word timestamps,
+  // streaming wordProgress at 5 Hz. Here we only split the display text into
+  // spans once per ayah and move the highlight.
+  var _kState = { key: '', count: 0, lastIdx: -1 };
+
+  function renderVerseArabic(state) {
+    var el = document.getElementById('verseArabic');
+    if (!el) return;
+    var text = state.arabic || '';
+    var key = (state.surah || 0) + ':' + (state.ayah || 0);
+    // Karaoke only when truly locked — a forming candidate must not pretend
+    // word-level certainty, so it renders as plain text.
+    var karaoke = state.mode === 'LOCKED' && !state.isCandidate && text;
+    if (!karaoke) {
+      if (_kState.key !== 'plain:' + key || el.textContent !== text) {
+        el.textContent = text;
+        _kState.key = 'plain:' + key; _kState.count = 0; _kState.lastIdx = -1;
+      }
+      return;
+    }
+    if (_kState.key !== key) {
+      el.textContent = '';
+      var words = text.split(/\s+/).filter(Boolean);
+      for (var i = 0; i < words.length; i++) {
+        var s = document.createElement('span');
+        s.className = 'k-word';
+        s.textContent = words[i];
+        el.appendChild(s);
+        if (i < words.length - 1) el.appendChild(document.createTextNode(' '));
+      }
+      _kState.key = key; _kState.count = words.length; _kState.lastIdx = -1;
+    }
+    // Seed from the state packet so the highlight is right immediately after
+    // lock and after a reconnect, before the first wordProgress tick.
+    if (typeof state.wordIndex === 'number' && state.totalWords > 0) {
+      setKaraokeWord(state.wordIndex, state.totalWords);
+    }
+  }
+
+  function setKaraokeWord(wordIndex, totalWords) {
+    if (!_kState.count || _kState.key.indexOf('plain:') === 0) return;
+    // The corpus word count can differ from the display text's tokenization
+    // (Uthmani joining) — scale fractionally instead of trusting the index.
+    var idx = totalWords === _kState.count
+      ? wordIndex
+      : Math.floor((wordIndex / Math.max(1, totalWords)) * _kState.count);
+    idx = Math.max(0, Math.min(idx, _kState.count - 1));
+    if (idx === _kState.lastIdx) return;
+    var el = document.getElementById('verseArabic');
+    if (!el) return;
+    var spans = el.querySelectorAll('.k-word');
+    for (var i = 0; i < spans.length; i++) {
+      spans[i].className = 'k-word' + (i < idx ? ' done' : i === idx ? ' now' : '');
+    }
+    _kState.lastIdx = idx;
+  }
+
   // ─── Phone UI updater ─────────────────────────────────────────────────────
   function updatePhoneUI(state, whisper) {
     S.mode = state.mode;
@@ -2719,7 +2794,7 @@ body {
         : (state.surahName || '') + '  \u2022  Ayah ' + (state.ayah || '') + ' of ' + (state.ayahTotal || '?') + scoreLabel;
       versePosEl.style.opacity = (isCandidate || isUserSearching) && !_practiceMode ? '0.75' : '1';
 
-      document.getElementById('verseArabic').textContent = state.arabic || '';
+      renderVerseArabic(state);
       document.getElementById('verseTranslit').textContent = state.transliteration || '';
       document.getElementById('verseTrans').textContent = state.translation || '';
 
@@ -3243,8 +3318,12 @@ body {
     }
   }
 
-  // V4: Update word progress bar
+  // V4: Update word progress bar + karaoke highlight
   function _updateWordProgress(msg) {
+    if (typeof msg.wordIndex === 'number' && msg.totalWords > 0
+        && _kState.key === (msg.surah || 0) + ':' + (msg.ayah || 0)) {
+      setKaraokeWord(msg.wordIndex, msg.totalWords);
+    }
     var progressDiv = document.getElementById('wordProgress');
     var textSpan = document.getElementById('wordProgressText');
     var percentSpan = document.getElementById('wordProgressPercent');

@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.3.0 - 2026-08-26
+
+- **Karaoke word tracking in the locked Arabic text.** Words already recited
+  render at full strength, the current word glows gold, upcoming words sit
+  dimmed — advancing live through the ayah. No new recognition and no new
+  cost: once locked the text is known, so this is alignment, not ASR. The
+  backend already interpolates the current word from its measured pace
+  (weighted by corpus word lengths) and snap-corrects from Whisper word
+  timestamps, streaming `wordProgress` at 5 Hz; the app now splits the ayah
+  into word spans once per verse and moves the highlight. Corpus and display
+  tokenizations can disagree, so the index maps fractionally. Candidates
+  (not yet locked) stay plain — the highlight must not imply certainty that
+  does not exist yet.
+
 ## 3.2.0 - 2026-08-25
 
 - **Live "hearing" preview while searching.** The match panel now shows the raw transcript of what the engine hears — RTL Arabic, faded once it goes stale — before any verse locks, matching the MentraOS tile. Previously the transcript went only to the debug log, so a working mic and a dead mic looked identical until the first lock.
