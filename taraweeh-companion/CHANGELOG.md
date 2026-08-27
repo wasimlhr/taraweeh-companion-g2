@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.3.3 - 2026-08-26
+
+- **New ayahs no longer appear already highlighted at a middle word.**
+  Several display-move paths (surah change, back-correct, khatam
+  continuation) reset the ayah start time but not the word clock
+  (`_lockTime` / `_currentWordIndex`), so a freshly shown ayah inherited
+  the previous ayah's elapsed time — the karaoke highlight jumped to a
+  middle word instantly and the mis-set position cascaded into timer
+  re-phases. The word clock now re-syncs itself whenever the displayed
+  position changes (`_syncWordClock`), regardless of which path moved it;
+  the two deliberate mid-word entries (first-lock snap and locked-mode
+  Whisper alignment) stamp the clock so they survive. The "never go
+  backward" word snap also starts from a fresh clock after an ayah change
+  instead of inheriting the previous ayah's high index.
+
 ## 3.3.2 - 2026-08-26
 
 - **The karaoke highlight moves again.** 3.3.1 added a tashkeel suffix to

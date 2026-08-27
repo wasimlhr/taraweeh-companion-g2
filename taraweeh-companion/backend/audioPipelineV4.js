@@ -442,6 +442,7 @@ export class AudioPipeline {
     this._wordTimestamps = [];            // Word timestamps from Whisper: [{text, start, end}]
     this._wordProgressInterval = null;    // Timer for progress updates (200ms)
     this._lockTime = 0;                   // When ayah was locked (for word position estimation)
+    this._wordClockKey = '';              // Display position the word clock belongs to
     this._taraweehLastFrom = 'reciting';  // 'reciting' | 'ruku' | 'sajda1' | 'sajda2'
     this._sajdaCount     = 0;              // 1 or 2 when in SAJDA
     this._rakatCount     = 0;
@@ -1088,6 +1089,7 @@ export class AudioPipeline {
     this._cancelReadAdvance();
     this._resetSearchBuf();
     this.state = createState();
+    this._wordClockKey = '';
     this._whisperSurah = 0;
     this._whisperAyah  = 0;
     this._displaySurah = 0;
@@ -1591,6 +1593,8 @@ export class AudioPipeline {
         } else {
           this._lockTime = this._ayahStartTime;
         }
+        // This deliberate mid-word entry must survive _syncWordClock.
+        this._wordClockKey = `${this.state.surah}:${this.state.ayah}`;
         this._measuredWps            = READ_WORDS_PER_SEC;
         this._whisperLastConfirmMs   = Date.now();
         this._whisperLastConfirmAyah = this.state.ayah;
@@ -2107,6 +2111,9 @@ export class AudioPipeline {
       this._learnWordPaceFromTimestamps();
       // Perfect reciter sync: snap current word from Whisper when we're on this ayah
       if (confirmedSurah === this._displaySurah && confirmedAyah === this._displayAyah) {
+        // Fresh clock first: after an ayah change the "never go backward" max
+        // below must not inherit the previous ayah's high word index.
+        this._syncWordClock();
         const ayah = getAyah(this._displaySurah, this._displayAyah);
         const totalWords = ayah?.words?.length ?? 0;
         if (totalWords > 0) {
@@ -2116,6 +2123,8 @@ export class AudioPipeline {
           // Align lock time so timer-based progress continues from this word (smooth advance)
           const msPerWord = this._measuredMsPerWord || 700;
           this._lockTime = Date.now() - this._currentWordIndex * msPerWord;
+          // This deliberate mid-word alignment must survive _syncWordClock.
+          this._wordClockKey = `${this._displaySurah}:${this._displayAyah}`;
         }
       }
     }
@@ -2254,7 +2263,24 @@ export class AudioPipeline {
 
   // V4: Update word progress and emit to frontend
   // Uses corpus word weights for proportional timing — heavy words (madd, verbs) get more time
+  /**
+   * The word clock (elapsed-within-ayah) must restart whenever the DISPLAY
+   * position changes, no matter which path moved it — several paths (surah
+   * change, back-correct, khatam continuation) reset _ayahStartTime but not
+   * _lockTime, so a freshly shown ayah inherited the previous ayah's elapsed
+   * time and appeared already highlighted at a middle word.
+   */
+  _syncWordClock() {
+    const key = `${this._displaySurah}:${this._displayAyah}`;
+    if (this._wordClockKey !== key) {
+      this._wordClockKey = key;
+      this._lockTime = Date.now();
+      this._currentWordIndex = 0;
+    }
+  }
+
   _updateWordProgress() {
+    this._syncWordClock();
     const ayah = getAyah(this._displaySurah, this._displayAyah);
     if (!ayah) return;
 
@@ -3043,6 +3069,7 @@ export class AudioPipeline {
     let stateTotalWords;
     let stateWordIndex;
     if (this.state.mode === 'LOCKED' && this._displaySurah && this._displayAyah) {
+      this._syncWordClock();
       const ayah = getAyah(this._displaySurah, this._displayAyah);
       if (ayah?.words?.length) {
         stateTotalWords = ayah.words.length;
