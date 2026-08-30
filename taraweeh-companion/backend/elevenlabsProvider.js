@@ -4,6 +4,7 @@
  */
 import { pcmToWav } from './pcmToWav.js';
 import { httpError } from './httpRetry.js';
+import { providerDeadline } from './requestDeadline.js';
 
 const ELEVEN_URL = 'https://api.elevenlabs.io/v1/speech-to-text';
 const ELEVEN_MODEL = 'scribe_v2';
@@ -12,9 +13,10 @@ const ELEVEN_MODEL = 'scribe_v2';
  * @param {Buffer} pcmBuffer
  * @param {string} apiKey
  * @param {Function} [emit]
+ * @param {{ signal?: AbortSignal, timeoutMs?: number }} [extra]
  * @returns {Promise<{text: string, words: Array, provider: 'elevenlabs'}>}
  */
-export async function transcribeWithElevenLabs(pcmBuffer, apiKey, emit = null) {
+export async function transcribeWithElevenLabs(pcmBuffer, apiKey, emit = null, extra = {}) {
   if (!apiKey) {
     throw new Error('ElevenLabs API key missing. Set it in app settings or SHARED_ELEVENLABS_KEY.');
   }
@@ -31,27 +33,34 @@ export async function transcribeWithElevenLabs(pcmBuffer, apiKey, emit = null) {
   emit?.({ component: 'model', status: 'pending', provider: 'elevenlabs' });
 
   const t0 = Date.now();
-  const res = await fetch(ELEVEN_URL, {
-    method: 'POST',
-    headers: { 'xi-api-key': apiKey },
-    body: form,
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    const err = httpError('ElevenLabs', res, body);
-    emit?.({
-      component: 'model',
-      status: 'error',
-      provider: 'elevenlabs',
-      message: body.slice(0, 100),
-      retryAfterMs: err.retryAfterMs,
-      httpStatus: res.status,
+  const deadline = providerDeadline(extra);
+  let data;
+  try {
+    const res = await fetch(ELEVEN_URL, {
+      method: 'POST',
+      headers: { 'xi-api-key': apiKey },
+      body: form,
+      signal: deadline.signal,
     });
-    throw err;
-  }
 
-  const data = await res.json();
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      const err = httpError('ElevenLabs', res, body);
+      emit?.({
+        component: 'model',
+        status: 'error',
+        provider: 'elevenlabs',
+        message: body.slice(0, 100),
+        retryAfterMs: err.retryAfterMs,
+        httpStatus: res.status,
+      });
+      throw err;
+    }
+
+    data = await res.json();
+  } finally {
+    deadline.done();
+  }
   const latencyMs = Date.now() - t0;
   emit?.({ component: 'model', status: 'ready', provider: 'elevenlabs', latencyMs });
 

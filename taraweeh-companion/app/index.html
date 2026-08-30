@@ -872,7 +872,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.3.4</span>
+      <span class="version" id="versionEl">v3.3.5</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1219,7 +1219,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.3.4';
+  const APP_VERSION = 'v3.3.5';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1531,7 +1531,7 @@ body {
   var Storage = (function () {
     var cache = new Map();
     var bridge = null;
-    var KNOWN_KEYS = ['qlive_settings', 'qc_theme', 'taraweeh_session_id'];
+    var KNOWN_KEYS = ['qlive_settings', 'qc_theme', 'taraweeh_session_id', 'taraweeh_recovery_state'];
 
     function _readBrowser(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
     function _writeBrowser(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
@@ -1681,6 +1681,20 @@ body {
     if (manual) return manual.replace(/\/+$/, '');
     if (_originIsBackend) return originBase();
     return HOSTED_BACKEND;
+  }
+
+  /**
+   * Last position the backend told us about, echoed on init so recovery
+   * survives reconnects AND backend restarts. Server-side validation decides
+   * whether it is still fresh/real; stale entries are simply ignored there.
+   */
+  function storedRecoveryState() {
+    try {
+      var raw = Storage.getItem('taraweeh_recovery_state');
+      if (!raw) return null;
+      var rs = JSON.parse(raw);
+      return (rs && typeof rs.surah === 'number' && typeof rs.ayah === 'number') ? rs : null;
+    } catch (_) { return null; }
   }
 
   function defaultWsUrl() {
@@ -2982,6 +2996,7 @@ body {
       S.ws.send(JSON.stringify({
         type: 'init',
         sessionId: _clientSessionId,
+        recoveryState: storedRecoveryState(),
         audioSource: currentAudioSource(),
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       restrictSurah: restrictSurahValue(),
@@ -3219,6 +3234,15 @@ body {
       handleSysStatus(msg);
     } else if (msg.type === 'match_progress') {
       if (S.isRecording) updateMatchPanel(msg);
+    } else if (msg.type === 'recovery_state') {
+      // Arrives once per ayah change. Store only the four expected numeric
+      // fields — never persist an arbitrary server payload into the bridge.
+      var rs = msg.state || {};
+      if (typeof rs.surah === 'number' && typeof rs.ayah === 'number' && rs.surah >= 1 && rs.ayah >= 1) {
+        Storage.setItem('taraweeh_recovery_state', JSON.stringify({
+          surah: rs.surah, ayah: rs.ayah, pace: (typeof rs.pace === 'number' ? rs.pace : 0), ts: (typeof rs.ts === 'number' ? rs.ts : Date.now()),
+        }));
+      }
     } else if (msg.type === 'state') {
       if (msg.whisperText) {
         log('Heard: ' + msg.whisperText.slice(0, 60), 'w');
@@ -4356,6 +4380,7 @@ body {
     S.ws.send(JSON.stringify(Object.assign({
       type: 'init',
       sessionId: _clientSessionId,
+      recoveryState: storedRecoveryState(),
       audioSource: currentAudioSource(),
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       restrictSurah: restrictSurahValue(),

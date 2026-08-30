@@ -6,13 +6,12 @@
  * - Bump threshold: only bump when remaining ≥12s (was 8s)
  * - Re-lock: pass display position into RESUMING for better resync when display ahead
  */
-import { writeFileSync, readFileSync, existsSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { transcribe, collectKeys, resolveProvider } from './transcriptionRouter.js';
 import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah } from './anchorStateMachine.js';
 import { getVerseData } from './verseData.js';
-import { probeWhisperEndpoint } from './whisperProvider.js';
 import { findAnchor, isRefrain, getAyah, spotCheck, ayahWordsCovered, normalize as normalizeArabic, normalizeDaggerAlef } from './keywordMatcher.js';
 import {
   prepareMatcherText,
@@ -39,21 +38,6 @@ function getWordData(surah, ayah) {
     }
   }
   return _quranWords[`${surah}:${ayah}`] || null;
-}
-
-// ── Position persistence across restarts ────────────────────────────────────
-const POS_FILE = '/tmp/taraweeh_position.json';
-function _savePosition(surah, ayah, pace) {
-  try { writeFileSync(POS_FILE, JSON.stringify({ surah, ayah, pace, ts: Date.now() })); } catch (_) {}
-}
-function _loadPosition() {
-  try {
-    if (!existsSync(POS_FILE)) return null;
-    const d = JSON.parse(readFileSync(POS_FILE, 'utf8'));
-    if (Date.now() - d.ts > 30 * 60 * 1000) return null; // stale after 30 min
-    if (d.surah > 0 && d.ayah > 0) return d;
-  } catch (_) {}
-  return null;
 }
 
 const SAMPLE_RATE      = 16000;
@@ -309,14 +293,18 @@ const TARAWEEH_STUCK_TIMEOUT_MS = 15000;
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, translationLang = '', hfToken, whisperOpts, audioSource = 'g2' }) {
+  constructor({ onStateUpdate, onStatus, onError, onRecoveryState, recoveryState, preferredSurah = 0, translationLang = '', whisperOpts, audioSource = 'g2' }) {
     this.onStateUpdate   = onStateUpdate;
     this.onStatus        = onStatus || (() => {});
     this.onError         = onError  || (() => {});
+    this.onRecoveryState = onRecoveryState || (() => {});
     this.preferredSurah  = preferredSurah;
     this.restrictSurah   = 0;   // Practice: hard-pin the search to one surah
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
-    this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
+    // destroy() fires this signal so an in-flight provider call (headers OR
+    // body) dies with the pipeline instead of outliving it.
+    this._abortController = new AbortController();
+    this.whisperOpts     = { ...(whisperOpts || {}), signal: this._abortController.signal };
     // Each engine is independent. Groq uses a slightly wider send gap so free-tier
     // 20 RPM is not exceeded *after* lock; search is not starved.
     const _keys = collectKeys(this.whisperOpts || {});
@@ -338,14 +326,17 @@ export class AudioPipeline {
 
     this._completedSurah = 0;
 
-    // Restore last known position from disk (survives restarts)
-    const restored = _loadPosition();
+    // Restore last known position from the client's own stored recovery state
+    // (validated server-side). The old /tmp file restored one user's position
+    // into ANY user's fresh pipeline on a shared host.
+    const restored = recoveryState || null;
     if (restored) {
       console.log(`[Pipeline] Restored position: ${restored.surah}:${restored.ayah} (pace=${restored.pace || 0}ms/w)`);
     }
     this._restoredSurah = restored?.surah || 0;
     this._restoredAyah  = restored?.ayah || 0;
-    if (restored?.pace > 0) this._measuredMsPerWord = restored.pace;
+    this._restoredPace  = restored?.pace > 0 ? restored.pace : 0;
+    this._lastRecoveryKey = '';
 
     // Dual position model: Whisper = ground truth, display = animation
     this._whisperSurah = 0;
@@ -417,8 +408,10 @@ export class AudioPipeline {
     this._blockedSince      = 0;    // timestamp when display first got BLOCKED (0 = not blocked)
     this._syncingDisplay    = false;
 
-    // Learned pace: measured from manual advance clicks (ms per word)
-    this._measuredMsPerWord = 0;   // 0 = no data yet, use default
+    // Learned pace: measured from manual advance clicks (ms per word).
+    // Seeded from the restored session pace — assigning it earlier was dead
+    // code (this line unconditionally zeroed it again).
+    this._measuredMsPerWord = this._restoredPace || 0;   // 0 = no data yet, use default
     this._msPerWordSamples  = [];  // last 6 samples for rolling average
     this._whisperClockSamples = 0; // count of Whisper clock measurements (no manual data)
     this._wordPaceSamples = 0;     // count of pace measurements from word timestamps
@@ -462,12 +455,6 @@ export class AudioPipeline {
     const envCapMin = parseInt(process.env.MAX_MIN_PER_SESSION || '90', 10);
     this._sessionCapMs = sharedMode && envCapMin > 0 ? envCapMin * 60 * 1000 : 0;  // 0 = uncapped
 
-    // Skip the HF warmup probe for any BYOK fast provider — the probe's
-    // 'dedicated' status events overwrite the provider's 'ready' signal and
-    // flash "Server warming up…" on the UI during transient 401/503s.
-    if (!this.isFastProvider) {
-      probeWhisperEndpoint(this.whisperOpts, this.onStatus).catch(() => {});
-    }
     this.setAudioSource(audioSource);
   }
 
@@ -1115,6 +1102,10 @@ export class AudioPipeline {
   }
 
   destroy() {
+    // Abort the in-flight provider call (headers or mid-body). The callback
+    // swallowing below runs in this same synchronous block, so the abort
+    // rejection — a later microtask — can only ever reach no-ops.
+    this._abortController.abort(new Error('Pipeline destroyed'));
     this.active = false;           // stop all processing & stale-check in-flight Whisper
     this._stopTimerHeartbeat();     // kill 500ms emit interval
     this._cancelReadAdvance();      // clear display-advance & smooth-advance timers
@@ -1131,6 +1122,7 @@ export class AudioPipeline {
     this.onStateUpdate = () => {};  // swallow any late callbacks
     this.onStatus = () => {};
     this.onError = () => {};
+    this.onRecoveryState = () => {};
     console.log('[Pipeline] Destroyed');
   }
 
@@ -3116,8 +3108,16 @@ export class AudioPipeline {
     if (this.state.mode === 'LOCKED') {
       console.log(`[Emit] LOCKED ${displaySurah}:${displayAyah} "${(lockedVerse?.translation || '').substring(0, 50)}"`);
       this._completedSurah = 0;
-      // Persist position for restart recovery
-      _savePosition(displaySurah, displayAyah, this._measuredMsPerWord);
+      // Client-carried recovery: emit once per ayah CHANGE, never per
+      // heartbeat — this block runs every 500ms while locked, and each emit
+      // costs the glasses a localStorage write plus a bridge IPC round-trip.
+      if (displaySurah > 0 && displayAyah > 0) {
+        const recoveryKey = `${displaySurah}:${displayAyah}`;
+        if (recoveryKey !== this._lastRecoveryKey) {
+          this._lastRecoveryKey = recoveryKey;
+          this.onRecoveryState({ surah: displaySurah, ayah: displayAyah, pace: this._measuredMsPerWord, ts: Date.now() });
+        }
+      }
     }
 
     // V4: Include word progress in state so UI shows "Word X / Y" immediately when LOCKED (and after reconnect)

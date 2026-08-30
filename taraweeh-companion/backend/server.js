@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.3.4 — audited release: tail-echo guard, real word counts, live word snap
+ * v3.3.5 — hardening: client-carried recovery, provider deadlines, HF wiring removed
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -13,15 +13,14 @@ import { networkInterfaces } from 'os';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { loadQuran } from './keywordMatcher.js';
+import { validRecoveryState } from './recoveryState.js';
 import { buildMushafIndex } from './mushafIndex.js';
 import { closeTranscription, PROVIDER, sharedKeyAvailability, compareProviders, probeProviderKey, STT_ENGINES, collectKeys, resolveProvider } from './transcriptionRouter.js';
 import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
 import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
-import { probeWhisperEndpoint } from './whisperProvider.js';
 
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
-const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const SHARED_GROQ_KEY = (process.env.SHARED_GROQ_KEY || '').trim();
 const SHARED_OPENAI_KEY = (process.env.SHARED_OPENAI_KEY || '').trim();
@@ -30,7 +29,13 @@ const SHARED_ELEVENLABS_KEY = (process.env.SHARED_ELEVENLABS_KEY || '').trim();
 const HAS_ANY_SHARED_KEY = !!(SHARED_GROQ_KEY || SHARED_OPENAI_KEY || SHARED_DEEPGRAM_KEY || SHARED_ELEVENLABS_KEY);
 const SAMPLE_RATE = 16000;
 const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
-const ENDPOINT_ON_DEMAND_ENABLED = process.env.ENDPOINT_ON_DEMAND_ENABLED === 'true';
+// Global connection ceiling — a resource bound, deliberately NOT per-IP: every
+// phone behind Railway's proxy or one mosque NAT shares an apparent address,
+// and per-IP limits would cap the whole community at once.
+const MAX_CONNECTIONS = (() => {
+  const n = parseInt(process.env.WS_MAX_CONNECTIONS || '', 10);
+  return Number.isInteger(n) && n > 0 ? n : 200;
+})();
 const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
 const ALLOWED_AUDIO_SOURCES = new Set(['browser', 'simulator', 'g2']);
 const ALLOWED_MODELS = {
@@ -95,19 +100,6 @@ function sanitizeModel(provider, model) {
   return ALLOWED_MODELS[provider]?.has(v) ? v : '';
 }
 
-function buildWhisperOpts() {
-  // Endpoint auth/config is host-managed only; never take client overrides.
-  const endpointUrl = process.env.WHISPER_ENDPOINT_URL || '';
-  const isModalUrl = /modal\.run|modal\.com/i.test(endpointUrl);
-  return {
-    provider: endpointUrl ? (isModalUrl ? 'modal' : 'hf-dedicated') : 'hf-public',
-    endpointUrl: endpointUrl || undefined,
-    apiKey: HF_TOKEN || undefined,
-    modalKey: isModalUrl ? (process.env.MODAL_KEY || undefined) : undefined,
-    modalSecret: isModalUrl ? (process.env.MODAL_SECRET || undefined) : undefined,
-  };
-}
-
 function updateEndpointLifecycle(status, source = 'runtime') {
   if (!status || status.component !== 'model') return;
   lastEndpointLifecycle = {
@@ -149,12 +141,8 @@ if (EVENHUB_SDK) {
   app.get('/app/sdk/even_hub_sdk.js', sendEvenHubSdk);
 }
 app.get('/api/status', (req, res) => {
-  const ep = process.env.WHISPER_ENDPOINT_URL || '';
-  const usesLegacyWhisper = PROVIDER === 'whisper' && !!(ep || HF_TOKEN);
   const shared = sharedKeyAvailability();
-  const modelName = usesLegacyWhisper
-    ? (ep ? 'whisper-quran (dedicated)' : 'whisper-quran-v1 (legacy HF)')
-    : 'independent engines: groq / openai (optional deepgram / elevenlabs)';
+  const modelName = 'independent engines: groq / openai (optional deepgram / elevenlabs)';
   res.json({
     version: APP_VERSION,
     appVersion: APP_VERSION,
@@ -169,10 +157,7 @@ app.get('/api/status', (req, res) => {
     model: modelName,
     transcription: HAS_ANY_SHARED_KEY ? 'shared-keys' : 'byok',
     sttEngines: STT_ENGINES,
-    legacyWhisperConfigured: usesLegacyWhisper,
-    endpointOnDemandEnabled: ENDPOINT_ON_DEMAND_ENABLED,
     mobileOnlyMode: MOBILE_ONLY_MODE,
-    probeOnInit: process.env.WHISPER_PROBE_ON_INIT !== 'false',
     allowedPipelines: ['v3', 'v4'],
     allowedProviders: [...STT_ENGINES, 'auto'],
     allowedModels: Object.fromEntries(Object.entries(ALLOWED_MODELS).map(([k, v]) => [k, [...v]])),
@@ -227,45 +212,6 @@ app.post('/api/transcription/compare', async (req, res) => {
   }
 });
 
-app.get('/api/endpoint/warmup', async (req, res) => {
-  if (!ENDPOINT_ON_DEMAND_ENABLED) {
-    return res.status(403).json({
-      ok: false,
-      message: 'Endpoint on-demand warmup is disabled. Set ENDPOINT_ON_DEMAND_ENABLED=true to enable.',
-    });
-  }
-
-  try {
-    let latest = null;
-    const maxAttempts = 6;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      latest = null;
-      await probeWhisperEndpoint({ ...(buildWhisperOpts() || {}), forceProbe: true }, (s) => {
-        latest = s;
-        updateEndpointLifecycle(s, 'warmup');
-      });
-      const status = latest?.status;
-      if (status === 'standby' || status === 'ready') break;
-      if (status === 'error') break;
-      const retryIn = Number(latest?.retryIn || 2);
-      const delayMs = Math.max(1000, Math.min(retryIn * 1000, 8000));
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-    res.json({
-      ok: true,
-      lifecycle: latest || lastEndpointLifecycle,
-      endpointLifecycle: lastEndpointLifecycle,
-    });
-  } catch (err) {
-    const message = err?.message || 'Endpoint warmup failed';
-    updateEndpointLifecycle({ component: 'model', status: 'error', message }, 'warmup');
-    res.status(500).json({
-      ok: false,
-      message,
-      endpointLifecycle: lastEndpointLifecycle,
-    });
-  }
-});
 // Mushaf page JSONs + Arabic font for on-device rendering on G2 glasses.
 // Copied from noor-recite (GPL v3). These are lazy-fetched by the frontend.
 app.use('/mushaf', express.static(join(__dirname, 'public', 'mushaf'), {
@@ -314,7 +260,8 @@ function decodeBase64Pcm(data) {
     const msg = JSON.parse(data.toString('utf8'));
     if (msg.t !== 'a' || typeof msg.d !== 'string') return null;
     const buf = Buffer.from(msg.d, 'base64');
-    return buf.length ? buf : null;
+    // 16-bit mono PCM must be an even, non-zero byte count.
+    return (buf.length && buf.length % 2 === 0) ? buf : null;
   } catch {
     return null;
   }
@@ -326,6 +273,13 @@ const wss = new WebSocketServer({ noServer: true, path: '/ws', maxPayload: 1024 
 function upgradeToWs(server) {
   server.on('upgrade', (req, socket, head) => {
     if (req.url === '/ws') {
+      if (wss.clients.size >= MAX_CONNECTIONS) {
+        // write + synchronous destroy: destroy() in the same tick is what
+        // keeps a peer RST from surfacing an unhandled 'error' on this
+        // listener-less raw socket — do not separate these two lines.
+        socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+        return socket.destroy();
+      }
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
     } else {
       // Once an 'upgrade' listener exists, unanswered sockets are ours to
@@ -370,7 +324,7 @@ wss.on('connection', (ws, req) => {
     pipelineVersion = sanitizePipelineVersion(version || pipelineVersion);
     const Ctor = pipelineVersion === 'v3' ? AudioPipelineV3 : AudioPipelineV4;
 
-    let whisperOpts = buildWhisperOpts();
+    let whisperOpts = {};
     const allowedProviders = new Set(['auto', 'groq', 'openai', 'deepgram', 'elevenlabs']);
     const clientProvider = allowedProviders.has(opts?.transcriptionProvider)
       ? opts.transcriptionProvider
@@ -427,10 +381,14 @@ wss.on('connection', (ws, req) => {
     pipeline = new Ctor({
       preferredSurah,
       translationLang,
-      hfToken: HF_TOKEN,
       whisperOpts,
       audioSource,
       geminiKey: opts.geminiKey || GEMINI_KEY,
+      // Client-carried position recovery: the client stores what we emit and
+      // echoes it on the next init, so recovery survives reconnects AND
+      // backend restarts without any cross-user server state.
+      recoveryState: validRecoveryState(opts.recoveryState),
+      onRecoveryState: (state) => send({ type: 'recovery_state', state }),
       onStateUpdate: (msg) => send(msg),
       onStatus: (s) => {
         updateEndpointLifecycle(s, 'pipeline');
@@ -471,11 +429,19 @@ wss.on('connection', (ws, req) => {
   ws.on('pong', () => { ws.isAlive = true; });
 
   let _binaryLogged = false;
+  let _oddPcmLogged = false;
   ws.on('message', (data, isBinary) => {
     // ws library delivers ALL frames as Buffers — use isBinary flag to distinguish.
     // Without this, JSON control messages leak into the PCM audio buffer, corrupting
     // audio and inflating RMS (ASCII bytes interpreted as 16-bit PCM samples).
     if (isBinary) {
+      // 16-bit mono PCM is always an even byte count; an odd frame would skew
+      // every later sample by one byte. Drop it quietly — never punish the
+      // connection for one bad frame.
+      if (!data.length || data.length % 2 !== 0) {
+        if (!_oddPcmLogged) { console.warn(`[WS] Dropped malformed PCM frame (${data.length}B) from ${clientIp}`); _oddPcmLogged = true; }
+        return;
+      }
       if (!_binaryLogged) {
         console.log(`[WS] First PCM: ${data.length}B, active=${pipeline?.active}`);
         _binaryLogged = true;

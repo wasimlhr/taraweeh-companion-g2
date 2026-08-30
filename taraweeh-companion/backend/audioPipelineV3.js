@@ -6,27 +6,10 @@
  * - Bump threshold: only bump when remaining ≥12s (was 8s)
  * - Re-lock: pass display position into RESUMING for better resync when display ahead
  */
-import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { transcribe } from './transcriptionRouter.js';
 import { processWhisperResult, transition, createState, getPrevAyah, getNextAyah } from './anchorStateMachine.js';
 import { getVerseData } from './verseData.js';
-import { probeWhisperEndpoint } from './whisperProvider.js';
 import { findAnchor, isRefrain } from './keywordMatcher.js';
-
-// ── Position persistence across restarts ────────────────────────────────────
-const POS_FILE = '/tmp/taraweeh_position.json';
-function _savePosition(surah, ayah, pace) {
-  try { writeFileSync(POS_FILE, JSON.stringify({ surah, ayah, pace, ts: Date.now() })); } catch (_) {}
-}
-function _loadPosition() {
-  try {
-    if (!existsSync(POS_FILE)) return null;
-    const d = JSON.parse(readFileSync(POS_FILE, 'utf8'));
-    if (Date.now() - d.ts > 30 * 60 * 1000) return null; // stale after 30 min
-    if (d.surah > 0 && d.ayah > 0) return d;
-  } catch (_) {}
-  return null;
-}
 
 const SAMPLE_RATE      = 16000;
 const BYTES_PER_SAMPLE = 2;
@@ -197,13 +180,17 @@ function isTakbeer(text) {
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, preferredSurah = 0, translationLang = '', hfToken, whisperOpts }) {
+  constructor({ onStateUpdate, onStatus, onError, onRecoveryState, recoveryState, preferredSurah = 0, translationLang = '', whisperOpts }) {
     this.onStateUpdate   = onStateUpdate;
     this.onStatus        = onStatus || (() => {});
     this.onError         = onError  || (() => {});
+    this.onRecoveryState = onRecoveryState || (() => {});
     this.preferredSurah  = preferredSurah;
     this.translationLang = (translationLang && String(translationLang).trim()) || '';
-    this.whisperOpts     = whisperOpts || (hfToken ? { apiKey: hfToken } : null);
+    // destroy() fires this signal so an in-flight provider call (headers OR
+    // body) dies with the pipeline instead of outliving it.
+    this._abortController = new AbortController();
+    this.whisperOpts     = { ...(whisperOpts || {}), signal: this._abortController.signal };
 
     this.state     = createState();
     this.active    = false;
@@ -211,14 +198,17 @@ export class AudioPipeline {
 
     this._completedSurah = 0;
 
-    // Restore last known position from disk (survives restarts)
-    const restored = _loadPosition();
+    // Restore last known position from the client's own stored recovery state
+    // (validated server-side). The old /tmp file restored one user's position
+    // into ANY user's fresh pipeline on a shared host.
+    const restored = recoveryState || null;
     if (restored) {
       console.log(`[Pipeline] Restored position: ${restored.surah}:${restored.ayah} (pace=${restored.pace || 0}ms/w)`);
     }
     this._restoredSurah = restored?.surah || 0;
     this._restoredAyah  = restored?.ayah || 0;
-    if (restored?.pace > 0) this._measuredMsPerWord = restored.pace;
+    this._restoredPace  = restored?.pace > 0 ? restored.pace : 0;
+    this._lastRecoveryKey = '';
 
     // Dual position model: Whisper = ground truth, display = animation
     this._whisperSurah = 0;
@@ -266,8 +256,10 @@ export class AudioPipeline {
     this._bumpCountForAyah  = 0;    // bumps applied this ayah — capped to avoid indefinite extension
     this._blockedSince      = 0;    // timestamp when display first got BLOCKED (0 = not blocked)
 
-    // Learned pace: measured from manual advance clicks (ms per word)
-    this._measuredMsPerWord = 0;   // 0 = no data yet, use default
+    // Learned pace: measured from manual advance clicks (ms per word).
+    // Seeded from the restored session pace — assigning it earlier was dead
+    // code (this line unconditionally zeroed it again).
+    this._measuredMsPerWord = this._restoredPace || 0;   // 0 = no data yet, use default
     this._msPerWordSamples  = [];  // last 6 samples for rolling average
 
     // Pace tracking: rolling window of recent WPS samples for trend detection
@@ -283,8 +275,6 @@ export class AudioPipeline {
     this._rakatCount     = 0;
     this._preRukuSurah   = 0;
     this._preRukuAyah    = 0;
-
-    probeWhisperEndpoint(this.whisperOpts, this.onStatus).catch(() => {});
   }
 
   get _maxDisplayLead() {
@@ -547,6 +537,10 @@ export class AudioPipeline {
   }
 
   destroy() {
+    // Abort the in-flight provider call (headers or mid-body). The callback
+    // swallowing below runs in this same synchronous block, so the abort
+    // rejection — a later microtask — can only ever reach no-ops.
+    this._abortController.abort(new Error('Pipeline destroyed'));
     this.active = false;           // stop all processing & stale-check in-flight Whisper
     this._stopTimerHeartbeat();     // kill 500ms emit interval
     this._cancelReadAdvance();      // clear display-advance & smooth-advance timers
@@ -556,6 +550,7 @@ export class AudioPipeline {
     this.onStateUpdate = () => {};  // swallow any late callbacks
     this.onStatus = () => {};
     this.onError = () => {};
+    this.onRecoveryState = () => {};
     console.log('[Pipeline] Destroyed');
   }
 
@@ -1637,8 +1632,16 @@ export class AudioPipeline {
     if (this.state.mode === 'LOCKED') {
       console.log(`[Emit] LOCKED ${displaySurah}:${displayAyah} "${(lockedVerse?.translation || '').substring(0, 50)}"`);
       this._completedSurah = 0;
-      // Persist position for restart recovery
-      _savePosition(displaySurah, displayAyah, this._measuredMsPerWord);
+      // Client-carried recovery: emit once per ayah CHANGE, never per
+      // heartbeat — this block runs every 500ms while locked, and each emit
+      // costs the glasses a localStorage write plus a bridge IPC round-trip.
+      if (displaySurah > 0 && displayAyah > 0) {
+        const recoveryKey = `${displaySurah}:${displayAyah}`;
+        if (recoveryKey !== this._lastRecoveryKey) {
+          this._lastRecoveryKey = recoveryKey;
+          this.onRecoveryState({ surah: displaySurah, ayah: displayAyah, pace: this._measuredMsPerWord, ts: Date.now() });
+        }
+      }
     } else if (isCandidate) {
       console.log(`[Emit] CANDIDATE ${topMatch.surah}:${topMatch.ayah} score=${topScore.toFixed(2)} "${(lockedVerse?.translation || '').substring(0, 50)}"`);
     }

@@ -6,6 +6,7 @@
  * Docs: https://developers.deepgram.com/docs/models-languages-overview
  */
 import { httpError } from './httpRetry.js';
+import { providerDeadline } from './requestDeadline.js';
 
 const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen';
 const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || 'nova-3';
@@ -37,30 +38,37 @@ export async function transcribeWithDeepgram(pcmBuffer, apiKey, emit = null, ext
   emit?.({ component: 'model', status: 'pending', provider: 'deepgram' });
 
   const t0 = Date.now();
-  const res = await fetch(`${DEEPGRAM_URL}?${params}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${apiKey}`,
-      'Content-Type': 'audio/raw',
-    },
-    body: pcmBuffer,
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    const err = httpError('Deepgram', res, body);
-    emit?.({
-      component: 'model',
-      status: 'error',
-      provider: 'deepgram',
-      message: body.slice(0, 100),
-      retryAfterMs: err.retryAfterMs,
-      httpStatus: res.status,
+  const deadline = providerDeadline(extra);
+  let data;
+  try {
+    const res = await fetch(`${DEEPGRAM_URL}?${params}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${apiKey}`,
+        'Content-Type': 'audio/raw',
+      },
+      body: pcmBuffer,
+      signal: deadline.signal,
     });
-    throw err;
-  }
 
-  const data = await res.json();
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      const err = httpError('Deepgram', res, body);
+      emit?.({
+        component: 'model',
+        status: 'error',
+        provider: 'deepgram',
+        message: body.slice(0, 100),
+        retryAfterMs: err.retryAfterMs,
+        httpStatus: res.status,
+      });
+      throw err;
+    }
+
+    data = await res.json();
+  } finally {
+    deadline.done();
+  }
   const latencyMs = Date.now() - t0;
   emit?.({ component: 'model', status: 'ready', provider: 'deepgram', latencyMs });
 

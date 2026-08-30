@@ -6,6 +6,7 @@
  */
 import { pcmToWav } from './pcmToWav.js';
 import { httpError } from './httpRetry.js';
+import { providerDeadline } from './requestDeadline.js';
 
 const OPENAI_URL = 'https://api.openai.com/v1/audio/transcriptions';
 const OPENAI_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe';
@@ -42,20 +43,27 @@ export async function transcribeWithOpenAI(pcmBuffer, apiKey, emit = null, extra
   emit?.({ component: 'model', status: 'pending', provider: 'openai' });
 
   const t0 = Date.now();
-  const res = await fetch(OPENAI_URL, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}` },
-    body: form,
-  });
+  const deadline = providerDeadline(extra);
+  let data;
+  try {
+    const res = await fetch(OPENAI_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      body: form,
+      signal: deadline.signal,
+    });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    const err = httpError('OpenAI', res, body);
-    emit?.({ component: 'model', status: 'error', provider: 'openai', message: body.slice(0, 100), retryAfterMs: err.retryAfterMs, httpStatus: res.status });
-    throw err;
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      const err = httpError('OpenAI', res, body);
+      emit?.({ component: 'model', status: 'error', provider: 'openai', message: body.slice(0, 100), retryAfterMs: err.retryAfterMs, httpStatus: res.status });
+      throw err;
+    }
+
+    data = await res.json();
+  } finally {
+    deadline.done();
   }
-
-  const data = await res.json();
   const latencyMs = Date.now() - t0;
   emit?.({ component: 'model', status: 'ready', provider: 'openai', latencyMs });
   const text = (data.text || '').trim();

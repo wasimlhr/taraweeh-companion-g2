@@ -619,3 +619,90 @@ describe('Taraweeh skip-ahead self-heal', () => {
     assert.ok(covered <= total);
   });
 });
+
+describe('recoveryState', () => {
+  it('accepts only fresh, structurally valid, EXISTING positions', async () => {
+    const { validRecoveryState } = await import('./recoveryState.js');
+    loadQuran();
+    const now = 1_000_000_000;
+    assert.deepEqual(
+      validRecoveryState({ surah: 2, ayah: 12, pace: 900, ts: now }, now),
+      { surah: 2, ayah: 12, pace: 900, ts: now },
+    );
+    // stale (>30 min), future (>60s ahead), malformed
+    assert.equal(validRecoveryState({ surah: 2, ayah: 12, ts: now - 31 * 60_000 }, now), null);
+    assert.equal(validRecoveryState({ surah: 2, ayah: 12, ts: now + 120_000 }, now), null);
+    assert.equal(validRecoveryState({ surah: '2;drop', ayah: 1, ts: now }, now), null);
+    assert.equal(validRecoveryState(null, now), null);
+    // range-valid but NONEXISTENT position: Al-Fatiha has 7 ayahs
+    assert.equal(validRecoveryState({ surah: 1, ayah: 250, ts: now }, now), null);
+    assert.equal(validRecoveryState({ surah: 999, ayah: 1, ts: now }, now), null);
+    // pace is clamped, never trusted raw
+    assert.equal(validRecoveryState({ surah: 1, ayah: 3, pace: 9e9, ts: now }, now).pace, 60_000);
+  });
+});
+
+describe('providerDeadline', () => {
+  it('keeps the deadline armed through the response BODY, not just headers', async () => {
+    const { providerDeadline } = await import('./requestDeadline.js');
+    const deadline = providerDeadline({ timeoutMs: 40 });
+    // body read modelled as a promise that only settles when the signal fires
+    const bodyRead = new Promise((_resolve, reject) => {
+      deadline.signal.addEventListener('abort', () => reject(deadline.signal.reason), { once: true });
+    });
+    await assert.rejects(bodyRead, /timed out after 40ms/);
+    deadline.done();
+  });
+  it('propagates a parent abort (pipeline destroy) into the request', async () => {
+    const { providerDeadline } = await import('./requestDeadline.js');
+    const parent = new AbortController();
+    const deadline = providerDeadline({ timeoutMs: 60_000, signal: parent.signal });
+    const bodyRead = new Promise((_resolve, reject) => {
+      deadline.signal.addEventListener('abort', () => reject(deadline.signal.reason), { once: true });
+    });
+    parent.abort(new Error('Pipeline destroyed'));
+    await assert.rejects(bodyRead, /Pipeline destroyed/);
+    deadline.done();
+  });
+});
+
+describe('pipeline recovery + cancellation (V4)', () => {
+  it('emits recovery_state once per ayah CHANGE despite heartbeat-rate _emitState calls, and destroy() aborts the provider signal', async () => {
+    const { AudioPipeline } = await import('./audioPipelineV4.js');
+    loadQuran();
+    const emitted = [];
+    const p = new AudioPipeline({
+      onStateUpdate: () => {},
+      onRecoveryState: (s) => emitted.push(s),
+      recoveryState: { surah: 18, ayah: 10, pace: 700, ts: Date.now() },
+      whisperOpts: { provider: 'groq', groqApiKey: 'test-only' },
+    });
+    try {
+      // restored position seeds browse state AND the learned pace (the old
+      // code zeroed the pace right after restoring it)
+      assert.equal(p._restoredSurah, 18);
+      assert.equal(p._measuredMsPerWord, 700);
+      // heartbeat calls _emitState every 500ms while LOCKED; the recovery
+      // emit must fire once per ayah, not per tick
+      p.state.mode = 'LOCKED';
+      p._displaySurah = 112; p._displayAyah = 1;
+      p._emitState(null, null);
+      p._emitState(null, null);
+      p._emitState(null, null);
+      assert.equal(emitted.length, 1);
+      assert.deepEqual({ surah: emitted[0].surah, ayah: emitted[0].ayah }, { surah: 112, ayah: 1 });
+      p._displayAyah = 2;
+      p._emitState(null, null);
+      p._emitState(null, null);
+      assert.equal(emitted.length, 2);
+      assert.equal(emitted[1].ayah, 2);
+      // destroy aborts the signal every provider call rides on
+      const signal = p.whisperOpts.signal;
+      assert.equal(signal.aborted, false);
+      p.destroy();
+      assert.equal(signal.aborted, true);
+    } finally {
+      try { p.destroy(); } catch {}
+    }
+  });
+});

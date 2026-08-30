@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /** Every shipped version label must be the same app version. */
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const repo = join(root, '..');
-const EXPECTED = '3.3.4';
+const EXPECTED = '3.3.5';
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));

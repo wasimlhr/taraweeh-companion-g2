@@ -5,8 +5,8 @@
  * Default provider: TRANSCRIPTION_PROVIDER=groq
  * Per-session override: whisperOpts.provider + per-provider keys, or sharedMode.
  */
-import { transcribeWithWhisper } from './whisperProvider.js';
 import { transcribeWithGemini, closeGeminiSession } from './geminiProvider.js';
+import { providerDeadline } from './requestDeadline.js';
 import { transcribeWithGroq } from './groqProvider.js';
 import { transcribeWithOpenAI } from './openaiProvider.js';
 import { transcribeWithDeepgram, probeDeepgramKey } from './deepgramProvider.js';
@@ -59,7 +59,7 @@ export function collectKeys(whisperOpts = {}) {
  */
 export function resolveProvider(requested, keys = {}) {
   const req = String(requested || PROVIDER || 'groq').toLowerCase();
-  if (req === 'gemini' || req === 'whisper') return req;
+  if (req === 'gemini') return req;
   if (STT_ENGINES.includes(req) && req !== 'auto') return req;
   for (const name of ['groq', 'openai', 'deepgram', 'elevenlabs']) {
     if (keys[name]) return name;
@@ -82,7 +82,7 @@ async function callProvider(name, pcmBuffer, apiKey, emit, extra = {}) {
     case 'deepgram':
       return transcribeWithDeepgram(pcmBuffer, apiKey, emit, extra);
     case 'elevenlabs':
-      return transcribeWithElevenLabs(pcmBuffer, apiKey, emit);
+      return transcribeWithElevenLabs(pcmBuffer, apiKey, emit, extra);
     case 'openai':
       return transcribeWithOpenAI(pcmBuffer, apiKey, emit, extra);
     default:
@@ -103,9 +103,6 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
   if (opts.provider === 'gemini' || PROVIDER === 'gemini') {
     return transcribeWithGemini(pcmBuffer);
   }
-  if (opts.provider === 'whisper' || PROVIDER === 'whisper') {
-    return transcribeWithWhisper(pcmBuffer, whisperOpts, emit);
-  }
 
   const keys = collectKeys(opts);
   const name = resolveProvider(opts.provider, keys);
@@ -119,6 +116,11 @@ export async function transcribe(pcmBuffer, whisperOpts, emit = null) {
   const extra = {};
   if (opts.prompt) extra.prompt = opts.prompt;
   if (opts.model) extra.model = opts.model;
+  // Destroying the pipeline aborts its in-flight provider call through this
+  // signal; the deadline helper in each provider keeps it armed until the
+  // response BODY is consumed, not just until headers arrive.
+  if (opts.signal) extra.signal = opts.signal;
+  if (opts.timeoutMs) extra.timeoutMs = opts.timeoutMs;
   return callProvider(name, pcmBuffer, apiKey, emit, extra);
 }
 
@@ -153,20 +155,28 @@ export async function probeProviderKey(provider, apiKey) {
   if (!key) throw new Error('API key missing');
   switch (provider) {
     case 'groq': {
-      const res = await fetch('https://api.groq.com/openai/v1/models', {
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      if (!res.ok) throw new Error(`Groq HTTP ${res.status}`);
-      const data = await res.json();
-      return { ok: true, models: (data.data || []).length };
+      const deadline = providerDeadline({ timeoutMs: 15_000 });
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/models', {
+          headers: { Authorization: `Bearer ${key}` },
+          signal: deadline.signal,
+        });
+        if (!res.ok) throw new Error(`Groq HTTP ${res.status}`);
+        const data = await res.json();
+        return { ok: true, models: (data.data || []).length };
+      } finally { deadline.done(); }
     }
     case 'openai': {
-      const res = await fetch('https://api.openai.com/v1/models', {
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
-      const data = await res.json();
-      return { ok: true, models: (data.data || []).length };
+      const deadline = providerDeadline({ timeoutMs: 15_000 });
+      try {
+        const res = await fetch('https://api.openai.com/v1/models', {
+          headers: { Authorization: `Bearer ${key}` },
+          signal: deadline.signal,
+        });
+        if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}`);
+        const data = await res.json();
+        return { ok: true, models: (data.data || []).length };
+      } finally { deadline.done(); }
     }
     case 'deepgram':
       return probeDeepgramKey(key);
