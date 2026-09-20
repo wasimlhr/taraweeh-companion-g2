@@ -127,12 +127,17 @@ taraweeh-companion-g2/
 │   ├── groqProvider.js         ← Groq whisper-large-v3-turbo
 │   ├── openaiProvider.js       ← OpenAI whisper-1
 │   ├── transcriptionRouter.js  ← Provider routing (Groq / OpenAI / Gemini)
+│   ├── prayerTracker.js        ← Salah posture FSM + rak'ah counting
+│   ├── prayerKeywords.js       ← Takbeer / tasmee' / tasleem cues, sajdah ayat
 │   ├── data/
 │   │   ├── quran-full.json     ← Full Quran text (1.7 MB, local)
 │   │   └── verses-display.json ← Transliterations + translations (1.7 MB, local)
 │   └── certs/                  ← Self-signed HTTPS certs (auto-generated)
 ├── scripts/
-│   └── qr-web-url.js          ← QR code generator for Even Hub scanning
+│   ├── qr-web-url.js          ← QR code generator for Even Hub scanning
+│   ├── build-evenhub-dist.js  ← Copies app + vendors SDK and pretext into dist/
+│   ├── check-glasses-glyphs.js← Fails on any character the G2 font cannot draw
+│   └── replay-prayer-session.js ← Full prayer through the real server, no API key
 ├── G2.md                       ← Even Realities G2 SDK reference
 └── package.json
 ```
@@ -151,8 +156,35 @@ taraweeh-companion-g2/
 ```bash
 git clone https://github.com/wasimlhr/taraweeh-companion-g2.git
 cd taraweeh-companion-g2
-npm install
-cd backend && npm install && cd ..
+npm install          # postinstall chains into taraweeh-companion/ and backend/
+```
+
+`npm install` at the root is enough — its `postinstall` installs
+`taraweeh-companion/`, whose own `postinstall` installs `backend/`. Use
+`npm ci` instead when you want the exact versions the lockfiles pin.
+
+Two packages are fetched from npm but shipped inside the app rather than
+loaded from a CDN at runtime, because the packaged `.ehpk` has no guaranteed
+network and the SDK must come from the same module realm the host injects the
+bridge into:
+
+| Package | Lands in | Served at | Purpose |
+| :-- | :-- | :-- | :-- |
+| `@evenrealities/even_hub_sdk` | `dist/sdk/even_hub_sdk.js` | `/sdk/even_hub_sdk.js` | glasses bridge |
+| `@evenrealities/pretext` | `dist/vendor/pretext.js` | `/vendor/pretext.js` | firmware font metrics |
+
+`npm run build:evenhub` copies both out of `node_modules`; `dist/` is
+generated and git-ignored, so re-run it after pulling. The backend also
+serves either file straight from `node_modules` when `dist/` is absent, so
+`npm run backend:dev` works without a build step. In the packed `.ehpk`
+pretext costs about 43 KB — it is 674 KB of repetitive numeric tables and
+compresses roughly 15:1.
+
+To confirm a local checkout is complete:
+
+```bash
+npm test                       # version alignment, glyph coverage, 137 unit tests
+npm run replay:prayer -- --rakat=2   # real server + WebSocket, no API key needed
 ```
 
 ### Configuration

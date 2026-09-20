@@ -2536,8 +2536,11 @@ body {
   }
 
   async function loadPretext() {
+    // Bundled copy first, then the backend route, then the CDN the packaged
+    // app is actually allowed to reach (app.json whitelists jsDelivr, the same
+    // origin the SDK falls back to).
     var sources = ['./vendor/pretext.js', '/vendor/pretext.js',
-      'https://esm.sh/@evenrealities/pretext@0.1.4'];
+      'https://cdn.jsdelivr.net/npm/@evenrealities/pretext@0.1.4/dist/font_measure.js'];
     for (var i = 0; i < sources.length; i++) {
       try {
         var m = await import(sources[i]);

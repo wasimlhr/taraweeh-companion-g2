@@ -19,10 +19,16 @@
 import { createServer } from 'http';
 import { spawn } from 'child_process';
 import { createRequire } from 'module';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { setTimeout as sleep } from 'timers/promises';
 
 // ws lives in backend/node_modules, which is where the server it drives runs.
 const { WebSocket } = createRequire(new URL('../backend/package.json', import.meta.url))('ws');
+
+// fileURLToPath, not URL.pathname: on Windows the latter hands back
+// "/C:/projects/..." with a leading slash, which spawn cannot use as a cwd.
+const BACKEND_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'backend');
 
 const args = process.argv.slice(2);
 const argOf = (name, dflt) => {
@@ -163,7 +169,7 @@ async function main() {
   if (!JSON_OUT) console.log(`[replay] stand-in ASR on :${ASR_PORT}`);
 
   const server = spawn(process.execPath, ['server.js'], {
-    cwd: new URL('../backend/', import.meta.url).pathname,
+    cwd: BACKEND_DIR,
     env: {
       ...process.env,
       PORT: String(BACKEND_PORT),
