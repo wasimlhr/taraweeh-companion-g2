@@ -2449,9 +2449,10 @@ body {
   var G2_BODY_H  = G2_H - G2_HDR_H;
 
   // Top bar: status on the left, then the rak'ah indicator, then the clock.
-  // Widths are the measured worst case plus the border and padding: "23:59" is
-  // 52px and "R20/20 TSHD" is 115px.
-  var G2_CLK_W   = 60;
+  // Widths are the measured worst case plus the border and padding:
+  // "12:59 PM" is 82px and "R20/20 TSHD" is 115px. That leaves 356px of text
+  // for the status line, against a widest-case 298px.
+  var G2_CLK_W   = 90;
   var G2_RAK_W   = 124;
   var G2_HDR_W   = G2_W - G2_RAK_W - G2_CLK_W;
   var G2_RAK_X   = G2_HDR_W;
@@ -2837,9 +2838,18 @@ body {
     return pxClip(pos ? label + ' ' + pos : label, G2_RAK_PX);
   }
 
+  /**
+   * Built by hand rather than through toLocaleTimeString: a locale can return
+   * Arabic-Indic digits or a narrow no-break space, and the firmware font has
+   * neither, so the time would silently lose characters on the lens.
+   */
   function clockHdr() {
     var d = new Date();
-    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    var h = d.getHours();
+    var suffix = h < 12 ? 'AM' : 'PM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return h + ':' + ('0' + d.getMinutes()).slice(-2) + ' ' + suffix;
   }
 
   var _lastRakHdr = '';

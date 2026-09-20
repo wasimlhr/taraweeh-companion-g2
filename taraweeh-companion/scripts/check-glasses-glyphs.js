@@ -51,14 +51,24 @@ const GLASSES_SOURCES = [
   ...html.matchAll(/\bchip:\s*'([^']*)'/g),
 ];
 
+// The top-bar pills are assembled at runtime, so there is no literal to
+// scrape. Check a worst case of each shape instead.
+const RUNTIME_SAMPLES = [
+  '12:59 PM', '1:05 AM',              // clockHdr()
+  'R20/20 TSHD', 'R1/8 SJD1', 'Practice',   // rakatHdr()
+  "Rak'ah 20 of 20", 'Set 10 \u00B7 2/2',   // posture body
+  'Match: 100%', '3/4',                     // header right column, page indicator
+];
+
 const chars = new Map();   // char → sample context
-for (const m of GLASSES_SOURCES) {
-  const text = unescapeJs(m[1] ?? m[0]);
+function collect(text) {
   for (const ch of text) {
     if (ch === '\n' || ch === '\\') continue;
     if (!chars.has(ch)) chars.set(ch, text.slice(0, 48));
   }
 }
+for (const m of GLASSES_SOURCES) collect(unescapeJs(m[1] ?? m[0]));
+for (const s of RUNTIME_SAMPLES) collect(s);
 
 const missing = [];
 for (const [ch, context] of chars) {
