@@ -22,7 +22,8 @@
     "download-quran-db": "node scripts/download-quran-db.js",
     "build:evenhub": "cd taraweeh-companion && npm run build:evenhub",
     "pack:evenhub": "cd taraweeh-companion && npm run pack:evenhub",
-    "test": "cd taraweeh-companion/backend && node --test transcriptionRouter.test.js prayerTracker.test.js prayerPipeline.test.js"
+    "test": "cd taraweeh-companion && npm test",
+    "replay:prayer": "cd taraweeh-companion && node scripts/replay-prayer-session.js"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.10",

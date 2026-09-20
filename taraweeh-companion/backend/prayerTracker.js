@@ -322,7 +322,16 @@ export class PrayerTracker {
     const pTemporal = this._temporalScore(now);
     if (pTemporal === 0 && kind !== 'tasleem') return null;
 
+    // Hard veto 4 — the ayah being recited contains this phrase and the chunk
+    // carries more than the phrase alone. A cue spoken by itself still counts
+    // however Quranic its words are; a cue with recitation wrapped around it,
+    // in a verse known to quote it, is the verse.
     const pVerse = 1 - Math.max(0, Math.min(1, verseActive));
+    if (verseActive >= 0.85 && ((cue.leading || 0) > 0 || (cue.trailing || 0) > 0)) {
+      this._log(`cue ${kind} is part of the ayah being recited — ignored`);
+      return null;
+    }
+
     const score = W_AUDIO * pAudio + W_VERSE * pVerse + W_TEMPORAL * pTemporal;
     if (score < ACCEPT_THRESHOLD) {
       this._log(`cue ${kind} rejected (p=${score.toFixed(2)}: audio=${pAudio} verse=${pVerse.toFixed(2)} temporal=${pTemporal})`);
@@ -336,6 +345,12 @@ export class PrayerTracker {
 
   _applyCue(kind, now, score) {
     const dwell = now - this.enteredAt;
+
+    // The tasleem is the one cue that means the same thing from anywhere: the
+    // set is over. Whatever posture the machine thought it was in, it was
+    // wrong, and insisting on tashahhud first would strand it for the rest of
+    // the prayer.
+    if (kind === 'tasleem') return this._completeSet(now, score);
 
     // Sujood immediately after tasleem are corrective, never a new rak'ah.
     if (kind === 'takbeer' && now < this.postSalamUntil && !this.inSahw) {
@@ -359,8 +374,6 @@ export class PrayerTracker {
   }
 
   _fromQiyam(kind, now, score, dwell) {
-    if (kind === 'tasleem') return this._completeSet(now, score);
-
     // The imam stood for a rak'ah that isn't there, the congregation said
     // "SubhanAllah", and he sat straight back down — saying "Allahu akbar" on
     // the way. A rak'ah always opens with Al-Fatiha, so a takbeer this soon
@@ -456,7 +469,6 @@ export class PrayerTracker {
   }
 
   _fromTashahhud(kind, now, score) {
-    if (kind === 'tasleem') return this._completeSet(now, score);
     if (kind === 'takbeer') {
       // Standing for a further rak'ah (witr, or isha's third and fourth). The
       // rak'ah just prayed was counted on the way into tashahhud, so nothing is
@@ -489,12 +501,17 @@ export class PrayerTracker {
   }
 
   _completeSet(now, score) {
+    // Salam is only given after a rak'ah has finished, so if the machine still
+    // believes he is mid-cycle it missed the end of one — credit it.
+    const midCycle = RAKAH_CYCLE.includes(this.position) && this.position !== POSITIONS.QIYAM;
+    if (midCycle) this.missedCues += 1;
     this.postSalamUntil = now + TIMING.GRACE_PERIOD_POST_SALAM_MS;
     this.inSahw = false;
     this.setsCompleted += 1;
     this.recoveryArmedUntil = 0;
+    const result = this._move(POSITIONS.QIYAM, now, 'tasleem', { score, countRakah: midCycle });
     this._log(`tasleem — set ${this.setsCompleted} complete (${this.completedRakat} rak'ah total)`);
-    return this._move(POSITIONS.QIYAM, now, 'tasleem', { score });
+    return result;
   }
 
   _isWitrRakah() {

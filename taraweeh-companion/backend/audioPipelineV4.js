@@ -1694,6 +1694,15 @@ export class AudioPipeline {
   }
 
   _advanceSearchWindow() {
+    // The window grows so the verse matcher gets more context each try. While
+    // the imam is not standing there is no verse to match and the growth is
+    // actively harmful: by 12s the window swallows three takbeers, and a chunk
+    // can only move the posture machine once. Keep it short so each posture
+    // change arrives in a chunk of its own.
+    if (this.taraweehMode && this._taraweehPos !== POSITIONS.QIYAM) {
+      this._resetSearchBuf();
+      return;
+    }
     if (this._searchWinIdx >= SEARCH_WINDOWS_MS.length - 1) {
       console.log('[Pipeline] All search windows exhausted — resetting');
       this._resetSearchBuf();
@@ -2939,7 +2948,11 @@ export class AudioPipeline {
 
     if (wasStanding && !isStanding) {
       this._suspendVerseTracking();
-    } else if (!wasStanding && isStanding) {
+    } else if (!isStanding) {
+      // Mid-cycle move. The audio behind the cue we just acted on is spent;
+      // keeping it would re-transcribe the same takbeer into the next window.
+      this._resetSearchBuf();
+    } else {
       this._resetSearchBuf();
       // A prostration of recitation and a corrected false start both drop the
       // imam back into the middle of the surah he was already reciting.
@@ -2983,6 +2996,11 @@ export class AudioPipeline {
       lastLockedSurah: this._preRukuSurah || this.state.lastLockedSurah || 0,
       lastLockedAyah:  this._preRukuAyah  || this.state.lastLockedAyah  || 0 };
     this._resetSearchBuf();
+    // Drop the locked tail too. It holds the takbeer we just consumed, and
+    // re-sending it after the next lock would replay a transition.
+    this._lockedBuf = Buffer.alloc(0);
+    this._lockedVoicedMs = 0;
+    this._lockedLastVoiceAt = 0;
   }
 
   _startPrayerTick() {
@@ -2998,30 +3016,28 @@ export class AudioPipeline {
   }
 
   /**
-   * P_verse for the voting formula: 1 when the words in this chunk are the ayah
-   * we already expect to hear. Several verses quote a cue verbatim — 29:45 ends
-   * "وَلَذِكْرُ اللَّهِ أَكْبَرُ" — and this is what keeps them recitation.
+   * P_verse for the voting formula. A handful of ayat contain a cue phrase
+   * word for word — 29:45 ends "وَلَذِكْرُ اللَّهِ أَكْبَرُ", and several
+   * verses open with "سلام عليكم". The precise test is not how Quranic the
+   * chunk looks overall but whether the ayah we already expect to hear
+   * literally contains this phrase.
    */
-  _cueLooksLikeRecitation(cleaned) {
-    const words = normalizeCue(cleaned).split(/\s+/).filter(Boolean);
-    if (!words.length) return 0;
+  _cueLooksLikeRecitation(cue) {
+    const phrase = cue && cue.match;
+    if (!phrase) return 0;
     const positions = [
       [this._displaySurah, this._displayAyah],
       [this.state.surah, this.state.ayah],
       [this._whisperSurah, this._whisperAyah],
     ];
-    const vocab = new Set();
     for (const [s, a] of positions) {
       if (!s || !a) continue;
       for (const delta of [0, 1]) {
         const ay = getAyah(s, a + delta);
-        if (!ay?.text) continue;
-        for (const w of normalizeCue(ay.text).split(/\s+/)) if (w) vocab.add(w);
+        if (ay?.text && normalizeCue(ay.text).includes(phrase)) return 1;
       }
     }
-    if (!vocab.size) return 0;
-    const hits = words.filter((w) => vocab.has(w)).length;
-    return hits / words.length;
+    return 0;
   }
 
   /** Hand a transcript to the posture machine. Returns true when it moved. */
@@ -3036,8 +3052,7 @@ export class AudioPipeline {
     if (!cue) return false;
     const w = audioWindow || {};
     const moved = this.prayer.feedCue(cue, {
-      verseActive: locked ? Math.max(0.4, this._cueLooksLikeRecitation(cleaned))
-                          : this._cueLooksLikeRecitation(cleaned),
+      verseActive: this._cueLooksLikeRecitation(cue),
       windowStartMs: w.startMs || 0,
       windowEndMs: w.endMs || 0,
     });

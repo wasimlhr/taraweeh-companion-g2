@@ -8,7 +8,11 @@ import { pcmToWav } from './pcmToWav.js';
 import { httpError } from './httpRetry.js';
 import { providerDeadline } from './requestDeadline.js';
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
+// Overridable so the pipeline can be driven without an API key — point it at
+// scripts/local-whisper-server.py, or at any stand-in that answers with the
+// same { text, words } shape. Never set in production.
+const GROQ_URL = process.env.GROQ_TRANSCRIBE_URL
+  || 'https://api.groq.com/openai/v1/audio/transcriptions';
 const GROQ_MODEL = 'whisper-large-v3-turbo';
 
 /**

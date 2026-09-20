@@ -1479,13 +1479,15 @@ body {
   /** The postures a rak'ah walks through, in order, for the app's strip. */
   var RAKAH_CYCLE = ['QIYAM', 'RUKU', 'ITIDAL', 'SAJDA1', 'JALSAH', 'SAJDA2'];
 
+  // `ar` is phone-only: the G2 firmware font has no Arabic glyphs at all, so
+  // the glasses get the transliteration in `chip` instead.
   var TW_DISPLAY = {
     QIYAM:          { ar: '\u0642\u064A\u0627\u0645', latin: 'Standing',        chip: 'Qiyam' },
-    RUKU:           { ar: '\u0631\u0643\u0648\u0639', latin: 'Bowing',          chip: 'Ruku' },
+    RUKU:           { ar: '\u0631\u0643\u0648\u0639', latin: 'Bowing',          chip: "Ruku'" },
     ITIDAL:         { ar: '\u0627\u0639\u062A\u062F\u0627\u0644', latin: 'Rising', chip: "I'tidal" },
-    SAJDA1:         { ar: '\u0633\u062C\u0648\u062F', latin: 'Prostration 1',   chip: 'Sujud' },
+    SAJDA1:         { ar: '\u0633\u062C\u0648\u062F', latin: 'Prostration 1',   chip: 'Sujud 1' },
     JALSAH:         { ar: '\u062C\u0644\u0633\u0629', latin: 'Sitting',         chip: 'Jalsah' },
-    SAJDA2:         { ar: '\u0633\u062C\u0648\u062F', latin: 'Prostration 2',   chip: 'Sujud' },
+    SAJDA2:         { ar: '\u0633\u062C\u0648\u062F', latin: 'Prostration 2',   chip: 'Sujud 2' },
     TASHAHHUD:      { ar: '\u062A\u0634\u0647\u062F', latin: 'Tashahhud',       chip: 'Tashahhud' },
     SAJDAH_TILAWAH: { ar: '\u0633\u062C\u062F\u0629 \u062A\u0644\u0627\u0648\u0629', latin: 'Sajdah Tilawah', chip: 'Tilawah' },
     QUNOOT:         { ar: '\u0642\u0646\u0648\u062A', latin: 'Qunoot',          chip: 'Qunoot' },
@@ -1607,17 +1609,22 @@ body {
       var disp = TW_DISPLAY[_taraweehPos] || TW_DISPLAY.QIYAM;
       glassesUpdate({
         hdr: disp.latin,
-        body: '\n' + centerPx(disp.ar, G2_BODY_PX)
+        body: '\n' + centerPx(disp.chip, G2_BODY_PX)
             + '\n' + centerPx(disp.latin, G2_BODY_PX)
-            + '\n\n' + centerPx(_rakatLabel(), G2_BODY_PX),
+            + '\n\n' + centerPx(_rakatLabel(true), G2_BODY_PX)
+            + '\n' + centerPx('Set ' + (_prayer.setNumber || 1) + ' ' + G2_MARK_DOT + ' '
+                + (_prayer.rakatInSet || 1) + '/' + (_prayer.rakatPerSet || 2), G2_BODY_PX),
       });
     } else if (prevPos && prevPos !== 'QIYAM') {
-      // Back to standing: the next recitation will repaint this, but show the
-      // listening state immediately rather than leaving the posture up.
+      // Back to standing. Recitation will repaint this within a chunk or two,
+      // but the posture must come down now — leaving "Rising" on screen while
+      // the imam is reading is worse than showing nothing.
       S.displayRebuilt = false;
       if (S.isRecording) {
         showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0);
         startSearchingDots();
+      } else {
+        glassesUpdate({ hdr: appTitleHdr(), body: _startupBodyText() });
       }
     }
   }
@@ -1646,10 +1653,11 @@ body {
     if (rkEl)  rkEl.textContent  = _rakatLabel();
   }
 
-  function _rakatLabel() {
+  /** @param {boolean} [ascii] true for the glasses, whose font has no U+02BB. */
+  function _rakatLabel(ascii) {
     var n = _prayer.rakat || 1;
     var target = _prayer.targetRakat || 0;
-    return 'Rak\u02bbah ' + n + (target ? ' of ' + target : '');
+    return 'Rak' + (ascii ? "'" : '\u02bb') + 'ah ' + n + (target ? ' of ' + target : '');
   }
 
   /**
@@ -1660,7 +1668,9 @@ body {
   function _renderRakatBar() {
     var bar = document.getElementById('rakatBar');
     if (!bar) return;
-    bar.style.display = _taraweehMode ? '' : 'none';
+    // The stylesheet hides it by default, so '' would resolve straight back to
+    // none — the inline value has to be explicit.
+    bar.style.display = _taraweehMode ? 'block' : 'none';
     if (!_taraweehMode) return;
 
     var countEl = document.getElementById('rakatCount');
@@ -2679,8 +2689,11 @@ body {
         if (code === 0) {
           S.startupPageCreated = true;
           S.displayRebuilt = false;
+          _lastRakHdr = rakatHdr();
+          _lastClkHdr = clockHdr();
           log('G2: startup page created', 'ok');
           refreshGlassesWelcomeText();
+          glassesTopBarUpdate();
           return;
         }
         log('G2: startup container already exists (code=' + code + ') — rebuilding', 'w');
@@ -2690,8 +2703,11 @@ body {
         }).then(function () {
           S.startupPageCreated = true;
           S.displayRebuilt = true;   // just rebuilt — ready for text upgrades
+          _lastRakHdr = rakatHdr();
+          _lastClkHdr = clockHdr();
           log('G2: startup page rebuilt', 'ok');
           refreshGlassesWelcomeText();
+          glassesTopBarUpdate();
         });
       });
     });
@@ -2708,8 +2724,11 @@ body {
       }).then(function () {
         S.startupPageCreated = true;
         S.displayRebuilt = true;
+        _lastRakHdr = rakatHdr();
+        _lastClkHdr = clockHdr();
         log('G2: startup recovery rebuild applied', 'ok');
         refreshGlassesWelcomeText();
+        glassesTopBarUpdate();
       });
     });
   }
@@ -2766,6 +2785,8 @@ body {
           textObject: _g2TextContainers(hdrContent, bodyContent),
         }).then(function () {
           S.displayRebuilt = true;
+          // The rebuild just painted both pills from the current snapshot, so
+          // record what is on screen or the next diff will skip a real change.
           _lastRakHdr = rakatHdr();
           _lastClkHdr = clockHdr();
         });
@@ -2786,6 +2807,14 @@ body {
   })();
 
   function g2Divider() { return String(G2_DIV); }
+
+  // Status markers. The firmware font carries no Arabic and, of the symbols
+  // this app used to reach for, only the filled and hollow circles exist —
+  // check, pause, refresh and warning all resolve to a zero-width glyph and
+  // render as nothing. scripts/check-glasses-glyphs.js keeps this honest.
+  var G2_MARK_LOCKED    = '\u25CF';   // ●
+  var G2_MARK_CANDIDATE = '\u25CB';   // ○
+  var G2_MARK_DOT       = '\u00B7';   // ·
 
   function appTitleHdr() { return 'Quran Companion'; }
 
@@ -2820,7 +2849,10 @@ body {
    * short BLE write, so they must never force a full page rebuild.
    */
   function glassesTopBarUpdate() {
-    if (!S.bridge || !S.isG2 || !S.displayRebuilt) return;
+    // Gate on the containers existing, not on a rebuild having happened. The
+    // startup page creates them too, and gating on displayRebuilt left the
+    // pills showing whatever the very first paint put there.
+    if (!S.bridge || !S.isG2 || !S.startupPageCreated) return;
     var rak = rakatHdr();
     var clk = clockHdr();
     if (rak !== _lastRakHdr) {
@@ -2966,7 +2998,7 @@ body {
         if (state.isCandidate && (state.translation || state.translationGlasses)) {
           var cRef  = glassesRef(state);
           var cPct  = 'Match: ' + (state.candidateScore || 0) + '%';
-          var cHdr  = padToWidth('\u25CB ' + cRef, cPct, G2_HDR_PX);
+          var cHdr  = padToWidth(G2_MARK_CANDIDATE + ' ' + cRef, cPct, G2_HDR_PX);
           var cPages = buildPages(transForGlasses, state.transliteration, 1);
           if (!state.practiceMode) {
             var lockDots = (state._lockingDots !== undefined) ? '.'.repeat(state._lockingDots) : '\u2026';
@@ -2976,13 +3008,13 @@ body {
         }
         if (state.completedSurah) {
           var sName = state.completedSurahName || ('Surah ' + state.completedSurah);
-          return { hdr: '\u2713 ' + clip(sName, 24) + ' complete', pages: ['Listening for next surah\u2026'] };
+          return { hdr: clip(sName, 24) + ' complete', pages: ['Listening for next surah\u2026'] };
         }
         // Practice: keep current verse on glasses while listening for next (fresh surah jump).
         if (state.userSearching && (state.translation || state.translationGlasses)) {
           var uRef  = glassesRef(state);
           var uPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
-          var uHdr  = padToWidth('\u25CF ' + uRef, uPct, G2_HDR_PX);
+          var uHdr  = padToWidth(G2_MARK_LOCKED + ' ' + uRef, uPct, G2_HDR_PX);
           var uPages = buildPages(transForGlasses, state.transliteration);
           uPages[uPages.length - 1] += '\nListening for next verse\u2026';
           return { hdr: uHdr, pages: uPages };
@@ -2992,14 +3024,14 @@ body {
       case 'LOCKED': {
         var lRef  = glassesRef(state);
         var lPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
-        var lHdr  = padToWidth('\u25CF ' + lRef, lPct, G2_HDR_PX);
+        var lHdr  = padToWidth(G2_MARK_LOCKED + ' ' + lRef, lPct, G2_HDR_PX);
         return { hdr: lHdr, pages: buildPages(transForGlasses, state.transliteration) };
       }
 
       case 'PAUSED': {
         var pRef  = state.surah ? glassesRef(state)
           : (state.surahName ? clip(state.surahName, 14) : 'Quran');
-        var pHdr  = '\u23F8 PAUSED  ' + pRef;
+        var pHdr  = 'PAUSED  ' + pRef;
         var transForPaused = state.translationGlasses ?? state.translation;
         var pBody = transForPaused || 'Single-tap to resume';
         var pPages = buildPages(pBody, state.transliteration, 2);
@@ -3010,15 +3042,15 @@ body {
       case 'RESUMING': {
         // Keep showing the last verse — don't flash "Resynchronizing" on the glasses
         if (state.translation || state.translationGlasses || state.transliteration) {
-          var rHdr  = '\u21BB ' + glassesRef(state);
+          var rHdr  = G2_MARK_CANDIDATE + ' ' + glassesRef(state);
           return { hdr: rHdr, pages: buildPages(transForGlasses, state.transliteration) };
         }
         var rName2 = state.surahName ? clip(state.surahName, 14) : 'Quran';
-        return { hdr: '\u21BB ' + rName2, pages: ['Listening\u2026'] };
+        return { hdr: G2_MARK_CANDIDATE + ' ' + rName2, pages: ['Listening\u2026'] };
       }
 
       case 'LOST':
-        return { hdr: '\u26A0 Signal Lost', pages: ['Resume recitation.'] };
+        return { hdr: 'Signal Lost', pages: ['Resume recitation.'] };
     
       default:
         return { hdr: appTitleHdr(), pages: ['Ready.\nSingle-tap to start.\nDouble-tap to exit.'] };

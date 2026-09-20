@@ -116,28 +116,30 @@ function wordCount(s) {
 /**
  * Identify the posture cue in a transcript chunk, if any.
  *
- * `confidence` is the P_audio term of the voting formula. A cue spoken on its
- * own scores 1.0; the same words buried in a long chunk of recitation score low
- * enough that temporal and verse evidence can outvote them. That is what keeps
- * 29:45 ("ولذكر الله أكبر") from being read as a takbeer.
+ * `confidence` is the P_audio term of the voting formula, and it is driven by
+ * what comes *after* the cue rather than by the length of the chunk. A
+ * transcription window routinely spans the end of an ayah and the takbeer that
+ * follows it — that is a real transition, and the cue sits at the end. A verse
+ * that merely quotes the phrase keeps going afterwards: 29:45 is
+ * "وَلَذِكْرُ اللَّهِ أَكْبَرُ وَاللَّهُ يَعْلَمُ مَا تَصْنَعُونَ", and those
+ * trailing words are what give it away.
  *
- * @returns {{kind: string, confidence: number, text: string}|null}
+ * @returns {{kind: string, confidence: number, text: string, match: string,
+ *            leading: number, trailing: number}|null}
  */
 export function detectPrayerCue(text) {
   const n = normalizeCue(text);
   if (!n) return null;
   for (const cue of CUES) {
-    if (!cue.re.test(n)) continue;
-    const total = wordCount(n);
-    // Cue phrases are short. Every extra word beyond the phrase itself is
-    // evidence that this chunk is recitation that happens to quote the cue.
-    const extra = Math.max(0, total - cue.words);
-    const confidence = extra === 0 ? 1
-      : extra <= 2 ? 0.8
-      : extra <= 5 ? 0.5
-      : extra <= 10 ? 0.25
-      : 0.1;
-    return { kind: cue.kind, confidence, text: n };
+    const m = n.match(cue.re);
+    if (!m) continue;
+    const leading = wordCount(n.slice(0, m.index));
+    const trailing = wordCount(n.slice(m.index + m[0].length));
+    const confidence = trailing === 0 ? 1
+      : trailing <= 2 ? 0.7
+      : trailing <= 5 ? 0.35
+      : 0.15;
+    return { kind: cue.kind, confidence, text: n, match: m[0], leading, trailing };
   }
   return null;
 }
