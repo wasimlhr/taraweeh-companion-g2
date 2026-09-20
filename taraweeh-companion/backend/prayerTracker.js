@@ -684,9 +684,22 @@ export class PrayerTracker {
     this.setsCompleted = clampInt(data.setsCompleted, 0, 100, 0);
     this.inSahw = !!data.inSahw;
     if (data.config) this.setConfig(data.config, { silent: true });
-    // The gap the client spent disconnected counts toward the dwell, so a
-    // position that timed out while offline is corrected on the next tick.
+    // The gap the client spent disconnected counts toward the dwell.
     this.enteredAt = now - clampInt(data.sinceMs, 0, 3600000, 0) - (now - ts);
+
+    // What is worth carrying across a reconnect is the rak'ah count. The
+    // posture is only worth carrying if it is still physically plausible —
+    // nobody has been in sujood for the ten minutes the app was closed, and
+    // restoring that would leave the glasses insisting on it until the next
+    // takbeer. Past the ceiling, keep the count and stand him back up.
+    const { max } = this._windowFor(this.position);
+    if (max && now - this.enteredAt > max) {
+      this._log(`restored posture ${this.position} is ${Math.round((now - this.enteredAt) / 1000)}s stale — keeping rak'ah ${this.rakat}, resetting to qiyam`);
+      this.position = POSITIONS.QIYAM;
+      this.sajdaCount = 0;
+      this.inSahw = false;
+      this.enteredAt = now;
+    }
     this.lastReason = 'restored';
     this._log(`restored ${this.position} at rak'ah ${this.rakat}`);
     this._emit(now);

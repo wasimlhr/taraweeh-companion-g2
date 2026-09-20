@@ -598,15 +598,42 @@ test('prayerTracker — snapshot and persistence', async (t) => {
     assert.equal(fresh.restore(null), false);
   });
 
-  await t.test('a position that timed out while offline is corrected on the next tick', () => {
+  await t.test('a brief disconnect keeps the posture as well as the count', () => {
     const h = makeTracker();
     h.cue(TAKBEER);
     const saved = h.tracker.toJSON(h.now());
-    const later = h.now() + 60000;
+    const later = h.now() + 4000;
     const fresh = new PrayerTracker({ log: () => {}, now: later });
     fresh.restore(saved, { now: later });
-    assert.equal(fresh.position, POSITIONS.RUKU);
-    assert.equal(fresh.tick(later).position, POSITIONS.ITIDAL);
+    assert.equal(fresh.position, POSITIONS.RUKU, 'he is still bowing');
+  });
+
+  await t.test('a long gap keeps the rak\'ah count but drops the stale posture', () => {
+    const h = makeTracker();
+    prayRakah(h);
+    h.cue(TAKBEER);            // into ruku' of rak'ah 2
+    assert.equal(h.tracker.position, POSITIONS.RUKU);
+    const saved = h.tracker.toJSON(h.now());
+
+    // The app was closed for ten minutes. Nobody bowed for ten minutes.
+    const later = h.now() + 10 * 60 * 1000;
+    const fresh = new PrayerTracker({ log: () => {}, now: later });
+    assert.equal(fresh.restore(saved, { now: later }), true);
+    assert.equal(fresh.position, POSITIONS.QIYAM);
+    assert.equal(fresh.completedRakat, 1, 'the count is what was worth keeping');
+    assert.equal(fresh.rakat, 2);
+  });
+
+  await t.test('tashahhud has no ceiling, so it survives a long gap', () => {
+    const h = makeTracker({ rakatPerSet: 2 });
+    prayRakah(h); prayRakah(h);
+    assert.equal(h.tracker.position, POSITIONS.TASHAHHUD);
+    const saved = h.tracker.toJSON(h.now());
+    const later = h.now() + 10 * 60 * 1000;
+    const fresh = new PrayerTracker({ log: () => {}, now: later });
+    fresh.restore(saved, { now: later });
+    assert.equal(fresh.position, POSITIONS.TASHAHHUD);
+    assert.equal(fresh.completedRakat, 2);
   });
 });
 
