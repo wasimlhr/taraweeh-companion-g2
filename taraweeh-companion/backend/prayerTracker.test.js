@@ -550,6 +550,24 @@ test('prayerTracker — manual override', async (t) => {
 // ── Snapshots and persistence ───────────────────────────────────────────────
 
 test('prayerTracker — snapshot and persistence', async (t) => {
+  await t.test('reconnecting during qunoot preserves the next posture', () => {
+    for (const from of [POSITIONS.QIYAM, POSITIONS.ITIDAL]) {
+      const now = 100000;
+      const tracker = new PrayerTracker({ log: () => {}, now });
+      tracker.setPosition(from, { now });
+      tracker.feedCue({ kind: 'qunoot', confidence: 1 }, { now: now + 5000 });
+      for (const saved of [tracker.toJSON(now + 5000), {
+        ...tracker.snapshot(now + 5000), v: 1, ts: now + 5000,
+      }]) {
+        const fresh = new PrayerTracker({ log: () => {}, now: now + 10000 });
+        assert.equal(fresh.restore(saved, { now: now + 10000 }), true);
+        const next = fresh.feedCue({ kind: 'takbeer', confidence: 1 }, { now: now + 11000 });
+        assert.equal(next.position, from === POSITIONS.ITIDAL ? POSITIONS.SAJDA1 : POSITIONS.RUKU);
+        assert.equal(next.completedRakat, 0);
+      }
+    }
+  });
+
   await t.test('the snapshot carries everything the two UIs render', () => {
     const h = makeTracker({ targetRakat: 20, rakatPerSet: 2 });
     prayRakah(h);

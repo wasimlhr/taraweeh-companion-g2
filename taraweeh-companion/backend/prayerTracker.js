@@ -212,6 +212,7 @@ export class PrayerTracker {
       sajdaCount: this.sajdaCount,
       sinceMs: Math.max(0, now - this.enteredAt),
       inSahw: this.inSahw,
+      qunootFrom: this.qunootFrom,
       awaitingSajdahTilawah: now < this.pendingSajdahTilawahUntil,
       witrMode: this.config.witrMode,
       reason: this.lastReason,
@@ -666,6 +667,7 @@ export class PrayerTracker {
       sajdaCount: this.sajdaCount,
       setsCompleted: this.setsCompleted,
       inSahw: this.inSahw,
+      qunootFrom: this.qunootFrom,
       config: { ...this.config },
       /** Stored as an age so a clock skew between client and server cannot matter. */
       sinceMs: Math.max(0, now - this.enteredAt),
@@ -684,6 +686,12 @@ export class PrayerTracker {
     this.setsCompleted = clampInt(data.setsCompleted, 0, 100, 0);
     this.inSahw = !!data.inSahw;
     if (data.config) this.setConfig(data.config, { silent: true });
+    // Qunoot can start before or after ruku'; preserve which branch to resume.
+    this.qunootFrom = this.position === POSITIONS.QUNOOT
+      ? (data.qunootFrom === POSITIONS.ITIDAL ? POSITIONS.ITIDAL
+        : data.qunootFrom === POSITIONS.QIYAM ? POSITIONS.QIYAM
+        : this.config.witrMode === 'shafii' ? POSITIONS.ITIDAL : POSITIONS.QIYAM)
+      : null;
     // The gap the client spent disconnected counts toward the dwell.
     this.enteredAt = now - clampInt(data.sinceMs, 0, 3600000, 0) - (now - ts);
 
@@ -698,6 +706,7 @@ export class PrayerTracker {
       this.position = POSITIONS.QIYAM;
       this.sajdaCount = 0;
       this.inSahw = false;
+      this.qunootFrom = null;
       this.enteredAt = now;
     }
     this.lastReason = 'restored';

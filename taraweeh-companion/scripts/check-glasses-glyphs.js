@@ -24,7 +24,8 @@ try {
   process.exit(1);
 }
 
-const html = readFileSync(join(root, 'app', 'index.html'), 'utf8');
+// Git commonly checks out CRLF on Windows; source line endings are not glyphs.
+const html = readFileSync(join(root, 'app', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 
 /**
  * Decode the \uXXXX escapes the app uses for non-ASCII so they are checked as
