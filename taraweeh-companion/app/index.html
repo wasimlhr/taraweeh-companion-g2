@@ -528,6 +528,31 @@ body {
   color: #232323;
 }
 
+/* Live decode feed — what the backend heard, and what it did about it. */
+.trace-feed {
+  margin-top: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--bc-1);
+  border-radius: 8px;
+  background: var(--bg-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.tr-row { display: flex; gap: 6px; padding: 1px 0; }
+.tr-t    { color: var(--tc-2); flex: 0 0 46px; text-align: right; }
+.tr-tag  { flex: 0 0 52px; text-transform: uppercase; letter-spacing: 0.04em; }
+.tr-body { flex: 1 1 auto; word-break: break-word; }
+.tr-asr    .tr-tag { color: var(--tc-2); }
+.tr-cue    .tr-tag { color: var(--tc-gold); }
+.tr-prayer .tr-tag { color: var(--tc-green, #22c55e); }
+.tr-lock   .tr-tag { color: var(--tc-gold); }
+.tr-error  .tr-tag { color: var(--tc-red, #ef4444); }
+.tr-rej  { opacity: 0.6; }
+.tr-ar   { direction: rtl; unicode-bidi: isolate; }
+
 /* Rak'ah bar — always visible in Taraweeh, unlike the position overlay.
    The count has to be readable and correctable at any moment, not only when
    the imam happens to be bowing. */
@@ -1266,6 +1291,19 @@ body {
         <button type="button" class="back-btn btn-arrow" onclick="copyDiagLog()" style="font-size:13px">Copy diagnostic log</button>
         <span class="s-hint" id="diagCopyHint" style="margin-top:6px;display:block">Last 500 events. Paste into an issue when reporting a bug.</span>
       </div>
+      <div class="s-row">
+        <span class="s-label">Listening trace</span>
+        <label class="s-check"><input type="checkbox" id="traceToggle" onchange="setTraceStreaming(this.checked)"> Show what it hears and decides</label>
+        <span class="s-hint" style="margin-top:6px;display:block">The backend records this either way. The switch only opens the live
+          feed below, so the history leading up to a problem is already captured.</span>
+        <div id="traceFeed" class="trace-feed" style="display:none"></div>
+        <div class="rk-controls" style="margin-top:8px">
+          <button type="button" class="rk-btn" onclick="copyTraceReport()">Copy report</button>
+          <button type="button" class="rk-btn" onclick="downloadTraceReport()">Save report</button>
+          <button type="button" class="rk-btn" onclick="sendTraceReport()">Send to developer</button>
+        </div>
+        <span class="s-hint" id="traceHint" style="margin-top:6px;display:block">A report holds transcripts and decisions — never audio, never your API keys.</span>
+      </div>
     </div>
   </details>
 
@@ -1543,8 +1581,11 @@ body {
   window.togglePractice = function () { setReciteMode('practice'); };
   _updateReciteModeUI();
 
+  /** @returns {boolean} whether the socket was open to take it. */
   function _sendWs(msg) {
-    if (S.ws && S.ws.readyState === WebSocket.OPEN) S.ws.send(JSON.stringify(msg));
+    if (!S.ws || S.ws.readyState !== WebSocket.OPEN) return false;
+    S.ws.send(JSON.stringify(msg));
+    return true;
   }
 
   window.resetRakat = function () {
@@ -1715,6 +1756,167 @@ body {
     }
     _updateRakatTargetButtons();
   }
+
+  // ─── Listening trace ──────────────────────────────────────────────────────
+  // The backend records what it heard and what it decided whether or not this
+  // panel is open; the toggle only starts streaming. That matters because the
+  // interesting part of a bug is always the minute before someone noticed it.
+  var _traceEvents = [];
+  var _traceStreaming = false;
+  const TRACE_KEEP = 400;
+
+  window.setTraceStreaming = function (on) {
+    _traceStreaming = !!on;
+    var feed = document.getElementById('traceFeed');
+    if (feed) feed.style.display = _traceStreaming ? 'block' : 'none';
+    _sendWs({ type: 'set_trace', enabled: _traceStreaming });
+  };
+
+  /** One line per backend event, newest at the bottom. */
+  function _appendTraceEvent(ev) {
+    if (!ev) return;
+    _traceEvents.push(ev);
+    if (_traceEvents.length > TRACE_KEEP) _traceEvents.shift();
+    var feed = document.getElementById('traceFeed');
+    if (!feed || feed.style.display === 'none') return;
+
+    var row = document.createElement('div');
+    row.className = 'tr-row tr-' + ev.type + (ev.accepted === false ? ' tr-rej' : '');
+    var t = document.createElement('span');
+    t.className = 'tr-t';
+    t.textContent = (ev.t / 1000).toFixed(1) + 's';
+    var tag = document.createElement('span');
+    tag.className = 'tr-tag';
+    tag.textContent = ev.type;
+    var body = document.createElement('span');
+    body.className = 'tr-body' + (ev.type === 'asr' ? ' tr-ar' : '');
+    body.textContent = _traceLine(ev);
+    row.appendChild(t); row.appendChild(tag); row.appendChild(body);
+
+    feed.appendChild(row);
+    while (feed.childNodes.length > 120) feed.removeChild(feed.firstChild);
+    feed.scrollTop = feed.scrollHeight;
+  }
+
+  function _traceLine(ev) {
+    switch (ev.type) {
+      case 'asr':
+        return (ev.text || '(nothing)') + '  [' + ev.audioMs + 'ms, ' + ev.latencyMs + 'ms round trip]';
+      case 'cue':
+        return ev.kind + (ev.accepted
+          ? ' \u2192 ' + ev.to + '  p=' + (ev.score != null ? ev.score : '?')
+          : ' ignored: ' + ev.reason
+            + (ev.score != null ? '  p=' + ev.score : '')
+            + (ev.pAudio != null ? '  audio=' + ev.pAudio : ''));
+      case 'prayer':
+        return ev.from + ' \u2192 ' + ev.to + "  rak'ah " + ev.rakat + '  (' + ev.reason + ')';
+      case 'lock':
+        return 'locked ' + ev.at + '  conf=' + ev.confidence + (ev.posture !== 'QIYAM' ? '  during ' + ev.posture : '');
+      case 'audio':
+        return 'rms=' + ev.rms + ' gate=' + ev.gate + ' voice=' + ev.voice + ' ' + ev.mode + ' buf=' + ev.bufferedMs + 'ms';
+      case 'error':
+        return ev.where + ': ' + ev.message;
+      default:
+        return JSON.stringify(ev);
+    }
+  }
+
+  /**
+   * Ask the backend for its full buffer and fold in what the app knows about
+   * itself. Settings go in with the keys stripped on both sides.
+   */
+  function _buildTraceReport(timeoutMs) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var finish = function (backend) {
+        if (settled) return;
+        settled = true;
+        resolve({
+          v: 1,
+          generatedAt: Date.now(),
+          app: {
+            version: APP_VERSION,
+            userAgent: navigator.userAgent || '',
+            isG2: !!S.isG2,
+            ringConnected: _ringConnected,
+            pixelMetrics: !!_pretext,
+            recording: !!S.isRecording,
+            prayer: _prayer,
+            settings: _redactedSettings(),
+          },
+          clientLog: _diagLog.slice(-200),
+          backend: backend || { note: 'backend did not answer in time' },
+        });
+      };
+      S._onTraceReport = function (report) { finish(report); };
+      if (!_sendWs({ type: 'get_trace' })) return finish(null);
+      setTimeout(function () { finish(null); }, timeoutMs || 4000);
+    });
+  }
+
+  function _redactedSettings() {
+    var out = {};
+    Object.keys(S.settings || {}).forEach(function (k) {
+      var v = S.settings[k];
+      if (/key|token|secret/i.test(k)) {
+        out[k] = (typeof v === 'string' && v) ? '[redacted ' + v.length + ' chars]' : '[empty]';
+      } else {
+        out[k] = v;
+      }
+    });
+    return out;
+  }
+
+  function _setTraceHint(text) {
+    var el = document.getElementById('traceHint');
+    if (el) el.textContent = text;
+  }
+
+  window.copyTraceReport = async function () {
+    _setTraceHint('Collecting…');
+    var report = await _buildTraceReport();
+    var text = JSON.stringify(report, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      _setTraceHint('Copied ' + (report.backend?.events?.length || 0) + ' backend events. Paste into an issue.');
+    } catch (e) {
+      console.log(text);
+      _setTraceHint('Clipboard unavailable — the report was written to the console.');
+    }
+  };
+
+  window.downloadTraceReport = async function () {
+    _setTraceHint('Collecting…');
+    var report = await _buildTraceReport();
+    var blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'taraweeh-trace-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    _setTraceHint('Saved. Attach the file when reporting the problem.');
+  };
+
+  window.sendTraceReport = async function () {
+    var note = '';
+    try { note = window.prompt('What went wrong? (optional)') || ''; } catch (_) {}
+    _setTraceHint('Sending…');
+    var report = await _buildTraceReport();
+    try {
+      var res = await fetch(backendBase() + '/api/trace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report: report.backend?.v === 1 ? report.backend : { v: 1, ...report }, note: note }),
+      });
+      var j = await res.json();
+      _setTraceHint(j.ok ? 'Sent as ' + j.id + '. Thank you.' : 'Rejected: ' + (j.error || res.status));
+    } catch (e) {
+      _setTraceHint('Could not reach the backend — use Save report instead.');
+    }
+  };
 
   const SETTINGS_KEY = 'qlive_settings';
   const SEND_INTERVAL = 200;
@@ -2214,6 +2416,10 @@ body {
   }
 
   function handleSysStatus(s) {
+    // The backend carries the sub-type in `statusType`; it used to put it in
+    // `type`, where it overwrote the `sys_status` envelope and the message
+    // never reached this function at all.
+    var sub = s.statusType || s.type || '';
     if (s.component === 'model') {
       updateEndpointLifecycleUI(s);
       if (s.provider) _modelProvider = s.provider;
@@ -2268,21 +2474,21 @@ body {
           }
           break;
       }
-    } else if (s.type === 'fast_mode') {
+    } else if (sub === 'fast_mode') {
       if (s.enabled) _paceMode = 'fast';
       else if (_paceMode === 'fast') _paceMode = 'follow';
       _syncPaceFlags();
       _updatePaceButton();
-    } else if (s.type === 'slow_mode') {
+    } else if (sub === 'slow_mode') {
       if (s.enabled) _paceMode = 'slow';
       else if (_paceMode === 'slow') _paceMode = 'follow';
       _syncPaceFlags();
       _updatePaceButton();
-    } else if (s.type === 'taraweeh_mode') {
+    } else if (sub === 'taraweeh_mode') {
       _applyPrayerSnapshot(s.prayer || { position: s.position, rakat: s.rakat });
-    } else if (s.type === 'practice_mode' || s.type === 'verse_hold_mode') {
+    } else if (sub === 'practice_mode' || sub === 'verse_hold_mode') {
       if (_practiceMode) { stopPageFlip(); stopCountdown(); }
-    } else if (s.type === 'session_quota') {
+    } else if (sub === 'session_quota') {
       // Shared-mode per-session usage cap: warn at 80%, hard-stop at 100%.
       // Surface as the main status banner so user can switch to BYOK.
       if (s.status === 'error') {
@@ -3478,6 +3684,8 @@ body {
         recoveryState: storedRecoveryState(),
         prayerState: storedPrayerState(),
         prayerConfig: { targetRakat: S.settings.targetRakat },
+        appVersion: APP_VERSION,
+        userAgent: (navigator.userAgent || '').slice(0, 200),
         audioSource: currentAudioSource(),
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       restrictSurah: restrictSurahValue(),
@@ -3492,6 +3700,9 @@ body {
       S.ws.send(JSON.stringify({ type: 'set_fast_mode', enabled: _fastMode }));
       S.ws.send(JSON.stringify({ type: 'set_slow_mode', enabled: _slowMode }));
       setReciteMode(_reciteMode);
+      // A reconnect gets a fresh trace on the backend; resume streaming it if
+      // the panel is open, otherwise the feed silently stops filling.
+      if (_traceStreaming) S.ws.send(JSON.stringify({ type: 'set_trace', enabled: true }));
       // If recording was already active (reconnect mid-session), re-send start
       if (S.isRecording) {
         sendStartForCurrentAudioSource();
@@ -3854,6 +4065,10 @@ body {
       log('Taraweeh: rak\u02bbah ' + (snap.rakat || '?') + ' \u00B7 '
         + (snap.positionLabel || snap.position)
         + (snap.reason ? ' (' + snap.reason + ')' : ''), 'ok');
+    } else if (msg.type === 'trace') {
+      _appendTraceEvent(msg.event);
+    } else if (msg.type === 'trace_report') {
+      if (S._onTraceReport) { var cb = S._onTraceReport; S._onTraceReport = null; cb(msg.report); }
     } else if (msg.type === 'wordProgress') {
       // V4: Handle word progress updates
       _updateWordProgress(msg);

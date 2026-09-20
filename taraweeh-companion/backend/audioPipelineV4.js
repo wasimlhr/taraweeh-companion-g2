@@ -24,6 +24,7 @@ import {
 } from './whisperClean.js';
 import { PrayerTracker, POSITIONS } from './prayerTracker.js';
 import { detectPrayerCue, isFatihaEnd, normalizeCue } from './prayerKeywords.js';
+import { SessionTrace } from './sessionTrace.js';
 
 // ── Word-level corpus data (morphology + tajweed weights) ───────────────────
 const __dirname_v4 = dirname(fileURLToPath(import.meta.url));
@@ -273,7 +274,7 @@ const PRAYER_TICK_MS = 2000;
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, onRecoveryState, recoveryState, preferredSurah = 0, translationLang = '', whisperOpts, audioSource = 'g2', prayerConfig = {} }) {
+  constructor({ onStateUpdate, onStatus, onError, onRecoveryState, recoveryState, preferredSurah = 0, translationLang = '', whisperOpts, audioSource = 'g2', prayerConfig = {}, trace = null }) {
     this.onStateUpdate   = onStateUpdate;
     this.onStatus        = onStatus || (() => {});
     this.onError         = onError  || (() => {});
@@ -411,12 +412,23 @@ export class AudioPipeline {
     this._practiceFreshRun    = false; // true → global search, no sequential bias
     this._expectFatiha   = false;    // set after a rak'ah closes — next recitation is Fatiha
 
+    // What the pipeline heard and what it decided, kept on a bounded ring
+    // buffer so a field report can answer "why was that takbeer ignored"
+    // without the user having to reproduce anything.
+    this.trace = trace || new SessionTrace();
+
     // The posture machine. It owns every rak'ah/position decision; the pipeline
     // only feeds it transcripts and verse anchors, and mirrors its position into
     // _taraweehPos for the display-side code that reads it.
     this.prayer = new PrayerTracker({
       config: prayerConfig,
       onChange: (snap) => this._onPrayerChange(snap),
+      onDecision: (d) => this.trace.record('cue', {
+        kind: d.kind, accepted: d.accepted, reason: d.reason,
+        from: d.from, to: d.to, text: d.text,
+        pAudio: d.pAudio, pVerse: d.pVerse, pTemporal: d.pTemporal,
+        score: d.score, dwellMs: Math.round(d.dwellMs),
+      }),
     });
     this._taraweehPos    = POSITIONS.QIYAM;
     this._prayerTickTimer = null;
@@ -1181,6 +1193,14 @@ export class AudioPipeline {
     if (now - this._lastAudioStatusMs >= 3000) {
       this._lastAudioStatusMs = now;
       console.log(`[Pipeline] Audio: source=${this.audioSource} rms=${rms.toFixed(4)} gate=${detectionGate.toFixed(4)} voice=${hasVoice} mode=${this.state.mode}`);
+      // Sampled, not per-frame: enough to tell "the mic is dead" and "the gate
+      // never opened" apart from "the model heard nothing useful", which are
+      // the three ways a session can look identically broken from outside.
+      this.trace.record('audio', {
+        source: this.audioSource, rms: +rms.toFixed(4), gate: +detectionGate.toFixed(4),
+        voice: hasVoice, mode: this.state.mode, posture: this._taraweehPos,
+        bufferedMs: Math.round((lockedTracking ? this._lockedBuf.length : this._searchBuf.length) / BYTES_PER_MS),
+      });
       this.onStatus({ component: 'audio', status: 'active', source: this.audioSource, rms: +rms.toFixed(4), voice: hasVoice });
     }
 
@@ -1416,9 +1436,16 @@ export class AudioPipeline {
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
         if (text) this._lastPromptText = text;
+        this.trace.record('asr', {
+          mode: 'search', text, words: words.length,
+          audioMs: sendMs, bufferedMs: bufMs, window: this._searchWinIdx + 1,
+          rms: +rms.toFixed(4), latencyMs: Date.now() - now,
+          posture: this._taraweehPos,
+        });
         if (stale()) { console.log('[Pipeline] Stale search result discarded'); return; }
         console.log(`[Pipeline] Whisper (${sendMs}ms): "${text.substring(0, 80)}"${words.length > 0 ? ` [${words.length} words]` : ''}`);
       } catch (err) {
+        this.trace.record('error', { where: 'search-transcribe', message: String(err.message || err).slice(0, 160), status: err.status || 0 });
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
         this._handleTranscriptionError(err);
         this.onError(err.message);
@@ -1631,6 +1658,12 @@ export class AudioPipeline {
         this._whisperLastConfirmAyah = this.state.ayah;
         this._whisperLastConfirmSurah = this.state.surah;
 
+        this.trace.record('lock', {
+          at: `${this.state.surah}:${this.state.ayah}`,
+          confidence: +(this.state.confidence || 0).toFixed(2),
+          posture: this._taraweehPos, expectedFatiha: this._expectFatiha,
+          resumeTarget: this._preRukuSurah ? `${this._preRukuSurah}:${this._preRukuAyah}` : null,
+        });
         // Recitation is the ground truth the cue chain is corrected against: a
         // verse locking while the machine thinks he is bowing means takbeers
         // were lost, so hand the anchor over and let it resynchronise.
@@ -1749,7 +1782,13 @@ export class AudioPipeline {
         words = result.words || [];  // V4: Extract word timestamps
         if (text) this._lastPromptText = text;
         resultAgeMs = Date.now() - startedAt;
+        this.trace.record('asr', {
+          mode: 'locked', text, words: words.length,
+          audioMs: chunkMs, rms: +rms.toFixed(4), latencyMs: resultAgeMs,
+          at: `${this.state.surah}:${this.state.ayah}`, posture: this._taraweehPos,
+        });
       } catch (err) {
+        this.trace.record('error', { where: 'locked-transcribe', message: String(err.message || err).slice(0, 160), status: err.status || 0 });
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
         this._handleTranscriptionError(err);
         return;
@@ -2941,6 +2980,12 @@ export class AudioPipeline {
   _onPrayerChange(snap) {
     const prev = this._taraweehPos;
     this._taraweehPos = snap.position;
+    this.trace.record('prayer', {
+      from: prev, to: snap.position, reason: snap.reason,
+      rakat: snap.rakat, rakatInSet: snap.rakatInSet, setNumber: snap.setNumber,
+      completedRakat: snap.completedRakat, score: snap.confidence,
+      holding: this._preRukuSurah ? `${this._preRukuSurah}:${this._preRukuAyah}` : null,
+    });
     if (!this.taraweehMode) { this._emitTaraweeh(snap); return; }
 
     const wasStanding = prev === POSITIONS.QIYAM;

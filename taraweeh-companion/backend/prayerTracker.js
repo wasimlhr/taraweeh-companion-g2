@@ -130,8 +130,14 @@ export class PrayerTracker {
    * @param {object}   [opts.config]   see DEFAULT_CONFIG
    * @param {number}   [opts.now]      injectable clock for tests
    */
-  constructor({ onChange = () => {}, log = null, config = {}, now = Date.now() } = {}) {
+  constructor({ onChange = () => {}, onDecision = null, log = null, config = {}, now = Date.now() } = {}) {
     this.onChange = onChange;
+    /**
+     * Called for every cue considered, accepted or not, with the score
+     * breakdown behind the verdict. Field reports almost always turn on "why
+     * was that takbeer ignored", and a silent `return null` cannot answer it.
+     */
+    this.onDecision = onDecision || (() => {});
     this._log = log || ((m) => console.log(`[Prayer] ${m}`));
     this.config = { ...DEFAULT_CONFIG };
     this.setConfig(config, { silent: true });
@@ -295,12 +301,36 @@ export class PrayerTracker {
     if (!cue || !cue.kind) return null;
     const kind = cue.kind;
     const pAudio = Number.isFinite(cue.confidence) ? cue.confidence : 1;
-    if (pAudio < MIN_AUDIO_CONFIDENCE) return null;
+    const from = this.position;
+    const dwellMs = now - this.enteredAt;
+
+    /** Record the verdict, then hand the caller the usual null-or-snapshot. */
+    const verdict = (reason, extra = {}) => {
+      const accepted = reason === 'accepted';
+      try {
+        this.onDecision({
+          kind, accepted, reason, from,
+          to: accepted ? this.position : from,
+          dwellMs,
+          text: cue.text || '',
+          pAudio, verseActive,
+          leading: cue.leading || 0,
+          trailing: cue.trailing || 0,
+          ...extra,
+        });
+      } catch (_) {}
+      if (!accepted && reason !== 'refractory' && reason !== 'replayed-audio') {
+        this._log(`cue ${kind} ignored (${reason})`);
+      }
+      return extra.result ?? null;
+    };
+
+    if (pAudio < MIN_AUDIO_CONFIDENCE) return verdict('buried-in-recitation');
 
     // Hard veto 1 — refractory. Loudspeaker echo and clipping produce a second
     // copy of the same syllables a few hundred ms later.
     if (this.lastAcceptedAt && now - this.lastAcceptedAt < TIMING.REFRACTORY_MS) {
-      return null;
+      return verdict('refractory', { sinceLastMs: now - this.lastAcceptedAt });
     }
 
     // Hard veto 2 — audio we have already acted on. The search buffer grows and
@@ -311,7 +341,7 @@ export class PrayerTracker {
     // seconds apart (sajda → jalsah → sajda).
     if (windowEndMs > 0 && this.consumedWindowEndMs
         && windowStartMs < this.consumedWindowEndMs) {
-      return null;
+      return verdict('replayed-audio', { windowStartMs, consumedUntil: this.consumedWindowEndMs });
     }
 
     this.lastCueKind = kind;
@@ -321,7 +351,9 @@ export class PrayerTracker {
     // Hard veto 3 — physiologically impossible dwell. A tasleem is exempt:
     // it is unambiguous and ends the set whenever it lands.
     const pTemporal = this._temporalScore(now);
-    if (pTemporal === 0 && kind !== 'tasleem') return null;
+    if (pTemporal === 0 && kind !== 'tasleem') {
+      return verdict('too-soon', { pTemporal, minDwellMs: this._windowFor(from).min });
+    }
 
     // Hard veto 4 — the ayah being recited contains this phrase and the chunk
     // carries more than the phrase alone. A cue spoken by itself still counts
@@ -329,19 +361,18 @@ export class PrayerTracker {
     // in a verse known to quote it, is the verse.
     const pVerse = 1 - Math.max(0, Math.min(1, verseActive));
     if (verseActive >= 0.85 && ((cue.leading || 0) > 0 || (cue.trailing || 0) > 0)) {
-      this._log(`cue ${kind} is part of the ayah being recited — ignored`);
-      return null;
+      return verdict('quoted-by-the-ayah', { pTemporal, pVerse });
     }
 
     const score = W_AUDIO * pAudio + W_VERSE * pVerse + W_TEMPORAL * pTemporal;
     if (score < ACCEPT_THRESHOLD) {
-      this._log(`cue ${kind} rejected (p=${score.toFixed(2)}: audio=${pAudio} verse=${pVerse.toFixed(2)} temporal=${pTemporal})`);
-      return null;
+      return verdict('outvoted', { pTemporal, pVerse, score: +score.toFixed(3), threshold: ACCEPT_THRESHOLD });
     }
 
     const result = this._applyCue(kind, now, score);
-    if (result && windowEndMs) this.consumedWindowEndMs = windowEndMs;
-    return result;
+    if (!result) return verdict('no-transition-from-here', { pTemporal, pVerse, score: +score.toFixed(3) });
+    if (windowEndMs) this.consumedWindowEndMs = windowEndMs;
+    return verdict('accepted', { pTemporal, pVerse, score: +score.toFixed(3), result });
   }
 
   _applyCue(kind, now, score) {
