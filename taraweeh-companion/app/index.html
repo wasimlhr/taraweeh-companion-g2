@@ -528,6 +528,80 @@ body {
   color: #232323;
 }
 
+/* Rak'ah bar — always visible in Taraweeh, unlike the position overlay.
+   The count has to be readable and correctable at any moment, not only when
+   the imam happens to be bowing. */
+#rakatBar {
+  display: none;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--bc-1);
+  border-radius: 10px;
+  background: var(--bg-2);
+}
+.rk-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.rk-count { font-size: 15px; font-weight: 600; color: var(--tc-1); }
+.rk-meta  { font-size: 11px; color: var(--tc-2); letter-spacing: 0.04em; }
+.rk-state {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tc-2);
+}
+.rk-state.moving { color: var(--tc-gold); font-weight: 600; }
+.rk-cycle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.rk-chip {
+  flex: 1 1 auto;
+  min-width: 52px;
+  padding: 5px 4px;
+  font-size: 10px;
+  font-family: inherit;
+  letter-spacing: 0.03em;
+  color: var(--tc-2);
+  background: transparent;
+  border: 1px solid var(--bc-1);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.rk-chip.active {
+  background: var(--bc-accent);
+  border-color: var(--bc-accent);
+  color: var(--tc-highlight);
+  font-weight: 600;
+}
+[data-theme="dark"] .rk-chip.active { color: #232323; }
+.rk-controls { display: flex; flex-wrap: wrap; gap: 6px; }
+.rk-btn {
+  flex: 1 1 auto;
+  padding: 7px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--tc-1);
+  background: transparent;
+  border: 1px solid var(--bc-1);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.rk-btn:active { transform: scale(0.98); }
+.rk-btn.active {
+  background: var(--bc-accent);
+  border-color: var(--bc-accent);
+  color: var(--tc-highlight);
+}
+[data-theme="dark"] .rk-btn.active { color: #232323; }
+.rk-hint { margin: 6px 0 0; font-size: 10px; line-height: 1.4; color: var(--tc-2); }
+
 /* Taraweeh overlay — shown over verse content during ruku */
 #taraweehOverlay {
   display: none;
@@ -872,7 +946,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.3.5</span>
+      <span class="version" id="versionEl">v3.4.0</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -910,6 +984,29 @@ body {
     <div class="s-pill info" id="sPillEndpoint" style="display:none">
       <span class="s-dot"></span><span class="s-label">Using HF Public</span>
     </div>
+  </div>
+
+  <!-- Rak'ah tracker — count, posture, and the manual corrections for when
+       the room beats the microphone. -->
+  <div id="rakatBar">
+    <div class="rk-top">
+      <span class="rk-count" id="rakatCount">Rak'ah 1 of 20</span>
+      <span class="rk-meta" id="rakatSet">Set 1 · 1/2</span>
+      <span class="rk-state" id="rakatState">Standing</span>
+    </div>
+    <div class="rk-cycle" id="rakatCycle"></div>
+    <div class="rk-controls">
+      <button type="button" class="rk-btn" onclick="adjustRakat(-1)" title="One rak'ah back">− Rak'ah</button>
+      <button type="button" class="rk-btn" onclick="adjustRakat(1)" title="One rak'ah forward">+ Rak'ah</button>
+      <button type="button" class="rk-btn" onclick="fixPrayerPosition()" title="Advance to the next posture">Fix state →</button>
+      <button type="button" class="rk-btn" onclick="resetRakat()" title="Start the count again">Reset</button>
+    </div>
+    <div class="rk-controls" style="margin-top:6px">
+      <button type="button" class="rk-btn" id="btnRakat8" onclick="setRakatTarget(8)">8 rak'ah</button>
+      <button type="button" class="rk-btn active" id="btnRakat20" onclick="setRakatTarget(20)">20 rak'ah</button>
+    </div>
+    <p class="rk-hint">Tap a posture to correct it. The glasses show the rak'ah and the
+      current posture in the top bar.</p>
   </div>
 
   <div id="verseCard">
@@ -1219,7 +1316,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.3.5';
+  const APP_VERSION = 'v3.4.0';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1368,13 +1465,35 @@ body {
   var _reciteMode = 'taraweeh';
   var _taraweehMode = true;
   var _practiceMode = false;
+  // Latest posture snapshot from the backend tracker. Shape mirrors
+  // PrayerTracker.snapshot() so the app and the glasses read the same fields.
+  var _prayer = {
+    position: 'QIYAM', positionShort: 'QIY', positionLabel: 'Standing',
+    positionArabic: '\u0642\u064A\u0627\u0645',
+    rakat: 1, rakatInSet: 1, rakatPerSet: 2, completedRakat: 0,
+    targetRakat: 20, setNumber: 1, inPrayerPosition: false, reason: 'init',
+  };
   var _taraweehPos  = 'QIYAM';
   var _rakatCount   = 0;
 
+  /** The postures a rak'ah walks through, in order, for the app's strip. */
+  var RAKAH_CYCLE = ['QIYAM', 'RUKU', 'ITIDAL', 'SAJDA1', 'JALSAH', 'SAJDA2'];
+
+  // `ar` is phone-only: the G2 firmware font has no Arabic glyphs at all, so
+  // the glasses get the transliteration in `chip` instead.
   var TW_DISPLAY = {
-    QIYAM: { ar: 'QIYAM',  latin: 'Reciting' },
-    RUKU:  { ar: 'RUKU',   latin: 'Bowing'   },
-    SAJDA: { ar: 'SAJDA',  latin: 'Prostration' },
+    QIYAM:          { ar: '\u0642\u064A\u0627\u0645', latin: 'Standing',        chip: 'Qiyam' },
+    RUKU:           { ar: '\u0631\u0643\u0648\u0639', latin: 'Bowing',          chip: "Ruku'" },
+    ITIDAL:         { ar: '\u0627\u0639\u062A\u062F\u0627\u0644', latin: 'Rising', chip: "I'tidal" },
+    SAJDA1:         { ar: '\u0633\u062C\u0648\u062F', latin: 'Prostration 1',   chip: 'Sujud 1' },
+    JALSAH:         { ar: '\u062C\u0644\u0633\u0629', latin: 'Sitting',         chip: 'Jalsah' },
+    SAJDA2:         { ar: '\u0633\u062C\u0648\u062F', latin: 'Prostration 2',   chip: 'Sujud 2' },
+    TASHAHHUD:      { ar: '\u062A\u0634\u0647\u062F', latin: 'Tashahhud',       chip: 'Tashahhud' },
+    SAJDAH_TILAWAH: { ar: '\u0633\u062C\u062F\u0629 \u062A\u0644\u0627\u0648\u0629', latin: 'Sajdah Tilawah', chip: 'Tilawah' },
+    QUNOOT:         { ar: '\u0642\u0646\u0648\u062A', latin: 'Qunoot',          chip: 'Qunoot' },
+    // Retained so a v3 backend that still sends the old three-state position
+    // does not render a blank overlay.
+    SAJDA:          { ar: '\u0633\u062C\u0648\u062F', latin: 'Prostration',     chip: 'Sujud' },
   };
 
   function _updateReciteModeUI() {
@@ -1417,33 +1536,108 @@ body {
         S.ws.send(JSON.stringify({ type: 'set_practice_mode', enabled: false }));
       }
     }
-    if (_taraweehMode) _updateTaraweehOverlay(_taraweehPos, _rakatCount);
+    _applyPrayerSnapshot(_prayer);
   };
 
   window.toggleTaraweeh = function () { setReciteMode(_reciteMode === 'taraweeh' ? 'practice' : 'taraweeh'); };
   window.togglePractice = function () { setReciteMode('practice'); };
   _updateReciteModeUI();
 
+  function _sendWs(msg) {
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) S.ws.send(JSON.stringify(msg));
+  }
+
   window.resetRakat = function () {
-    _rakatCount = 0; _taraweehPos = 'QIYAM';
-    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      S.ws.send(JSON.stringify({ type: 'reset_rakat' }));
-    }
-    _updateTaraweehOverlay('QIYAM', 0);
+    _sendWs({ type: 'reset_rakat' });
   };
 
-  function _updateTaraweehOverlay(position, rakat) {
-    _taraweehPos = position || 'QIYAM';
-    _rakatCount  = rakat || 0;
+  // The UX fail-safes from the design note: mosque acoustics will eventually
+  // beat any model, so the count and the posture must both be correctable by
+  // hand. These are optimistic — the backend echoes the authoritative snapshot.
+  window.adjustRakat = function (delta) {
+    _sendWs({ type: 'adjust_rakat', delta: delta });
+    _applyPrayerSnapshot({ ..._prayer, rakat: Math.max(1, (_prayer.rakat || 1) + delta) });
+  };
+
+  window.fixPrayerPosition = function () {
+    _sendWs({ type: 'next_prayer_position' });
+  };
+
+  window.setPrayerPosition = function (position) {
+    _sendWs({ type: 'set_prayer_position', position: position });
+  };
+
+  window.setRakatTarget = function (target) {
+    _sendWs({ type: 'set_prayer_config', config: { targetRakat: target } });
+    _applyPrayerSnapshot({ ..._prayer, targetRakat: target });
+    if (S.settings) { S.settings.targetRakat = target; try { saveSettings(); } catch (_) {} }
+    _updateRakatTargetButtons();
+  };
+
+  function _updateRakatTargetButtons() {
+    [8, 20].forEach(function (n) {
+      var b = document.getElementById('btnRakat' + n);
+      if (b) b.classList.toggle('active', (_prayer.targetRakat || 0) === n);
+    });
+  }
+
+  /** Single entry point for a posture change, whatever raised it. */
+  function _applyPrayerSnapshot(snap) {
+    if (!snap) return;
+    var prevPos = _taraweehPos;
+    _prayer = { ..._prayer, ...snap };
+    _taraweehPos = _prayer.position || 'QIYAM';
+    _rakatCount  = _prayer.rakat || 1;
+    _updateTaraweehOverlay();
+    _renderRakatBar();
+    glassesTopBarUpdate();
+    if (_taraweehPos !== prevPos) _mirrorPrayerOnGlasses(prevPos);
+  }
+
+  /**
+   * While the imam is bowing or prostrating there is no verse to show, and the
+   * last one is actively misleading — the wearer would read it as the current
+   * position in the recitation. Replace the body with the posture, and restore
+   * the verse when he stands again.
+   */
+  function _mirrorPrayerOnGlasses(prevPos) {
+    if (!S.isG2 || !S.bridge || !_taraweehMode) return;
+    if (_taraweehPos !== 'QIYAM') {
+      stopPageFlip();
+      stopCountdown();
+      stopSearchingDots();
+      var disp = TW_DISPLAY[_taraweehPos] || TW_DISPLAY.QIYAM;
+      glassesUpdate({
+        hdr: disp.latin,
+        body: '\n' + centerPx(disp.chip, G2_BODY_PX)
+            + '\n' + centerPx(disp.latin, G2_BODY_PX)
+            + '\n\n' + centerPx(_rakatLabel(true), G2_BODY_PX)
+            + '\n' + centerPx('Set ' + (_prayer.setNumber || 1) + ' ' + G2_MARK_DOT + ' '
+                + (_prayer.rakatInSet || 1) + '/' + (_prayer.rakatPerSet || 2), G2_BODY_PX),
+      });
+    } else if (prevPos && prevPos !== 'QIYAM') {
+      // Back to standing. Recitation will repaint this within a chunk or two,
+      // but the posture must come down now — leaving "Rising" on screen while
+      // the imam is reading is worse than showing nothing.
+      S.displayRebuilt = false;
+      if (S.isRecording) {
+        showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0);
+        startSearchingDots();
+      } else {
+        glassesUpdate({ hdr: appTitleHdr(), body: _startupBodyText() });
+      }
+    }
+  }
+
+  function _updateTaraweehOverlay() {
     var overlay  = document.getElementById('taraweehOverlay');
     var locked   = document.getElementById('lockedContent');
-    var searching = document.getElementById('matchPanel');
 
-    var inPrayerPos = _taraweehMode && (_taraweehPos === 'RUKU' || _taraweehPos === 'SAJDA');
+    // Anything but standing means nothing is being recited, so the verse panel
+    // has nothing true to show.
+    var inPrayerPos = _taraweehMode && _taraweehPos !== 'QIYAM';
 
-    // Show overlay in ruku or sajda; hide verse content
     if (overlay)  overlay.classList.toggle('visible', inPrayerPos);
-    // Show searching/locked content normally when not in prayer position
     if (inPrayerPos && locked)   locked.style.display = 'none';
     if (inPrayerPos) {
       var nr = document.getElementById('verseNavRow');
@@ -1456,7 +1650,70 @@ body {
     var rkEl  = document.getElementById('twRakat');
     if (arEl)  arEl.textContent  = disp.ar;
     if (latEl) latEl.textContent = disp.latin;
-    if (rkEl)  rkEl.textContent  = 'Rak\u02bbah ' + _rakatCount;
+    if (rkEl)  rkEl.textContent  = _rakatLabel();
+  }
+
+  /** @param {boolean} [ascii] true for the glasses, whose font has no U+02BB. */
+  function _rakatLabel(ascii) {
+    var n = _prayer.rakat || 1;
+    var target = _prayer.targetRakat || 0;
+    return 'Rak' + (ascii ? "'" : '\u02bb') + 'ah ' + n + (target ? ' of ' + target : '');
+  }
+
+  /**
+   * The always-visible rak'ah strip. Unlike the overlay it stays on screen
+   * during recitation, so the wearer can check the count without waiting for
+   * the imam to bow — and can correct it the moment it looks wrong.
+   */
+  function _renderRakatBar() {
+    var bar = document.getElementById('rakatBar');
+    if (!bar) return;
+    // The stylesheet hides it by default, so '' would resolve straight back to
+    // none — the inline value has to be explicit.
+    bar.style.display = _taraweehMode ? 'block' : 'none';
+    if (!_taraweehMode) return;
+
+    var countEl = document.getElementById('rakatCount');
+    if (countEl) countEl.textContent = _rakatLabel();
+
+    var setEl = document.getElementById('rakatSet');
+    if (setEl) {
+      var perSet = _prayer.rakatPerSet || 2;
+      setEl.textContent = 'Set ' + (_prayer.setNumber || 1)
+        + ' \u00B7 ' + (_prayer.rakatInSet || 1) + '/' + perSet;
+    }
+
+    var stateEl = document.getElementById('rakatState');
+    if (stateEl) {
+      var disp = TW_DISPLAY[_taraweehPos] || TW_DISPLAY.QIYAM;
+      stateEl.textContent = disp.latin;
+      stateEl.classList.toggle('moving', _taraweehPos !== 'QIYAM');
+    }
+
+    var cycle = document.getElementById('rakatCycle');
+    if (cycle) {
+      // The cycle is rebuilt only when its shape changes; otherwise just move
+      // the highlight, so tapping a chip does not fight a re-render.
+      if (cycle.dataset.built !== 'yes') {
+        cycle.innerHTML = '';
+        RAKAH_CYCLE.concat(['TASHAHHUD']).forEach(function (pos) {
+          var chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'rk-chip';
+          chip.dataset.pos = pos;
+          chip.textContent = (TW_DISPLAY[pos] || {}).chip || pos;
+          chip.title = 'Set position to ' + ((TW_DISPLAY[pos] || {}).latin || pos);
+          chip.onclick = function () { setPrayerPosition(pos); };
+          cycle.appendChild(chip);
+        });
+        cycle.dataset.built = 'yes';
+      }
+      var chips = cycle.querySelectorAll('.rk-chip');
+      for (var i = 0; i < chips.length; i++) {
+        chips[i].classList.toggle('active', chips[i].dataset.pos === _taraweehPos);
+      }
+    }
+    _updateRakatTargetButtons();
   }
 
   const SETTINGS_KEY = 'qlive_settings';
@@ -1531,7 +1788,7 @@ body {
   var Storage = (function () {
     var cache = new Map();
     var bridge = null;
-    var KNOWN_KEYS = ['qlive_settings', 'qc_theme', 'taraweeh_session_id', 'taraweeh_recovery_state'];
+    var KNOWN_KEYS = ['qlive_settings', 'qc_theme', 'taraweeh_session_id', 'taraweeh_recovery_state', 'taraweeh_prayer_state'];
 
     function _readBrowser(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
     function _writeBrowser(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
@@ -1697,6 +1954,42 @@ body {
     } catch (_) { return null; }
   }
 
+  /**
+   * The rak'ah count is carried the same way as the verse position: the backend
+   * emits it, we keep it, and we hand it back on the next init. Dropping a
+   * connection halfway through taraweeh should not restart the count at one.
+   */
+  function savePrayerState(snapshot) {
+    if (!snapshot || typeof snapshot.completedRakat !== 'number') return;
+    try {
+      Storage.setItem('taraweeh_prayer_state', JSON.stringify({
+        v: 1,
+        position: String(snapshot.position || 'QIYAM'),
+        completedRakat: snapshot.completedRakat,
+        sajdaCount: Number(snapshot.sajdaCount) || 0,
+        setsCompleted: Math.max(0, (snapshot.setNumber || 1) - 1),
+        inSahw: !!snapshot.inSahw,
+        qunootFrom: snapshot.qunootFrom || null,
+        config: {
+          rakatPerSet: snapshot.rakatPerSet,
+          targetRakat: snapshot.targetRakat,
+          witrMode: snapshot.witrMode,
+        },
+        sinceMs: Number(snapshot.sinceMs) || 0,
+        ts: Date.now(),
+      }));
+    } catch (_) {}
+  }
+
+  function storedPrayerState() {
+    try {
+      var raw = Storage.getItem('taraweeh_prayer_state');
+      if (!raw) return null;
+      var ps = JSON.parse(raw);
+      return (ps && ps.v === 1 && typeof ps.completedRakat === 'number') ? ps : null;
+    } catch (_) { return null; }
+  }
+
   function defaultWsUrl() {
     return backendBase().replace(/^http/, 'ws') + '/ws';
   }
@@ -1741,6 +2034,7 @@ body {
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
     reciteMode: 'taraweeh',
     showTashkeel: true,   // Quranic marks (madd, harakat) on Arabic text + hearing preview
+    targetRakat: 20,      // how many rak'ah the mosque prays — 8 and 20 are both common
   };
 
   function sanitizePipelineVersion(v) {
@@ -1985,9 +2279,7 @@ body {
       _syncPaceFlags();
       _updatePaceButton();
     } else if (s.type === 'taraweeh_mode') {
-      if (s.position) _taraweehPos = s.position;
-      if (typeof s.rakat === 'number') _rakatCount = s.rakat;
-      if (_reciteMode === 'taraweeh') _updateTaraweehOverlay(_taraweehPos, _rakatCount);
+      _applyPrayerSnapshot(s.prayer || { position: s.position, rakat: s.rakat });
     } else if (s.type === 'practice_mode' || s.type === 'verse_hold_mode') {
       if (_practiceMode) { stopPageFlip(); stopCountdown(); }
     } else if (s.type === 'session_quota') {
@@ -2141,16 +2433,129 @@ body {
     return S.bridgeCallQueue;
   }
 
-  // ─── G2 display (startup + runtime containers) ────────────────────────────
-  // Startup uses 3 text containers + 1 image container. Runtime keeps text updates.
-  // Canvas: 576x288. Header: 40px, body: 248px.
-  // Body: borderWidth=0, paddingLength=2 → maximize usable width (no scroll bar, more text per line)
+  // ─── G2 display geometry ──────────────────────────────────────────────────
+  // Canvas is 576x288 and the firmware renders it with LVGL at a fixed 27px
+  // line height. @evenrealities/pretext carries the firmware's own font metrics,
+  // so every width below is the real rendered width rather than a guess at an
+  // average character. It loads asynchronously and the estimates it replaces
+  // stay in place if it cannot be fetched.
+  var G2_W       = 576;
+  var G2_H       = 288;
+  var G2_LINE_H  = 27;
+  var G2_PAD     = 2;    // paddingLength on every container
+  var G2_BORDER  = 1;    // border on the top-bar containers; body has none
+
   var G2_HDR_H   = 40;
-  var G2_VER_W   = 72;   // version container width (snug for "v4.7.1")
-  var G2_HDR_W   = 576 - G2_VER_W;  // title takes the rest
-  var G2_VER_X   = G2_HDR_W;  // version flush to right edge
   var G2_BODY_Y  = G2_HDR_H;
-  var G2_BODY_H  = 288 - G2_HDR_H;
+  var G2_BODY_H  = G2_H - G2_HDR_H;
+
+  // Top bar: status on the left, then the rak'ah indicator, then the clock.
+  // Widths are the measured worst case plus the border and padding:
+  // "12:59 PM" is 82px and "R20/20 TSHD" is 115px. That leaves 356px of text
+  // for the status line, against a widest-case 298px.
+  var G2_CLK_W   = 90;
+  var G2_RAK_W   = 124;
+  var G2_HDR_W   = G2_W - G2_RAK_W - G2_CLK_W;
+  var G2_RAK_X   = G2_HDR_W;
+  var G2_CLK_X   = G2_HDR_W + G2_RAK_W;
+
+  function g2InnerWidth(width, border) {
+    return width - 2 * ((border == null ? G2_BORDER : border) + G2_PAD);
+  }
+
+  var G2_HDR_PX  = g2InnerWidth(G2_HDR_W);
+  var G2_RAK_PX  = g2InnerWidth(G2_RAK_W);
+  var G2_CLK_PX  = g2InnerWidth(G2_CLK_W);
+  var G2_BODY_PX = g2InnerWidth(G2_W, 0);
+  // 248px of body minus padding leaves room for nine 27px lines, not the ten
+  // the character-counting layout assumed — the tenth pulled up a scroll bar.
+  var G2_BODY_LINES = Math.floor((G2_BODY_H - 2 * G2_PAD) / G2_LINE_H);
+
+  // Fallback metrics until (or unless) pretext loads. 8.95px is the measured
+  // mean advance across lowercase Latin, so this errs slightly narrow.
+  var _pretext = null;
+  var G2_EST_CHAR_PX = 9;
+
+  function pxWidth(s) {
+    if (!s) return 0;
+    if (_pretext) return _pretext.getTextWidth(s);
+    return Math.round(String(s).length * G2_EST_CHAR_PX);
+  }
+
+  function pxClip(s, maxPx) {
+    s = String(s == null ? '' : s);
+    if (!s) return '';
+    if (_pretext) return _pretext.pxTruncate(s, maxPx);
+    var max = Math.floor(maxPx / G2_EST_CHAR_PX);
+    return s.length > max ? s.slice(0, Math.max(0, max - 1)) + '\u2026' : s;
+  }
+
+  /** Greedy word wrap to a pixel budget, hard-breaking words that cannot fit. */
+  function wrapPx(s, maxPx) {
+    if (!s) return [''];
+    var out = [];
+    String(s).split('\n').forEach(function (para) {
+      var words = para.split(/\s+/).filter(Boolean);
+      if (!words.length) { out.push(''); return; }
+      var cur = '';
+      words.forEach(function (w) {
+        var next = cur ? cur + ' ' + w : w;
+        if (pxWidth(next) <= maxPx) { cur = next; return; }
+        if (cur) out.push(cur);
+        // A single word wider than the line still has to go somewhere.
+        while (pxWidth(w) > maxPx) {
+          var cut = w.length;
+          while (cut > 1 && pxWidth(w.slice(0, cut)) > maxPx) cut--;
+          out.push(w.slice(0, cut));
+          w = w.slice(cut);
+        }
+        cur = w;
+      });
+      if (cur) out.push(cur);
+    });
+    return out.length ? out : [''];
+  }
+
+  /**
+   * Pack `left` and `right` into one container line with the right half flush
+   * to the edge. Containers have no alignment property, so the gap is spaces —
+   * which is only accurate once their true width is known.
+   */
+  /** Centre one line inside a container by padding it with leading spaces. */
+  function centerPx(text, maxPx) {
+    var spacePx = pxWidth(' ') || 5;
+    var pad = Math.max(0, Math.floor((maxPx - pxWidth(text)) / (2 * spacePx)));
+    return new Array(pad + 1).join(' ') + text;
+  }
+
+  function padToWidth(left, right, maxPx) {
+    if (!right) return pxClip(left, maxPx);
+    var spacePx = pxWidth(' ') || 5;
+    var rightPx = pxWidth(right);
+    var leftText = pxClip(left, Math.max(0, maxPx - rightPx - spacePx));
+    var gap = Math.max(1, Math.floor((maxPx - pxWidth(leftText) - rightPx) / spacePx));
+    return leftText + new Array(gap + 1).join(' ') + right;
+  }
+
+  async function loadPretext() {
+    // Bundled copy first, then the backend route, then the CDN the packaged
+    // app is actually allowed to reach (app.json whitelists jsDelivr, the same
+    // origin the SDK falls back to).
+    var sources = ['./vendor/pretext.js', '/vendor/pretext.js',
+      'https://cdn.jsdelivr.net/npm/@evenrealities/pretext@0.1.4/dist/font_measure.js'];
+    for (var i = 0; i < sources.length; i++) {
+      try {
+        var m = await import(sources[i]);
+        if (m && typeof m.getTextWidth === 'function') {
+          _pretext = m;
+          log('Pixel metrics loaded (' + sources[i].replace(/^https?:\/\/[^/]+/, '') + ')', 'ok');
+          return true;
+        }
+      } catch (_) {}
+    }
+    trace('pretext', 'unavailable — using estimated character widths');
+    return false;
+  }
 
   // Even Device APIs — EventSourceType (ring vs temple), DeviceConnectType
   var EVENT_SRC_RING = 2;       // TOUCH_EVENT_FROM_RING
@@ -2245,25 +2650,32 @@ body {
     });
   }
 
-  function _startupTextContainers() {
+  function _g2TextContainers(hdr, body) {
     return [
       { containerID: 1, containerName: 'hdr',
         xPosition: 0, yPosition: 0, width: G2_HDR_W, height: G2_HDR_H,
         isEventCapture: 0,
-        borderWidth: 1, borderColor: 5, borderRadius: 0, paddingLength: 2,
-        content: appTitleHdr() },
-      { containerID: 2, containerName: 'ver',
-        xPosition: G2_VER_X, yPosition: 0, width: G2_VER_W, height: G2_HDR_H,
+        borderWidth: G2_BORDER, borderColor: 5, borderRadius: 0, paddingLength: G2_PAD,
+        content: hdr == null ? appTitleHdr() : hdr },
+      { containerID: 2, containerName: 'rak',
+        xPosition: G2_RAK_X, yPosition: 0, width: G2_RAK_W, height: G2_HDR_H,
         isEventCapture: 0,
-        borderWidth: 1, borderColor: 5, borderRadius: 0, paddingLength: 2,
-        content: appVersionHdr() },
+        borderWidth: G2_BORDER, borderColor: 5, borderRadius: 0, paddingLength: G2_PAD,
+        content: rakatHdr() },
+      { containerID: 4, containerName: 'clk',
+        xPosition: G2_CLK_X, yPosition: 0, width: G2_CLK_W, height: G2_HDR_H,
+        isEventCapture: 0,
+        borderWidth: G2_BORDER, borderColor: 5, borderRadius: 0, paddingLength: G2_PAD,
+        content: clockHdr() },
       { containerID: 3, containerName: 'body',
-        xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
+        xPosition: 0, yPosition: G2_BODY_Y, width: G2_W, height: G2_BODY_H,
         isEventCapture: 1,
-        borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: 2,
-        content: _startupBodyText() },
+        borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: G2_PAD,
+        content: body == null ? _startupBodyText() : body },
     ];
   }
+
+  function _startupTextContainers() { return _g2TextContainers(null, null); }
 
   function glassesStartup() {
     if (!S.bridge) return;
@@ -2274,7 +2686,7 @@ body {
     // through to rebuildPageContainer instead of throwing + needing recovery.
     queueBridgeCall('createStartUpPageContainer', function () {
       return S.bridge.createStartUpPageContainer({
-        containerTotalNum: 3,
+        containerTotalNum: 4,
         textObject: _startupTextContainers(),
       }).then(function (result) {
         // Protobuf zero-omission: success code 0 arrives as undefined.
@@ -2282,19 +2694,25 @@ body {
         if (code === 0) {
           S.startupPageCreated = true;
           S.displayRebuilt = false;
+          _lastRakHdr = rakatHdr();
+          _lastClkHdr = clockHdr();
           log('G2: startup page created', 'ok');
           refreshGlassesWelcomeText();
+          glassesTopBarUpdate();
           return;
         }
         log('G2: startup container already exists (code=' + code + ') — rebuilding', 'w');
         return S.bridge.rebuildPageContainer({
-          containerTotalNum: 3,
+          containerTotalNum: 4,
           textObject: _startupTextContainers(),
         }).then(function () {
           S.startupPageCreated = true;
           S.displayRebuilt = true;   // just rebuilt — ready for text upgrades
+          _lastRakHdr = rakatHdr();
+          _lastClkHdr = clockHdr();
           log('G2: startup page rebuilt', 'ok');
           refreshGlassesWelcomeText();
+          glassesTopBarUpdate();
         });
       });
     });
@@ -2306,13 +2724,16 @@ body {
     if (!S.bridge || S.startupPageCreated) return;
     queueBridgeCall('recover-startup-rebuild', function () {
       return S.bridge.rebuildPageContainer({
-        containerTotalNum: 3,
+        containerTotalNum: 4,
         textObject: _startupTextContainers(),
       }).then(function () {
         S.startupPageCreated = true;
         S.displayRebuilt = true;
+        _lastRakHdr = rakatHdr();
+        _lastClkHdr = clockHdr();
         log('G2: startup recovery rebuild applied', 'ok');
         refreshGlassesWelcomeText();
+        glassesTopBarUpdate();
       });
     });
   }
@@ -2365,26 +2786,14 @@ body {
         var hdrContent  = (display.hdr  || '').slice(0, 200);
         var bodyContent = (display.body || '').slice(0, MAX_REBUILD_CHARS - 200);
         return S.bridge.rebuildPageContainer({
-          containerTotalNum: 3,
-          textObject: [
-            { containerID: 1, containerName: 'hdr',
-              xPosition: 0, yPosition: 0, width: G2_HDR_W, height: G2_HDR_H,
-              isEventCapture: 0,
-              borderWidth: 1, borderColor: 5, borderRadius: 0, paddingLength: 2,
-              content: hdrContent },
-            { containerID: 2, containerName: 'ver',
-              xPosition: G2_VER_X, yPosition: 0, width: G2_VER_W, height: G2_HDR_H,
-              isEventCapture: 0,
-              borderWidth: 1, borderColor: 5, borderRadius: 0, paddingLength: 2,
-              content: appVersionHdr() },
-            { containerID: 3, containerName: 'body',
-              xPosition: 0, yPosition: G2_BODY_Y, width: 576, height: G2_BODY_H,
-              isEventCapture: 1,
-              borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: 2,
-              content: bodyContent },
-          ],
+          containerTotalNum: 4,
+          textObject: _g2TextContainers(hdrContent, bodyContent),
         }).then(function () {
           S.displayRebuilt = true;
+          // The rebuild just painted both pills from the current snapshot, so
+          // record what is on screen or the next diff will skip a real change.
+          _lastRakHdr = rakatHdr();
+          _lastClkHdr = clockHdr();
         });
       }
       var hdrContent2  = (display.hdr  || '').slice(0, 500);
@@ -2395,32 +2804,108 @@ body {
     });
   }
 
-  // ─── Glasses text helpers (from g2-quran-app reference) ─────────────────
-  var G2_CHARS = 55;   // chars per line — tested safe width for G2 display
-  var G2_BODY_LINES = 10; // lines per page — conservative to prevent scroll bar
-  var G2_DIV = '-'.repeat(G2_CHARS);  // single line — hyphen renders as one line (box char looked double)
+  // ─── Glasses text helpers ─────────────────────────────────────────────────
+  // A divider that spans the body exactly, measured rather than counted.
+  var G2_DIV = (function () {
+    var dashPx = 9;   // recomputed once pretext lands
+    return { toString: function () { return new Array(Math.floor(G2_BODY_PX / (pxWidth('-') || dashPx)) + 1).join('-'); } };
+  })();
+
+  function g2Divider() { return String(G2_DIV); }
+
+  // Status markers. The firmware font carries no Arabic and, of the symbols
+  // this app used to reach for, only the filled and hollow circles exist —
+  // check, pause, refresh and warning all resolve to a zero-width glyph and
+  // render as nothing. scripts/check-glasses-glyphs.js keeps this honest.
+  var G2_MARK_LOCKED    = '\u25CF';   // ●
+  var G2_MARK_CANDIDATE = '\u25CB';   // ○
+  var G2_MARK_DOT       = '\u00B7';   // ·
 
   function appTitleHdr() { return 'Quran Companion'; }
-  function appVersionHdr() { return APP_VERSION; }
+
+  /**
+   * The top-right of the glasses used to show the app version, which tells the
+   * wearer nothing during a prayer. It now shows the rak'ah — with the posture
+   * appended whenever the imam is not standing, since that is exactly when the
+   * body has no verse to display.
+   */
+  function rakatHdr() {
+    if (!_taraweehMode) return 'Practice';
+    var n = _prayer.rakat || 1;
+    var target = _prayer.targetRakat || 0;
+    var label = target ? 'R' + n + '/' + target : 'R' + n;
+    var pos = _prayer.position && _prayer.position !== 'QIYAM'
+      ? (_prayer.positionShort || '') : '';
+    return pxClip(pos ? label + ' ' + pos : label, G2_RAK_PX);
+  }
+
+  /**
+   * Built by hand rather than through toLocaleTimeString: a locale can return
+   * Arabic-Indic digits or a narrow no-break space, and the firmware font has
+   * neither, so the time would silently lose characters on the lens.
+   */
+  function clockHdr() {
+    var d = new Date();
+    var h = d.getHours();
+    var suffix = h < 12 ? 'AM' : 'PM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return h + ':' + ('0' + d.getMinutes()).slice(-2) + ' ' + suffix;
+  }
+
+  var _lastRakHdr = '';
+  var _lastClkHdr = '';
+  var _clockTimer = null;
+
+  /**
+   * Repaint only the two top-bar pills. They change on their own schedule —
+   * the rak'ah on a posture change, the clock once a minute — and each is one
+   * short BLE write, so they must never force a full page rebuild.
+   */
+  function glassesTopBarUpdate() {
+    // Gate on the containers existing, not on a rebuild having happened. The
+    // startup page creates them too, and gating on displayRebuilt left the
+    // pills showing whatever the very first paint put there.
+    if (!S.bridge || !S.isG2 || !S.startupPageCreated) return;
+    var rak = rakatHdr();
+    var clk = clockHdr();
+    if (rak !== _lastRakHdr) {
+      _lastRakHdr = rak;
+      queueBridgeCall('glassesRakat', function () {
+        return S.bridge.textContainerUpgrade({ containerID: 2, containerName: 'rak', content: rak });
+      });
+    }
+    if (clk !== _lastClkHdr) {
+      _lastClkHdr = clk;
+      queueBridgeCall('glassesClock', function () {
+        return S.bridge.textContainerUpgrade({ containerID: 4, containerName: 'clk', content: clk });
+      });
+    }
+  }
+
+  /** Tick on the minute boundary rather than every 60s from an arbitrary start. */
+  function startGlassesClock() {
+    stopGlassesClock();
+    var tick = function () {
+      glassesTopBarUpdate();
+      _clockTimer = setTimeout(tick, 60000 - (Date.now() % 60000) + 250);
+    };
+    _clockTimer = setTimeout(tick, 60000 - (Date.now() % 60000) + 250);
+  }
+
+  function stopGlassesClock() {
+    if (_clockTimer) { clearTimeout(_clockTimer); _clockTimer = null; }
+  }
 
   function clip(s, n) { return (s || '').length > n ? s.slice(0, n - 1) + '\u2026' : (s || ''); }
 
-  function wrapText(s, n) {
-    if (!s) return [''];
-    var words = s.split(/\s+/), lines = [], cur = '';
-    words.forEach(function (w) {
-      if ((cur ? cur + ' ' + w : w).length <= n) { cur = cur ? cur + ' ' + w : w; }
-      else { if (cur) lines.push(cur); cur = w; }
-    });
-    if (cur) lines.push(cur);
-    return lines.length ? lines : [''];
-  }
+  function wrapText(s, maxPx) { return wrapPx(s, maxPx || G2_BODY_PX); }
 
   // Paginate translation first, then transliteration. Translation fills the screen;
   // when user scrolls to next page, transliteration appears (on last page if it fits, else its own page).
   function buildPages(translation, transliteration, reserveLines) {
     var maxLines = G2_BODY_LINES - (reserveLines || 0);
-    var transLines = wrapText(translation || '', G2_CHARS);
+    var transLines = wrapText(translation || '', G2_BODY_PX);
     var bottomMode = (S.settings && S.settings.glassesBottom) || 'transliteration';
     // 'transliteration' mode shows Latin text. 'translation-only' shows English translation alone.
     // Long-ayah exception: when the ENGLISH translation alone already spans
@@ -2429,8 +2914,8 @@ body {
     // to see Latin letters you won't finish reading during recitation.
     var longAyah = transLines.length > Math.floor(maxLines / 2);
     var effectiveTransliteration = (bottomMode === 'transliteration' && !longAyah) ? transliteration : '';
-    var tlitLines  = effectiveTransliteration ? wrapText(effectiveTransliteration, G2_CHARS) : [];
-    var tlitBlock  = tlitLines.length > 0 ? [G2_DIV].concat(tlitLines) : [];
+    var tlitLines  = effectiveTransliteration ? wrapText(effectiveTransliteration, G2_BODY_PX) : [];
+    var tlitBlock  = tlitLines.length > 0 ? [g2Divider()].concat(tlitLines) : [];
     var tlitCost   = tlitBlock.length;
 
     if (transLines.length + tlitCost <= maxLines) {
@@ -2475,11 +2960,7 @@ body {
     var remaining = Math.max(0, _cdDurationMs - (Date.now() - _cdStartMs));
     var secs = Math.ceil(remaining / 1000);
     var tag = secs > 0 ? secs + 's' : '';
-    var padded = _cdLastHdr;
-    if (tag) {
-      var avail = Math.max(1, G2_CHARS - _cdLastHdr.length - tag.length);
-      padded = _cdLastHdr + ' '.repeat(avail) + tag;
-    }
+    var padded = tag ? padToWidth(_cdLastHdr, tag, G2_HDR_PX) : _cdLastHdr;
     if (S.isG2 && S.bridge) {
       _cdTickCount++;
       if (_cdTickCount % 4 === 1) {
@@ -2531,8 +3012,7 @@ body {
         if (state.isCandidate && (state.translation || state.translationGlasses)) {
           var cRef  = glassesRef(state);
           var cPct  = 'Match: ' + (state.candidateScore || 0) + '%';
-          var cPad  = Math.max(1, G2_CHARS - cRef.length - cPct.length - 3);
-          var cHdr  = '\u25CB ' + cRef + ' '.repeat(cPad) + cPct;
+          var cHdr  = padToWidth(G2_MARK_CANDIDATE + ' ' + cRef, cPct, G2_HDR_PX);
           var cPages = buildPages(transForGlasses, state.transliteration, 1);
           if (!state.practiceMode) {
             var lockDots = (state._lockingDots !== undefined) ? '.'.repeat(state._lockingDots) : '\u2026';
@@ -2542,14 +3022,13 @@ body {
         }
         if (state.completedSurah) {
           var sName = state.completedSurahName || ('Surah ' + state.completedSurah);
-          return { hdr: '\u2713 ' + clip(sName, 24) + ' complete', pages: ['Listening for next surah\u2026'] };
+          return { hdr: clip(sName, 24) + ' complete', pages: ['Listening for next surah\u2026'] };
         }
         // Practice: keep current verse on glasses while listening for next (fresh surah jump).
         if (state.userSearching && (state.translation || state.translationGlasses)) {
           var uRef  = glassesRef(state);
           var uPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
-          var uPad  = Math.max(1, G2_CHARS - uRef.length - uPct.length - 3);
-          var uHdr  = '\u25CF ' + uRef + ' '.repeat(uPad) + uPct;
+          var uHdr  = padToWidth(G2_MARK_LOCKED + ' ' + uRef, uPct, G2_HDR_PX);
           var uPages = buildPages(transForGlasses, state.transliteration);
           uPages[uPages.length - 1] += '\nListening for next verse\u2026';
           return { hdr: uHdr, pages: uPages };
@@ -2559,34 +3038,33 @@ body {
       case 'LOCKED': {
         var lRef  = glassesRef(state);
         var lPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
-        var lPad  = Math.max(1, G2_CHARS - lRef.length - lPct.length - 3);
-        var lHdr  = '\u25CF ' + lRef + ' '.repeat(lPad) + lPct;
+        var lHdr  = padToWidth(G2_MARK_LOCKED + ' ' + lRef, lPct, G2_HDR_PX);
         return { hdr: lHdr, pages: buildPages(transForGlasses, state.transliteration) };
       }
 
       case 'PAUSED': {
         var pRef  = state.surah ? glassesRef(state)
           : (state.surahName ? clip(state.surahName, 14) : 'Quran');
-        var pHdr  = '\u23F8 PAUSED  ' + pRef;
+        var pHdr  = 'PAUSED  ' + pRef;
         var transForPaused = state.translationGlasses ?? state.translation;
         var pBody = transForPaused || 'Single-tap to resume';
         var pPages = buildPages(pBody, state.transliteration, 2);
-        pPages[pPages.length - 1] += '\n' + G2_DIV + '\nSingle-tap resume \u00B7 Double-tap exit';
+        pPages[pPages.length - 1] += '\n' + g2Divider() + '\nSingle-tap resume \u00B7 Double-tap exit';
         return { hdr: pHdr, pages: pPages };
       }
 
       case 'RESUMING': {
         // Keep showing the last verse — don't flash "Resynchronizing" on the glasses
         if (state.translation || state.translationGlasses || state.transliteration) {
-          var rHdr  = '\u21BB ' + glassesRef(state);
+          var rHdr  = G2_MARK_CANDIDATE + ' ' + glassesRef(state);
           return { hdr: rHdr, pages: buildPages(transForGlasses, state.transliteration) };
         }
         var rName2 = state.surahName ? clip(state.surahName, 14) : 'Quran';
-        return { hdr: '\u21BB ' + rName2, pages: ['Listening\u2026'] };
+        return { hdr: G2_MARK_CANDIDATE + ' ' + rName2, pages: ['Listening\u2026'] };
       }
 
       case 'LOST':
-        return { hdr: '\u26A0 Signal Lost', pages: ['Resume recitation.'] };
+        return { hdr: 'Signal Lost', pages: ['Resume recitation.'] };
     
       default:
         return { hdr: appTitleHdr(), pages: ['Ready.\nSingle-tap to start.\nDouble-tap to exit.'] };
@@ -2783,8 +3261,9 @@ body {
       || (state.isCandidate && state.arabic)
       || (state.mode === 'SEARCHING' && state.userSearching && state.arabic);
 
-    // In taraweeh ruku/sajda, hide verse content (overlay takes over)
-    if (_taraweehMode && (_taraweehPos === 'RUKU' || _taraweehPos === 'SAJDA')) {
+    // Any posture but standing means nothing is being recited — the position
+    // overlay takes over from the verse panel.
+    if (_taraweehMode && _taraweehPos !== 'QIYAM') {
       searching.style.display = 'none';
       locked.style.display = 'none';
       var navRow = document.getElementById('verseNavRow');
@@ -2997,6 +3476,8 @@ body {
         type: 'init',
         sessionId: _clientSessionId,
         recoveryState: storedRecoveryState(),
+        prayerState: storedPrayerState(),
+        prayerConfig: { targetRakat: S.settings.targetRakat },
         audioSource: currentAudioSource(),
         preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       restrictSurah: restrictSurahValue(),
@@ -3366,8 +3847,13 @@ body {
         ameenEl._timer = setTimeout(function() { ameenEl.style.display = 'none'; }, 4000);
       }
     } else if (msg.type === 'taraweeh') {
-      _updateTaraweehOverlay(msg.position, msg.rakat);
-      log('Taraweeh: ' + msg.position + ' rakat=' + msg.rakat, 'ok');
+      var snap = msg.prayer || { position: msg.position, rakat: msg.rakat };
+      _applyPrayerSnapshot(snap);
+      // Store it so a reconnect mid-prayer does not restart the count at one.
+      if (msg.prayer) savePrayerState(msg.prayer);
+      log('Taraweeh: rak\u02bbah ' + (snap.rakat || '?') + ' \u00B7 '
+        + (snap.positionLabel || snap.position)
+        + (snap.reason ? ' (' + snap.reason + ')' : ''), 'ok');
     } else if (msg.type === 'wordProgress') {
       // V4: Handle word progress updates
       _updateWordProgress(msg);
@@ -3889,6 +4375,12 @@ body {
         './sdk/even_hub_sdk.js',
         '/sdk/even_hub_sdk.js',
       ];
+      // Firmware font metrics, so container widths and line counts are exact
+      // rather than estimated. Not fatal if it fails — everything falls back to
+      // average-character arithmetic.
+      loadPretext().then(function (ok) {
+        if (ok && S.isG2 && S.displayRebuilt) { S.displayRebuilt = false; glassesTopBarUpdate(); }
+      });
       var loaded = false;
       for (var si = 0; si < sdkUrls.length && !loaded; si++) {
         try {
@@ -3992,6 +4484,8 @@ body {
       // Safety-net: if startup container call is rejected, force text rebuild shortly after.
       setTimeout(recoverStartupIfBlank, 700);
       setTimeout(recoverStartupIfBlank, 1200);
+      // Keep the clock in the top bar honest. One short write a minute.
+      startGlassesClock();
     } else {
       log('No G2 — browser mic mode');
       setPill('sPillG2', '', 'PC mic');
@@ -4381,6 +4875,8 @@ body {
       type: 'init',
       sessionId: _clientSessionId,
       recoveryState: storedRecoveryState(),
+      prayerState: storedPrayerState(),
+      prayerConfig: { targetRakat: S.settings.targetRakat },
       audioSource: currentAudioSource(),
       preferredSurah: parseInt(S.settings.defaultSurah || '0'),
       restrictSurah: restrictSurahValue(),
@@ -4538,6 +5034,8 @@ body {
     }
     _syncPaceFlags();
     _updatePaceButton();
+    if (typeof S.settings.targetRakat === 'number') _prayer.targetRakat = S.settings.targetRakat;
+    _applyPrayerSnapshot(_prayer);
     document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v4').toUpperCase();
     // Splash: show version, fade out after 1.2s
     var splashV = document.getElementById('splashVersion');

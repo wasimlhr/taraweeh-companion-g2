@@ -18,6 +18,19 @@ const dest = join(outDir, 'index.html');
 const sdkSrc = join(root, 'node_modules', '@evenrealities', 'even_hub_sdk', 'dist', 'index.js');
 const sdkDestDir = join(outDir, 'sdk');
 const sdkDest = join(sdkDestDir, 'even_hub_sdk.js');
+// Firmware font metrics. The packed app has no network guarantee, so ship it
+// alongside the SDK rather than relying on the CDN fallback.
+const pretextSrc = resolvePretext();
+const vendorDir = join(outDir, 'vendor');
+const pretextDest = join(vendorDir, 'pretext.js');
+
+function resolvePretext() {
+  for (const base of [root, join(root, '..')]) {
+    const p = join(base, 'node_modules', '@evenrealities', 'pretext', 'dist', 'font_measure.js');
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
 
 mkdirSync(outDir, { recursive: true });
 copyFileSync(src, dest);
@@ -29,4 +42,12 @@ if (existsSync(sdkSrc)) {
   console.log('[build-evenhub-dist] Bundled SDK ->', sdkDest);
 } else {
   console.warn('[build-evenhub-dist] WARN: SDK file not found at', sdkSrc, '— app will fall back to CDN import');
+}
+
+if (pretextSrc) {
+  mkdirSync(vendorDir, { recursive: true });
+  copyFileSync(pretextSrc, pretextDest);
+  console.log('[build-evenhub-dist] Bundled pretext ->', pretextDest);
+} else {
+  console.warn('[build-evenhub-dist] WARN: @evenrealities/pretext not installed — glasses layout falls back to estimated character widths');
 }

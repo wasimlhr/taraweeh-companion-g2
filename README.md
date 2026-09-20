@@ -56,14 +56,49 @@ Taraweeh Companion listens to a reciter, identifies which ayah is being recited 
 - **Anchor clamping** — prevents stale Whisper audio from back-correcting the anchor too far behind the display
 
 ### Taraweeh Mode
-- **Takbeer detection** — recognizes "Allahu Akbar" to transition between Qiyam and Ruku
-- **Rakat counting** — tracks prayer units automatically
+Acoustic cues cannot name a posture on their own — "Allahu Akbar" is said moving
+into ruku', into sujood, out of sujood, and standing for the next rak'ah. Only
+the order is fixed, so `backend/prayerTracker.js` is a deterministic state
+machine and the audio just advances it.
+
+- **Full posture cycle** — Qiyam → Ruku' → I'tidal → Sujud → Jalsah → Sujud →
+  Tashahhud, with a rak'ah credited when the second prostration is left
+- **Cue detection** — takbeer, tasmee', tahmeed, tasleem, tashahhud and qunoot,
+  matched against an aggressively normalised form of whatever Whisper produced
+- **Debouncing** — a 1.8 s global refractory, per-position minimum dwell, and
+  audio-window identity so a takbeer replayed by a grown search buffer is not
+  counted twice
+- **Quran super-anchors** — Al-Fatiha is only ever recited standing, so hearing
+  it resynchronises the machine and credits the rak'ah whose cues were lost
+- **Verses that quote a cue stay recitation** — 29:45 ends "وَلَذِكْرُ اللَّهِ
+  أَكْبَرُ" and is vetoed because the ayah being recited contains the phrase
+- **Edge cases** — sajdah at-tilawah, Hanafi and Shafi'i witr qunoot, sajdah
+  as-sahw inside the post-salam grace window, and an imam who stands up by
+  mistake and sits back down
+- **Manual override** — ±1 rak'ah, a tappable posture strip, fix-state and
+  reset, because mosque acoustics will eventually beat any model
 - **Fatiha → resume** — after Fatiha completes, restores the pre-ruku surah position for seamless continuation
 - **Ameen display** — flashes an overlay when Ameen is detected after Fatiha
+
+Drive the whole chain without an API key or a microphone:
+
+```bash
+npm run replay:prayer -- --rakat=4     # real server + WebSocket + stand-in ASR
+```
 
 ### Display
 - **Three-line verse card** — Arabic (Amiri font), transliteration, and English translation
 - **G2 glasses rendering** — formatted text pushed to the 576×288 micro-LED display via Even Hub SDK
+- **Glasses top bar** — status on the left, the rak'ah (with the posture
+  appended when the imam is not standing) in the middle, and a clock on the
+  right; each is its own container, so a posture change or a minute tick costs
+  one short BLE write
+- **Pixel-accurate layout** — [`@evenrealities/pretext`](https://www.npmjs.com/package/@evenrealities/pretext)
+  carries the firmware's own font metrics, so container widths, right-aligned
+  columns and the nine-line body budget are measured rather than estimated
+  from an average character. `npm run test:glyphs` fails the build on any
+  character the G2 firmware has no glyph for — it has no Arabic, and none of
+  `✓ ⏸ ↻ ⚠`
 - **Dark mode** — full dark theme with smooth transitions
 - **Whisper Live panel** — real-time scrolling view of what Whisper is hearing
 - **Confidence meter** — visual indicator of match quality
@@ -92,12 +127,17 @@ taraweeh-companion-g2/
 │   ├── groqProvider.js         ← Groq whisper-large-v3-turbo
 │   ├── openaiProvider.js       ← OpenAI whisper-1
 │   ├── transcriptionRouter.js  ← Provider routing (Groq / OpenAI / Gemini)
+│   ├── prayerTracker.js        ← Salah posture FSM + rak'ah counting
+│   ├── prayerKeywords.js       ← Takbeer / tasmee' / tasleem cues, sajdah ayat
 │   ├── data/
 │   │   ├── quran-full.json     ← Full Quran text (1.7 MB, local)
 │   │   └── verses-display.json ← Transliterations + translations (1.7 MB, local)
 │   └── certs/                  ← Self-signed HTTPS certs (auto-generated)
 ├── scripts/
-│   └── qr-web-url.js          ← QR code generator for Even Hub scanning
+│   ├── qr-web-url.js          ← QR code generator for Even Hub scanning
+│   ├── build-evenhub-dist.js  ← Copies app + vendors SDK and pretext into dist/
+│   ├── check-glasses-glyphs.js← Fails on any character the G2 font cannot draw
+│   └── replay-prayer-session.js ← Full prayer through the real server, no API key
 ├── G2.md                       ← Even Realities G2 SDK reference
 └── package.json
 ```
@@ -116,8 +156,35 @@ taraweeh-companion-g2/
 ```bash
 git clone https://github.com/wasimlhr/taraweeh-companion-g2.git
 cd taraweeh-companion-g2
-npm install
-cd backend && npm install && cd ..
+npm install          # postinstall chains into taraweeh-companion/ and backend/
+```
+
+`npm install` at the root is enough — its `postinstall` installs
+`taraweeh-companion/`, whose own `postinstall` installs `backend/`. Use
+`npm ci` instead when you want the exact versions the lockfiles pin.
+
+Two packages are fetched from npm but shipped inside the app rather than
+loaded from a CDN at runtime, because the packaged `.ehpk` has no guaranteed
+network and the SDK must come from the same module realm the host injects the
+bridge into:
+
+| Package | Lands in | Served at | Purpose |
+| :-- | :-- | :-- | :-- |
+| `@evenrealities/even_hub_sdk` | `dist/sdk/even_hub_sdk.js` | `/sdk/even_hub_sdk.js` | glasses bridge |
+| `@evenrealities/pretext` | `dist/vendor/pretext.js` | `/vendor/pretext.js` | firmware font metrics |
+
+`npm run build:evenhub` copies both out of `node_modules`; `dist/` is
+generated and git-ignored, so re-run it after pulling. The backend also
+serves either file straight from `node_modules` when `dist/` is absent, so
+`npm run backend:dev` works without a build step. In the packed `.ehpk`
+pretext costs about 43 KB — it is 674 KB of repetitive numeric tables and
+compresses roughly 15:1.
+
+To confirm a local checkout is complete:
+
+```bash
+npm test                       # version alignment, glyph coverage, 137 unit tests
+npm run replay:prayer -- --rakat=2   # real server + WebSocket, no API key needed
 ```
 
 ### Configuration

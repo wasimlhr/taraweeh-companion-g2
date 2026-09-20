@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.3.5 — hardening: client-carried recovery, provider deadlines, HF wiring removed
+ * v3.4.0 — rak'ah tracking: full posture state machine, rak'ah + clock on the glasses top bar
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -139,6 +139,27 @@ if (EVENHUB_SDK) {
   app.get('/sdk/even_hub_sdk.js', sendEvenHubSdk);
   // Page is also served at /app/index.html; relative ./sdk/... must not 404.
   app.get('/app/sdk/even_hub_sdk.js', sendEvenHubSdk);
+}
+
+// Firmware font metrics, used to size the glasses containers exactly rather
+// than guessing at an average character width.
+const PRETEXT = [
+  join(rootDir, 'dist', 'vendor', 'pretext.js'),
+  join(rootDir, 'node_modules', '@evenrealities', 'pretext', 'dist', 'font_measure.js'),
+  join(rootDir, '..', 'node_modules', '@evenrealities', 'pretext', 'dist', 'font_measure.js'),
+].find((p) => existsSync(p));
+function sendPretext(req, res) {
+  if (!PRETEXT) {
+    res.status(404).type('text/plain').send('pretext not installed');
+    return;
+  }
+  res.type('application/javascript');
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.sendFile(PRETEXT);
+}
+if (PRETEXT) {
+  app.get('/vendor/pretext.js', sendPretext);
+  app.get('/app/vendor/pretext.js', sendPretext);
 }
 app.get('/api/status', (req, res) => {
   const shared = sharedKeyAvailability();
@@ -388,6 +409,7 @@ wss.on('connection', (ws, req) => {
       // echoes it on the next init, so recovery survives reconnects AND
       // backend restarts without any cross-user server state.
       recoveryState: validRecoveryState(opts.recoveryState),
+      prayerConfig: opts.prayerConfig || {},
       onRecoveryState: (state) => send({ type: 'recovery_state', state }),
       onStateUpdate: (msg) => send(msg),
       onStatus: (s) => {
@@ -416,6 +438,11 @@ wss.on('connection', (ws, req) => {
     } else if (pipeline.setTaraweehMode) {
       pipeline.setTaraweehMode(true);
       if (pipeline.setPracticeMode) pipeline.setPracticeMode(false);
+      // The rak'ah count is client-carried like the verse position, so a
+      // dropped connection mid-prayer does not restart the count at one.
+      if (opts.prayerState && pipeline.restorePrayerState) {
+        pipeline.restorePrayerState(opts.prayerState);
+      }
     }
     console.log(`[Init] Pace: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'} (client), mode: ${opts.practiceMode ? 'practice' : 'taraweeh'}`);
     send({ type: 'pipeline_version', version: pipelineVersion });
@@ -518,6 +545,12 @@ wss.on('connection', (ws, req) => {
           case 'set_verse_hold_mode': pipeline?.setPracticeMode?.(msg.enabled); break;
           case 'pace_nudge': pipeline?.paceNudge?.(Number(msg.factor) || 1.0); break;
           case 'reset_rakat': pipeline?.resetRakat(); break;
+          // Manual overrides for when the model desyncs — the user can see the
+          // prayer and the microphone cannot.
+          case 'adjust_rakat': pipeline?.adjustRakat?.(Number(msg.delta) || 0); break;
+          case 'set_prayer_position': pipeline?.setPrayerPosition?.(String(msg.position || '')); break;
+          case 'next_prayer_position': pipeline?.nextPrayerPosition?.(); break;
+          case 'set_prayer_config': pipeline?.setPrayerConfig?.(msg.config || {}); break;
         }
       } catch {}
     }
