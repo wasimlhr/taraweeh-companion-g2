@@ -1,5 +1,51 @@
 # Changelog
 
+## 3.4.0 - 2026-09-20
+
+Rak'ah tracking, rebuilt. The old tracker was a three-state machine
+(`QIYAM`/`RUKU`/`SAJDA`) living inside the audio pipeline, with i'tidal and
+jalsah folded into standing and a string field standing in for the states it
+did not have. It had no refractory period and no dwell limits, so an echo
+counted as a posture change — and it never reached the glasses at all.
+
+- **A real posture state machine** (`backend/prayerTracker.js`). The full cycle
+  plus tashahhud, a 1.8 s global refractory, per-position min/max dwell, and a
+  weighted vote over acoustic, verse and temporal evidence. Al-Fatiha
+  resynchronises it when cues are lost, and it credits the rak'ah whose
+  takbeers went unheard. Covers sajdah at-tilawah, both witr schools, sajdah
+  as-sahw in the post-salam grace window, and an imam who stands by mistake.
+  Manual `+1` / `-1` / fix-state / reset, and the count survives a reconnect.
+- **The single biggest cause of drift.** The search buffer grows on every
+  failed match to give the verse matcher more context. Nothing is recited
+  during ruku' and sujood, so it kept growing — and a 12-second window holds
+  three takbeers, of which only one could act. The window now stays short
+  whenever the posture is not qiyam, and the audio behind an accepted cue is
+  dropped so it is never re-transcribed.
+- **Cues are told apart from verses that quote them.** Confidence is keyed on
+  what follows the cue, not on chunk length, so a window spanning the end of an
+  ayah and the takbeer after it still transitions. 29:45 ("وَلَذِكْرُ اللَّهِ
+  أَكْبَرُ") is vetoed outright because the ayah being recited contains the
+  phrase verbatim. Tasmee', tahmeed, tasleem, tashahhud and qunoot are
+  recognised alongside the takbeer.
+- **The glasses top bar shows the rak'ah and the time** instead of the app
+  version, with the posture appended whenever the imam is not standing — which
+  is exactly when the body has no verse to show. Each is its own container, so
+  a posture change or a minute tick is one short BLE write.
+- **Layout is measured, not counted** (`@evenrealities/pretext`). Container
+  widths and the right-aligned match percentage now use the firmware's own font
+  metrics. The body holds nine 27 px lines, not the ten the character-counting
+  layout assumed — the tenth was pulling up a scroll bar. The same metrics
+  revealed four glyphs the app was already drawing that the firmware has no
+  font for: `✓ Surah complete`, `⏸ PAUSED`, `↻` and `⚠ Signal Lost` were all
+  shipping with the leading symbol silently absent. `scripts/check-glasses-glyphs.js`
+  now fails the build on any character the G2 cannot draw.
+- **An always-visible rak'ah bar in the app** — count, set, posture, the cycle
+  as tappable chips, and the manual corrections.
+- **`scripts/replay-prayer-session.js`** drives the real server over a
+  WebSocket with a stand-in ASR, so the whole chain from PCM to rak'ah count
+  runs without an API key. `GROQ_TRANSCRIBE_URL` makes the existing
+  `local-whisper-server.py` wirable the same way.
+
 ## 3.3.4 - 2026-08-26
 
 Audited release: two independent line-by-line reviews of everything changed

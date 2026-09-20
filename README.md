@@ -56,14 +56,49 @@ Taraweeh Companion listens to a reciter, identifies which ayah is being recited 
 - **Anchor clamping** — prevents stale Whisper audio from back-correcting the anchor too far behind the display
 
 ### Taraweeh Mode
-- **Takbeer detection** — recognizes "Allahu Akbar" to transition between Qiyam and Ruku
-- **Rakat counting** — tracks prayer units automatically
+Acoustic cues cannot name a posture on their own — "Allahu Akbar" is said moving
+into ruku', into sujood, out of sujood, and standing for the next rak'ah. Only
+the order is fixed, so `backend/prayerTracker.js` is a deterministic state
+machine and the audio just advances it.
+
+- **Full posture cycle** — Qiyam → Ruku' → I'tidal → Sujud → Jalsah → Sujud →
+  Tashahhud, with a rak'ah credited when the second prostration is left
+- **Cue detection** — takbeer, tasmee', tahmeed, tasleem, tashahhud and qunoot,
+  matched against an aggressively normalised form of whatever Whisper produced
+- **Debouncing** — a 1.8 s global refractory, per-position minimum dwell, and
+  audio-window identity so a takbeer replayed by a grown search buffer is not
+  counted twice
+- **Quran super-anchors** — Al-Fatiha is only ever recited standing, so hearing
+  it resynchronises the machine and credits the rak'ah whose cues were lost
+- **Verses that quote a cue stay recitation** — 29:45 ends "وَلَذِكْرُ اللَّهِ
+  أَكْبَرُ" and is vetoed because the ayah being recited contains the phrase
+- **Edge cases** — sajdah at-tilawah, Hanafi and Shafi'i witr qunoot, sajdah
+  as-sahw inside the post-salam grace window, and an imam who stands up by
+  mistake and sits back down
+- **Manual override** — ±1 rak'ah, a tappable posture strip, fix-state and
+  reset, because mosque acoustics will eventually beat any model
 - **Fatiha → resume** — after Fatiha completes, restores the pre-ruku surah position for seamless continuation
 - **Ameen display** — flashes an overlay when Ameen is detected after Fatiha
+
+Drive the whole chain without an API key or a microphone:
+
+```bash
+npm run replay:prayer -- --rakat=4     # real server + WebSocket + stand-in ASR
+```
 
 ### Display
 - **Three-line verse card** — Arabic (Amiri font), transliteration, and English translation
 - **G2 glasses rendering** — formatted text pushed to the 576×288 micro-LED display via Even Hub SDK
+- **Glasses top bar** — status on the left, the rak'ah (with the posture
+  appended when the imam is not standing) in the middle, and a clock on the
+  right; each is its own container, so a posture change or a minute tick costs
+  one short BLE write
+- **Pixel-accurate layout** — [`@evenrealities/pretext`](https://www.npmjs.com/package/@evenrealities/pretext)
+  carries the firmware's own font metrics, so container widths, right-aligned
+  columns and the nine-line body budget are measured rather than estimated
+  from an average character. `npm run test:glyphs` fails the build on any
+  character the G2 firmware has no glyph for — it has no Arabic, and none of
+  `✓ ⏸ ↻ ⚠`
 - **Dark mode** — full dark theme with smooth transitions
 - **Whisper Live panel** — real-time scrolling view of what Whisper is hearing
 - **Confidence meter** — visual indicator of match quality
