@@ -100,6 +100,13 @@ const W_VERSE = 0.35;
 const W_TEMPORAL = 0.25;
 const ACCEPT_THRESHOLD = 0.55;
 
+/**
+ * A cue buried in six or more other words is recitation, whatever else agrees.
+ * The imam's takbeer comes over the loudspeaker in its own breath; a chunk that
+ * also carries most of an ayah is the ayah.
+ */
+const MIN_AUDIO_CONFIDENCE = 0.3;
+
 const DEFAULT_CONFIG = Object.freeze({
   /** Taraweeh is prayed in sets of two with a tasleem between them. */
   rakatPerSet: 2,
@@ -287,6 +294,7 @@ export class PrayerTracker {
     if (!cue || !cue.kind) return null;
     const kind = cue.kind;
     const pAudio = Number.isFinite(cue.confidence) ? cue.confidence : 1;
+    if (pAudio < MIN_AUDIO_CONFIDENCE) return null;
 
     // Hard veto 1 — refractory. Loudspeaker echo and clipping produce a second
     // copy of the same syllables a few hundred ms later.

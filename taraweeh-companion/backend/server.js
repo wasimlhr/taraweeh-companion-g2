@@ -388,6 +388,7 @@ wss.on('connection', (ws, req) => {
       // echoes it on the next init, so recovery survives reconnects AND
       // backend restarts without any cross-user server state.
       recoveryState: validRecoveryState(opts.recoveryState),
+      prayerConfig: opts.prayerConfig || {},
       onRecoveryState: (state) => send({ type: 'recovery_state', state }),
       onStateUpdate: (msg) => send(msg),
       onStatus: (s) => {
@@ -416,6 +417,11 @@ wss.on('connection', (ws, req) => {
     } else if (pipeline.setTaraweehMode) {
       pipeline.setTaraweehMode(true);
       if (pipeline.setPracticeMode) pipeline.setPracticeMode(false);
+      // The rak'ah count is client-carried like the verse position, so a
+      // dropped connection mid-prayer does not restart the count at one.
+      if (opts.prayerState && pipeline.restorePrayerState) {
+        pipeline.restorePrayerState(opts.prayerState);
+      }
     }
     console.log(`[Init] Pace: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'} (client), mode: ${opts.practiceMode ? 'practice' : 'taraweeh'}`);
     send({ type: 'pipeline_version', version: pipelineVersion });
@@ -518,6 +524,12 @@ wss.on('connection', (ws, req) => {
           case 'set_verse_hold_mode': pipeline?.setPracticeMode?.(msg.enabled); break;
           case 'pace_nudge': pipeline?.paceNudge?.(Number(msg.factor) || 1.0); break;
           case 'reset_rakat': pipeline?.resetRakat(); break;
+          // Manual overrides for when the model desyncs — the user can see the
+          // prayer and the microphone cannot.
+          case 'adjust_rakat': pipeline?.adjustRakat?.(Number(msg.delta) || 0); break;
+          case 'set_prayer_position': pipeline?.setPrayerPosition?.(String(msg.position || '')); break;
+          case 'next_prayer_position': pipeline?.nextPrayerPosition?.(); break;
+          case 'set_prayer_config': pipeline?.setPrayerConfig?.(msg.config || {}); break;
         }
       } catch {}
     }
