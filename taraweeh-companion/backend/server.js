@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.3.5 — hardening: client-carried recovery, provider deadlines, HF wiring removed
+ * v3.4.0 — rak'ah tracking: full posture state machine, rak'ah + clock on the glasses top bar
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -139,6 +139,27 @@ if (EVENHUB_SDK) {
   app.get('/sdk/even_hub_sdk.js', sendEvenHubSdk);
   // Page is also served at /app/index.html; relative ./sdk/... must not 404.
   app.get('/app/sdk/even_hub_sdk.js', sendEvenHubSdk);
+}
+
+// Firmware font metrics, used to size the glasses containers exactly rather
+// than guessing at an average character width.
+const PRETEXT = [
+  join(rootDir, 'dist', 'vendor', 'pretext.js'),
+  join(rootDir, 'node_modules', '@evenrealities', 'pretext', 'dist', 'font_measure.js'),
+  join(rootDir, '..', 'node_modules', '@evenrealities', 'pretext', 'dist', 'font_measure.js'),
+].find((p) => existsSync(p));
+function sendPretext(req, res) {
+  if (!PRETEXT) {
+    res.status(404).type('text/plain').send('pretext not installed');
+    return;
+  }
+  res.type('application/javascript');
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.sendFile(PRETEXT);
+}
+if (PRETEXT) {
+  app.get('/vendor/pretext.js', sendPretext);
+  app.get('/app/vendor/pretext.js', sendPretext);
 }
 app.get('/api/status', (req, res) => {
   const shared = sharedKeyAvailability();
