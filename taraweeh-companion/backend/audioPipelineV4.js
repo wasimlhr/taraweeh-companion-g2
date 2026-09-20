@@ -266,6 +266,13 @@ function applyClipGuard(pcm, rms, profile) {
   return out;
 }
 
+// End-of-utterance flush. A takbeer is ~700ms of speech; below the floor it is
+// a cough or a chair, and above the ceiling it is recitation, which the normal
+// window path will pick up on its own once three seconds have buffered.
+const CUE_FLUSH_MIN_VOICED_MS = 400;
+const CUE_FLUSH_MAX_VOICED_MS = 2500;
+const CUE_FLUSH_MIN_BUF_MS = 900;
+
 // How often the prayer tracker is given a chance to time out of a position.
 // A silent sujood produces no transcripts at all, so the machine cannot rely on
 // audio arriving to notice that it is stuck.
@@ -1220,7 +1227,28 @@ export class AudioPipeline {
     }
 
     if (this._searchLastVoiceAt && now - this._searchLastVoiceAt > this._voiceHangoverMs() && !this.processing) {
-      this._resetSearchBuf();
+      // A posture cue is about a second of speech sitting in silence, and the
+      // search window will not fire until three seconds have buffered — so the
+      // hangover reset was throwing takbeers away before they were ever sent.
+      // The trace made this visible: between a surah ending and the tasmee'
+      // that followed, ten seconds passed with no transcription at all.
+      //
+      // A short burst that ends in silence is a cue, whatever the machine
+      // thinks the posture is — the takbeer that ends qiyam looks exactly like
+      // the ones that follow it. Recitation runs long enough that the ordinary
+      // window fires first, so this adds no calls while the imam is reading.
+      const bufferedMs = this._searchBuf.length / BYTES_PER_MS;
+      const endpointCue = this.taraweehMode
+        && this._searchVoicedMs >= CUE_FLUSH_MIN_VOICED_MS
+        && this._searchVoicedMs <= CUE_FLUSH_MAX_VOICED_MS
+        && bufferedMs >= CUE_FLUSH_MIN_BUF_MS;
+      if (endpointCue) {
+        this.trace.record('note', { what: 'cue-endpoint-flush', voicedMs: Math.round(this._searchVoicedMs), bufferedMs: Math.round(bufferedMs) });
+        this._forceNextSearch = true;
+        this._processSearchChunk();
+      } else {
+        this._resetSearchBuf();
+      }
     }
     if (hasVoice) {
       this._searchVoicedMs += pcmMs;
