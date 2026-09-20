@@ -1293,10 +1293,14 @@ body {
       </div>
       <div class="s-row">
         <span class="s-label">Listening trace</span>
-        <label class="s-check"><input type="checkbox" id="traceToggle" onchange="setTraceStreaming(this.checked)"> Show what it hears and decides</label>
-        <span class="s-hint" style="margin-top:6px;display:block">The backend records this either way. The switch only opens the live
+        <div class="toggle-group" role="group">
+          <button type="button" class="toggle-btn active" id="btnTraceOff" onclick="setTraceStreaming(false)">Off</button>
+          <button type="button" class="toggle-btn" id="btnTraceOn" onclick="setTraceStreaming(true)">Show live</button>
+        </div>
+        <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">The backend records this either way. The switch only opens the live
           feed below, so the history leading up to a problem is already captured.</span>
         <div id="traceFeed" class="trace-feed" style="display:none"></div>
+        <input type="text" id="traceNote" placeholder="What went wrong? (optional)" maxlength="200" autocomplete="off" style="margin-top:8px">
         <div class="rk-controls" style="margin-top:8px">
           <button type="button" class="rk-btn" onclick="copyTraceReport()">Copy report</button>
           <button type="button" class="rk-btn" onclick="downloadTraceReport()">Save report</button>
@@ -1769,6 +1773,10 @@ body {
     _traceStreaming = !!on;
     var feed = document.getElementById('traceFeed');
     if (feed) feed.style.display = _traceStreaming ? 'block' : 'none';
+    var offBtn = document.getElementById('btnTraceOff');
+    var onBtn = document.getElementById('btnTraceOn');
+    if (offBtn) offBtn.classList.toggle('active', !_traceStreaming);
+    if (onBtn) onBtn.classList.toggle('active', _traceStreaming);
     _sendWs({ type: 'set_trace', enabled: _traceStreaming });
   };
 
@@ -1854,11 +1862,17 @@ body {
     });
   }
 
+  // Matches the backend's rule so both halves of a report redact the same way.
+  // Deliberately narrower than /key/: `keyMode` says whether the user brought
+  // their own credential, which is exactly the sort of thing a report is read
+  // for, and it holds no secret.
+  var SECRET_SETTING_RE = /(apikey|api_key|token|secret|password|authorization)/i;
+
   function _redactedSettings() {
     var out = {};
     Object.keys(S.settings || {}).forEach(function (k) {
       var v = S.settings[k];
-      if (/key|token|secret/i.test(k)) {
+      if (SECRET_SETTING_RE.test(k)) {
         out[k] = (typeof v === 'string' && v) ? '[redacted ' + v.length + ' chars]' : '[empty]';
       } else {
         out[k] = v;
@@ -1873,20 +1887,19 @@ body {
   }
 
   window.copyTraceReport = async function () {
-    _setTraceHint('Collecting…');
-    var report = await _buildTraceReport();
-    var text = JSON.stringify(report, null, 2);
+    _setTraceHint('Collecting\u2026');
     try {
+      var report = await _buildTraceReport();
+      var text = JSON.stringify(report, null, 2);
       await navigator.clipboard.writeText(text);
-      _setTraceHint('Copied ' + (report.backend?.events?.length || 0) + ' backend events. Paste into an issue.');
+      _setTraceHint('Copied ' + ((report.backend && report.backend.events || []).length) + ' backend events. Paste into an issue.');
     } catch (e) {
-      console.log(text);
-      _setTraceHint('Clipboard unavailable — the report was written to the console.');
+      _setTraceHint('Copy failed: ' + (e && e.message ? e.message : e) + ' — use Save report instead.');
     }
   };
 
   window.downloadTraceReport = async function () {
-    _setTraceHint('Collecting…');
+    _setTraceHint('Collecting\u2026');
     var report = await _buildTraceReport();
     var blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
@@ -1900,23 +1913,41 @@ body {
     _setTraceHint('Saved. Attach the file when reporting the problem.');
   };
 
+  // An inline field rather than window.prompt: a blocking native dialog is
+  // unreliable inside the Even Hub WebView, and it looks nothing like the app.
   window.sendTraceReport = async function () {
-    var note = '';
-    try { note = window.prompt('What went wrong? (optional)') || ''; } catch (_) {}
-    _setTraceHint('Sending…');
-    var report = await _buildTraceReport();
+    var noteEl = document.getElementById('traceNote');
+    var note = noteEl ? noteEl.value.slice(0, 200) : '';
+    _setTraceHint('Collecting\u2026');
     try {
+      var report = await _buildTraceReport();
       var res = await fetch(backendBase() + '/api/trace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report: report.backend?.v === 1 ? report.backend : { v: 1, ...report }, note: note }),
+        body: JSON.stringify({ report: _postableReport(report), note: note }),
       });
       var j = await res.json();
-      _setTraceHint(j.ok ? 'Sent as ' + j.id + '. Thank you.' : 'Rejected: ' + (j.error || res.status));
+      if (j.ok) {
+        if (noteEl) noteEl.value = '';
+        _setTraceHint('Sent as ' + j.id + '. Thank you.');
+      } else {
+        _setTraceHint('Rejected: ' + (j.error || res.status));
+      }
     } catch (e) {
-      _setTraceHint('Could not reach the backend — use Save report instead.');
+      _setTraceHint('Send failed: ' + (e && e.message ? e.message : e) + ' — use Save report instead.');
     }
   };
+
+  /**
+   * The backend's own trace is the useful half, so post that when it answered
+   * and fold the app's half in beside it. When it did not, post what the app
+   * knows on its own rather than nothing.
+   */
+  function _postableReport(report) {
+    var backend = report.backend;
+    if (backend && backend.v === 1) return { ...backend, app: report.app, clientLog: report.clientLog };
+    return { v: 1, sessionId: '', summary: {}, events: [], app: report.app, clientLog: report.clientLog };
+  }
 
   const SETTINGS_KEY = 'qlive_settings';
   const SEND_INTERVAL = 200;
