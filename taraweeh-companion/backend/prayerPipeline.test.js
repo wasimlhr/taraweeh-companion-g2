@@ -124,6 +124,9 @@ test('an opening and Ya-Sin in a locked check switch surahs without retranscribi
     assert.equal(pipeline.state.mode, 'LOCKED');
     assert.equal(pipeline.state.surah, 36);
     assert.equal(pipeline._displaySurah, 36);
+    const trace = pipeline.trace.report();
+    assert.equal(trace.events.filter(e => e.type === 'asr').length, 1);
+    assert.ok(trace.events.some(e => e.type === 'lock' && e.at === '36:1'));
   } finally { pipeline.destroy(); }
 });
 
@@ -412,6 +415,64 @@ test('pipeline wiring — verse evidence beats a takbeer-shaped verse', async (t
     assert.equal(speak(pipeline, TAKBEER, { locked: true }), true);
     assert.equal(pipeline._taraweehPos, POSITIONS.RUKU);
     pipeline.destroy();
+  });
+});
+
+test('pipeline wiring — end-of-utterance flush', async (t) => {
+  const BYTES_PER_MS = 32;   // 16 kHz, 16-bit mono
+
+  /**
+   * Put the pipeline in the state the trace caught: a short burst of speech is
+   * buffered, the speaker has stopped, and the search window's three-second
+   * target is still far away.
+   */
+  function armed({ voicedMs = 700, bufferedMs = 1500, taraweeh = true, posture = 'RUKU' } = {}) {
+    const { pipeline } = makePipeline();
+    if (!taraweeh) pipeline.setPracticeMode(true);
+    else pipeline.prayer.setPosition(posture);
+    pipeline.active = true;
+    pipeline._searchBuf = Buffer.alloc(Math.round(bufferedMs * BYTES_PER_MS));
+    pipeline._searchVoicedMs = voicedMs;
+    pipeline._searchLastVoiceAt = Date.now() - 60000;   // hangover long expired
+    pipeline._searchHasSignal = true;
+    let flushed = false;
+    pipeline._processSearchChunk = () => { flushed = true; };
+    // One frame of silence, which is what makes the hangover fire.
+    pipeline.ingest(Buffer.alloc(200 * BYTES_PER_MS));
+    const result = { flushed, buffered: pipeline._searchBuf.length / BYTES_PER_MS };
+    pipeline.destroy();
+    return result;
+  }
+
+  await t.test('transcribes a short burst instead of discarding it', () => {
+    // Without this the takbeer is thrown away: the hangover resets the buffer
+    // while it waits for three seconds of audio that never comes, because the
+    // imam is bowing in silence.
+    assert.equal(armed().flushed, true);
+  });
+
+  await t.test('still discards a burst too short to be speech', () => {
+    const r = armed({ voicedMs: 150 });
+    assert.equal(r.flushed, false);
+    // Reset, then the frame that triggered it is appended to the empty buffer:
+    // the 1500ms that was there is gone, as before.
+    assert.equal(r.buffered, 200, 'a cough resets the buffer as before');
+  });
+
+  await t.test('leaves recitation to the ordinary window path', () => {
+    // Anything this long has already tripped the 3s window target, so
+    // flushing would only duplicate the call.
+    assert.equal(armed({ voicedMs: 4000 }).flushed, false);
+  });
+
+  await t.test('does not change Practice mode, which has no cues to catch', () => {
+    assert.equal(armed({ taraweeh: false }).flushed, false);
+  });
+
+  await t.test('catches the takbeer that ends qiyam, not only the later ones', () => {
+    // The cue that leaves qiyam looks exactly like the ones that follow it,
+    // and it is the one that starts the rak'ah count.
+    assert.equal(armed({ posture: 'QIYAM' }).flushed, true);
   });
 });
 

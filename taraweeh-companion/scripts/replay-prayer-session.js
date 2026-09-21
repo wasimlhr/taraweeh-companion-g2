@@ -195,10 +195,12 @@ async function main() {
     ws.once('error', reject);
   });
 
+  let traceReport = null;
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch (_) { return; }
     if (msg.type === 'taraweeh') note(msg);
+    if (msg.type === 'trace_report') traceReport = msg.report;
   });
 
   ws.send(JSON.stringify({
@@ -221,6 +223,12 @@ async function main() {
     await sleep(FRAME_MS);
   }
 
+  // Pull the backend's own trace before tearing the connection down. This is
+  // the same report a user sends from the app, so exercising it here keeps the
+  // diagnostics path from rotting.
+  ws.send(JSON.stringify({ type: 'get_trace' }));
+  for (let i = 0; i < 40 && !traceReport; i++) await sleep(100);
+
   ws.close();
   server.kill('SIGTERM');
   await sleep(600);
@@ -233,12 +241,26 @@ async function main() {
     asrCalls,
     transitions: seen,
     postures: [...new Set(seen.map((s) => s.position))],
+    trace: traceReport ? traceReport.summary : null,
   };
   if (JSON_OUT) {
-    console.log(JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(traceReport ? { ...report, events: traceReport.events } : report, null, 2));
   } else {
     console.log(`\n[replay] ${seen.length} transitions, ${asrCalls} transcription calls`);
     console.log(`[replay] reached rak'ah ${lastRakat} of ${TARGET_RAKAT}`);
+    if (traceReport) {
+      const s = traceReport.summary;
+      console.log(`\n[trace] ${s.events} events over ${Math.round(s.durationMs / 1000)}s`
+        + ` — ${s.transcripts.total} transcripts (${s.transcripts.empty} empty), ${s.errors} errors`);
+      console.log(`[trace] cues: ${s.cues.accepted}/${s.cues.total} acted on`
+        + `  ${JSON.stringify(s.cues.byKind)}`);
+      if (Object.keys(s.cues.rejectedBecause).length) {
+        console.log(`[trace] ignored because: ${JSON.stringify(s.cues.rejectedBecause)}`);
+      }
+      console.log(`[trace] transitions: ${JSON.stringify(s.prayer.byReason)}`);
+    } else {
+      console.log('[trace] backend returned no report');
+    }
   }
 
   const wanted = ['QIYAM', 'RUKU', 'ITIDAL', 'SAJDA1', 'JALSAH', 'SAJDA2', 'TASHAHHUD'];

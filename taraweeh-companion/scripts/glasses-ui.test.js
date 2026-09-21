@@ -46,7 +46,7 @@ function harness() {
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       clearGlassesPreamble, startSearchingDots, PREAMBLE_GLASSES,
-      startPageFlip,
+      startPageFlip, _buildTraceReport,
       setPractice: function (value) { _practiceMode = value; _taraweehMode = !value; },
       setMetrics: function (metrics) { _pretext = metrics; }
     };
@@ -101,6 +101,25 @@ test('menu selection changes the count without pausing or restarting capture', a
   h.ui.setPractice(true);
   h.ui.onG2Event({ menuItemClickEvent: { itemID: 2 } });
   assert.equal(h.messages.length, 2);
+});
+
+test('combined status envelope updates the compact count and diagnostics export preserves SDK metrics', async () => {
+  const h = harness();
+  h.ui.setMetrics({ getTextWidth, pxTruncate });
+  h.ui.handleServerMsg({ type: 'sys_status', statusType: 'taraweeh_mode',
+    prayer: { rakat: 4, position: 'QIYAM' } });
+  assert.equal(h.nodes.get('rakatCount').textContent, "Rak'ah 4");
+  h.ui.S.settings = { groqApiKey: 'test-secret-credential', keyMode: 'byok' };
+  const pending = h.ui._buildTraceReport();
+  assert.deepEqual(h.messages.at(-1), { type: 'get_trace' });
+  h.ui.handleServerMsg({ type: 'trace_report', report: { v: 1,
+    events: [{ type: 'asr', text: 'يس' }, { type: 'lock', at: '36:1' }] } });
+  const report = await pending;
+  assert.equal(report.app.prayer.rakat, 4);
+  assert.equal(report.app.pixelMetrics, true);
+  assert.equal(report.app.settings.keyMode, 'byok');
+  assert.equal(report.backend.events[1].at, '36:1');
+  assert.doesNotMatch(JSON.stringify(report), /test-secret-credential/);
 });
 
 for (const [kind, raw, title] of [

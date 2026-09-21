@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.4.5 - 2026-09-20
+
+- **Field diagnostics.** Each connection now carries a bounded, structured
+  trace of what the pipeline heard and what it decided — transcripts with
+  their audio window and latency, sampled voice-gate levels, verse locks,
+  posture transitions, errors. Recording is always on; the toggle in
+  Settings → Advanced only opens the live feed, so the minute before someone
+  noticed a problem is already captured. Every cue considered is recorded with
+  its verdict and score breakdown, because the question a report has to answer
+  is almost always "why was that takbeer ignored". A user sends one with a tap;
+  `DIAG_TOKEN` gates reading them back, and without it the read routes do not
+  exist. Reports carry transcripts, never audio, and anything credential-shaped
+  is replaced with its length and last four characters.
+- **Short utterances are no longer discarded.** The trace found this on its
+  first run: a takbeer is about a second of speech in silence, but the search
+  window does not fire until three seconds have buffered, so the voice-hangover
+  reset was throwing it away before it was ever transcribed. A burst between
+  400 ms and 2.5 s that ends in silence is now sent.
+- **Mode echoes from the backend reach the client again.**
+  `{ type: 'sys_status', ...s }` where `s` names its own sub-type collapses to
+  `{ type: 'taraweeh_mode' }`, which matched no branch on the client, so every
+  one was silently dropped. The sub-type now travels beside the envelope.
+
 ## 3.4.4 - 2026-09-20
 
 - Treat Bismillah as the start of a new surah search, releasing the previous verse, candidates, and display timer while preserving prayer counts and fresh audio.

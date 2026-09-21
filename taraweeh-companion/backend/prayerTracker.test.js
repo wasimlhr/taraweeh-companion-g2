@@ -215,8 +215,10 @@ test('prayerTracker — debouncing and duplicate suppression', async (t) => {
   await t.test('rejects a cue that arrives faster than the posture allows', () => {
     const h = makeTracker();
     h.cue(TAKBEER);                      // → ruku at t0
-    // Ruku' has a 3 s floor; 2 s of "different" audio is still too fast.
-    assert.equal(h.cue('اللهم أكبر', { wait: 2000 }), null);
+    // Past the 1.8 s refractory but inside ruku's 3 s floor, so the dwell gate
+    // is what has to reject it — not the refractory, and not a failure to
+    // recognise the phrase.
+    assert.equal(h.cue(TAKBEER, { wait: 2000 }), null);
     assert.equal(h.tracker.position, POSITIONS.RUKU);
   });
 });
