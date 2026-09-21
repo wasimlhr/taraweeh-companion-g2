@@ -528,122 +528,36 @@ body {
   color: #232323;
 }
 
-/* Rak'ah bar — always visible in Taraweeh, unlike the position overlay.
-   The count has to be readable and correctable at any moment, not only when
-   the imam happens to be bowing. */
+/* Compact count correction; posture tracking stays in the background. */
 #rakatBar {
   display: none;
-  margin: 0 0 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--bc-1);
-  border-radius: 10px;
-  background: var(--bg-2);
-}
-.rk-top {
-  display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
+  margin: 0 0 10px;
 }
-.rk-count { font-size: 15px; font-weight: 600; color: var(--tc-1); }
-.rk-meta  { font-size: 11px; color: var(--tc-2); letter-spacing: 0.04em; }
-.rk-state {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--tc-2);
-}
-.rk-state.moving { color: var(--tc-gold); font-weight: 600; }
-.rk-cycle {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-.rk-chip {
-  flex: 1 1 auto;
-  min-width: 52px;
-  padding: 5px 4px;
-  font-size: 10px;
-  font-family: inherit;
-  letter-spacing: 0.03em;
-  color: var(--tc-2);
-  background: transparent;
-  border: 1px solid var(--bc-1);
-  border-radius: 6px;
-  cursor: pointer;
-}
-.rk-chip.active {
-  background: var(--bc-accent);
-  border-color: var(--bc-accent);
-  color: var(--tc-highlight);
-  font-weight: 600;
-}
-[data-theme="dark"] .rk-chip.active { color: #232323; }
-.rk-controls { display: flex; flex-wrap: wrap; gap: 6px; }
-.rk-btn {
-  flex: 1 1 auto;
-  padding: 7px 6px;
-  font-size: 11px;
-  font-family: inherit;
-  color: var(--tc-1);
-  background: transparent;
-  border: 1px solid var(--bc-1);
-  border-radius: 6px;
-  cursor: pointer;
-}
-.rk-btn:active { transform: scale(0.98); }
-.rk-btn.active {
-  background: var(--bc-accent);
-  border-color: var(--bc-accent);
-  color: var(--tc-highlight);
-}
-[data-theme="dark"] .rk-btn.active { color: #232323; }
-.rk-hint { margin: 6px 0 0; font-size: 10px; line-height: 1.4; color: var(--tc-2); }
-
-/* Taraweeh overlay — shown over verse content during ruku */
-#taraweehOverlay {
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 28px 20px;
-  text-align: center;
-}
-#taraweehOverlay.visible { display: flex; }
-.tw-position {
-  font-family: 'Amiri', serif;
-  font-size: 40px;
-  color: var(--tc-1);
-  line-height: 1.2;
-}
-.tw-position-latin {
-  font-size: 14px;
-  color: var(--tc-2);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.tw-rakat {
+.rk-count {
   font-size: 13px;
-  color: var(--tc-gold);
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--tc-1);
+  font-variant-numeric: tabular-nums;
 }
-.tw-reset-btn {
-  margin-top: 4px;
-  padding: 6px 16px;
+.rk-controls { display: flex; gap: 6px; }
+.rk-btn {
+  min-height: 40px;
+  padding: 0 12px;
   font-size: 12px;
-  border: 1px solid var(--tc-red);
-  border-radius: 999px;
-  background: var(--bc-1);
-  color: var(--tc-red);
+  font-family: inherit;
+  white-space: nowrap;
+  color: var(--tc-1);
+  background: transparent;
+  border: 1px solid var(--bc-1);
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
 }
-.tw-reset-btn:active { background: #fff0f0; }
-[data-theme="dark"] .tw-reset-btn:active { background: #2a1515; }
-.tw-reset-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rk-btn:hover { background: var(--bg-2); }
+.rk-btn:active { background: var(--bc-1); }
+.rk-btn:focus-visible { outline: 2px solid var(--tc-1); outline-offset: 2px; }
 
 .btn-group { margin-bottom: 10px; }
 
@@ -946,7 +860,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.0</span>
+      <span class="version" id="versionEl">v3.4.4</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -986,27 +900,13 @@ body {
     </div>
   </div>
 
-  <!-- Rak'ah tracker — count, posture, and the manual corrections for when
-       the room beats the microphone. -->
-  <div id="rakatBar">
-    <div class="rk-top">
-      <span class="rk-count" id="rakatCount">Rak'ah 1 of 20</span>
-      <span class="rk-meta" id="rakatSet">Set 1 · 1/2</span>
-      <span class="rk-state" id="rakatState">Standing</span>
-    </div>
-    <div class="rk-cycle" id="rakatCycle"></div>
+  <!-- Only count corrections are exposed; postures are tracked automatically. -->
+  <div id="rakatBar" role="group" aria-label="Rak'ah adjustment">
+    <span class="rk-count" id="rakatCount" aria-live="polite" aria-atomic="true">Rak'ah 1</span>
     <div class="rk-controls">
-      <button type="button" class="rk-btn" onclick="adjustRakat(-1)" title="One rak'ah back">− Rak'ah</button>
-      <button type="button" class="rk-btn" onclick="adjustRakat(1)" title="One rak'ah forward">+ Rak'ah</button>
-      <button type="button" class="rk-btn" onclick="fixPrayerPosition()" title="Advance to the next posture">Fix state →</button>
-      <button type="button" class="rk-btn" onclick="resetRakat()" title="Start the count again">Reset</button>
+      <button type="button" class="rk-btn" onclick="adjustRakat(-1)" aria-label="Decrease rak'ah count">Rak'ah −</button>
+      <button type="button" class="rk-btn" onclick="adjustRakat(1)" aria-label="Increase rak'ah count">Rak'ah +</button>
     </div>
-    <div class="rk-controls" style="margin-top:6px">
-      <button type="button" class="rk-btn" id="btnRakat8" onclick="setRakatTarget(8)">8 rak'ah</button>
-      <button type="button" class="rk-btn active" id="btnRakat20" onclick="setRakatTarget(20)">20 rak'ah</button>
-    </div>
-    <p class="rk-hint">Tap a posture to correct it. The glasses show the rak'ah and the
-      current posture in the top bar.</p>
   </div>
 
   <div id="verseCard">
@@ -1052,14 +952,6 @@ body {
       background:rgba(0,0,0,0.75); pointer-events:none;">
       <div style="font-size:56px; color:#fbbf24; text-shadow:0 0 20px rgba(251,191,36,0.5); letter-spacing:6px; font-weight:bold;">AMEEN</div>
     </div>
-    <!-- Taraweeh prayer-position overlay (shown instead of verse during ruku) -->
-    <div id="taraweehOverlay">
-      <div class="tw-position" id="twPositionAr">RUKU</div>
-      <div class="tw-position-latin" id="twPositionLatin">Bowing</div>
-      <div class="tw-rakat" id="twRakat">Rak'ah 1</div>
-      <button class="tw-reset-btn" onclick="resetRakat()">Reset Count</button>
-    </div>
-
     <div id="lockedContent" style="display:none">
       <div class="verse-pos" id="versePos"></div>
       <div class="verse-arabic" id="verseArabic"></div>
@@ -1291,6 +1183,7 @@ body {
         <li><strong>Single tap (ready / stopped)</strong> — start or resume listening</li>
         <li><strong>Single tap (while listening)</strong> — pause listening</li>
         <li><strong>Swipe up / down</strong> — previous / next ayah</li>
+        <li><strong>Tap then long press</strong> — open the glasses menu for rak'ah − / +</li>
         <li><strong>Double tap (ready / stopped)</strong> — system exit confirmation
           <span class="help-sub">Cancel keeps you in the app. Confirm closes glasses and phone WebView.</span>
         </li>
@@ -1316,7 +1209,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.0';
+  const APP_VERSION = 'v3.4.4';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1476,8 +1369,6 @@ body {
   var _taraweehPos  = 'QIYAM';
   var _rakatCount   = 0;
 
-  /** The postures a rak'ah walks through, in order, for the app's strip. */
-  var RAKAH_CYCLE = ['QIYAM', 'RUKU', 'ITIDAL', 'SAJDA1', 'JALSAH', 'SAJDA2'];
 
   // `ar` is phone-only: the G2 firmware font has no Arabic glyphs at all, so
   // the glasses get the transliteration in `chip` instead.
@@ -1547,39 +1438,11 @@ body {
     if (S.ws && S.ws.readyState === WebSocket.OPEN) S.ws.send(JSON.stringify(msg));
   }
 
-  window.resetRakat = function () {
-    _sendWs({ type: 'reset_rakat' });
-  };
-
-  // The UX fail-safes from the design note: mosque acoustics will eventually
-  // beat any model, so the count and the posture must both be correctable by
-  // hand. These are optimistic — the backend echoes the authoritative snapshot.
+  // The backend echoes the authoritative count after a manual correction.
   window.adjustRakat = function (delta) {
     _sendWs({ type: 'adjust_rakat', delta: delta });
     _applyPrayerSnapshot({ ..._prayer, rakat: Math.max(1, (_prayer.rakat || 1) + delta) });
   };
-
-  window.fixPrayerPosition = function () {
-    _sendWs({ type: 'next_prayer_position' });
-  };
-
-  window.setPrayerPosition = function (position) {
-    _sendWs({ type: 'set_prayer_position', position: position });
-  };
-
-  window.setRakatTarget = function (target) {
-    _sendWs({ type: 'set_prayer_config', config: { targetRakat: target } });
-    _applyPrayerSnapshot({ ..._prayer, targetRakat: target });
-    if (S.settings) { S.settings.targetRakat = target; try { saveSettings(); } catch (_) {} }
-    _updateRakatTargetButtons();
-  };
-
-  function _updateRakatTargetButtons() {
-    [8, 20].forEach(function (n) {
-      var b = document.getElementById('btnRakat' + n);
-      if (b) b.classList.toggle('active', (_prayer.targetRakat || 0) === n);
-    });
-  }
 
   /** Single entry point for a posture change, whatever raised it. */
   function _applyPrayerSnapshot(snap) {
@@ -1588,7 +1451,6 @@ body {
     _prayer = { ..._prayer, ...snap };
     _taraweehPos = _prayer.position || 'QIYAM';
     _rakatCount  = _prayer.rakat || 1;
-    _updateTaraweehOverlay();
     _renderRakatBar();
     glassesTopBarUpdate();
     if (_taraweehPos !== prevPos) _mirrorPrayerOnGlasses(prevPos);
@@ -1603,6 +1465,7 @@ body {
   function _mirrorPrayerOnGlasses(prevPos) {
     if (!S.isG2 || !S.bridge || !_taraweehMode) return;
     if (_taraweehPos !== 'QIYAM') {
+      clearGlassesPreamble();
       stopPageFlip();
       stopCountdown();
       stopSearchingDots();
@@ -1629,30 +1492,6 @@ body {
     }
   }
 
-  function _updateTaraweehOverlay() {
-    var overlay  = document.getElementById('taraweehOverlay');
-    var locked   = document.getElementById('lockedContent');
-
-    // Anything but standing means nothing is being recited, so the verse panel
-    // has nothing true to show.
-    var inPrayerPos = _taraweehMode && _taraweehPos !== 'QIYAM';
-
-    if (overlay)  overlay.classList.toggle('visible', inPrayerPos);
-    if (inPrayerPos && locked)   locked.style.display = 'none';
-    if (inPrayerPos) {
-      var nr = document.getElementById('verseNavRow');
-      if (nr) nr.style.display = 'none';
-    }
-
-    var disp = TW_DISPLAY[_taraweehPos] || TW_DISPLAY.QIYAM;
-    var arEl = document.getElementById('twPositionAr');
-    var latEl = document.getElementById('twPositionLatin');
-    var rkEl  = document.getElementById('twRakat');
-    if (arEl)  arEl.textContent  = disp.ar;
-    if (latEl) latEl.textContent = disp.latin;
-    if (rkEl)  rkEl.textContent  = _rakatLabel();
-  }
-
   /** @param {boolean} [ascii] true for the glasses, whose font has no U+02BB. */
   function _rakatLabel(ascii) {
     var n = _prayer.rakat || 1;
@@ -1660,60 +1499,14 @@ body {
     return 'Rak' + (ascii ? "'" : '\u02bb') + 'ah ' + n + (target ? ' of ' + target : '');
   }
 
-  /**
-   * The always-visible rak'ah strip. Unlike the overlay it stays on screen
-   * during recitation, so the wearer can check the count without waiting for
-   * the imam to bow — and can correct it the moment it looks wrong.
-   */
+  /** Only the count belongs in the phone UI; postures remain automatic. */
   function _renderRakatBar() {
     var bar = document.getElementById('rakatBar');
     if (!bar) return;
-    // The stylesheet hides it by default, so '' would resolve straight back to
-    // none — the inline value has to be explicit.
-    bar.style.display = _taraweehMode ? 'block' : 'none';
+    bar.style.display = _taraweehMode ? 'flex' : 'none';
     if (!_taraweehMode) return;
-
     var countEl = document.getElementById('rakatCount');
-    if (countEl) countEl.textContent = _rakatLabel();
-
-    var setEl = document.getElementById('rakatSet');
-    if (setEl) {
-      var perSet = _prayer.rakatPerSet || 2;
-      setEl.textContent = 'Set ' + (_prayer.setNumber || 1)
-        + ' \u00B7 ' + (_prayer.rakatInSet || 1) + '/' + perSet;
-    }
-
-    var stateEl = document.getElementById('rakatState');
-    if (stateEl) {
-      var disp = TW_DISPLAY[_taraweehPos] || TW_DISPLAY.QIYAM;
-      stateEl.textContent = disp.latin;
-      stateEl.classList.toggle('moving', _taraweehPos !== 'QIYAM');
-    }
-
-    var cycle = document.getElementById('rakatCycle');
-    if (cycle) {
-      // The cycle is rebuilt only when its shape changes; otherwise just move
-      // the highlight, so tapping a chip does not fight a re-render.
-      if (cycle.dataset.built !== 'yes') {
-        cycle.innerHTML = '';
-        RAKAH_CYCLE.concat(['TASHAHHUD']).forEach(function (pos) {
-          var chip = document.createElement('button');
-          chip.type = 'button';
-          chip.className = 'rk-chip';
-          chip.dataset.pos = pos;
-          chip.textContent = (TW_DISPLAY[pos] || {}).chip || pos;
-          chip.title = 'Set position to ' + ((TW_DISPLAY[pos] || {}).latin || pos);
-          chip.onclick = function () { setPrayerPosition(pos); };
-          cycle.appendChild(chip);
-        });
-        cycle.dataset.built = 'yes';
-      }
-      var chips = cycle.querySelectorAll('.rk-chip');
-      for (var i = 0; i < chips.length; i++) {
-        chips[i].classList.toggle('active', chips[i].dataset.pos === _taraweehPos);
-      }
-    }
-    _updateRakatTargetButtons();
+    if (countEl) countEl.textContent = "Rak'ah " + (_prayer.rakat || 1);
   }
 
   const SETTINGS_KEY = 'qlive_settings';
@@ -2677,6 +2470,14 @@ body {
 
   function _startupTextContainers() { return _g2TextContainers(null, null); }
 
+  // Menu actions are separate from temple taps and survive every page rebuild.
+  function glassesMenu() {
+    return { menuItems: [
+      { itemID: 1, itemName: "Rak'ah -" },
+      { itemID: 2, itemName: "Rak'ah +" },
+    ] };
+  }
+
   function glassesStartup() {
     if (!S.bridge) return;
     S.startupPageCreated = false;
@@ -2688,6 +2489,7 @@ body {
       return S.bridge.createStartUpPageContainer({
         containerTotalNum: 4,
         textObject: _startupTextContainers(),
+        menuObject: glassesMenu(),
       }).then(function (result) {
         // Protobuf zero-omission: success code 0 arrives as undefined.
         var code = (result == null) ? 0 : result;
@@ -2705,6 +2507,7 @@ body {
         return S.bridge.rebuildPageContainer({
           containerTotalNum: 4,
           textObject: _startupTextContainers(),
+          menuObject: glassesMenu(),
         }).then(function () {
           S.startupPageCreated = true;
           S.displayRebuilt = true;   // just rebuilt — ready for text upgrades
@@ -2726,6 +2529,7 @@ body {
       return S.bridge.rebuildPageContainer({
         containerTotalNum: 4,
         textObject: _startupTextContainers(),
+        menuObject: glassesMenu(),
       }).then(function () {
         S.startupPageCreated = true;
         S.displayRebuilt = true;
@@ -2788,6 +2592,7 @@ body {
         return S.bridge.rebuildPageContainer({
           containerTotalNum: 4,
           textObject: _g2TextContainers(hdrContent, bodyContent),
+          menuObject: glassesMenu(),
         }).then(function () {
           S.displayRebuilt = true;
           // The rebuild just painted both pills from the current snapshot, so
@@ -3004,19 +2809,21 @@ body {
   // pages is an array of body strings. For short ayahs it's 1 page.
   // For long ayahs, translation paginates across multiple full screens,
   // transliteration goes on the last page.
-  // Header: surah/ayah left, confidence % right.
+  // Header: surah/ayah left, with room for the countdown on the right.
   function buildGlassesText(state) {
+    if (_glassesPreamble && state.mode === 'SEARCHING' && !state.isCandidate && !state.userSearching) {
+      return preambleDisplay(_glassesPreamble);
+    }
     var transForGlasses = state.translationGlasses ?? state.translation;
     switch (state.mode) {
       case 'SEARCHING':
         if (state.isCandidate && (state.translation || state.translationGlasses)) {
           var cRef  = glassesRef(state);
-          var cPct  = 'Match: ' + (state.candidateScore || 0) + '%';
-          var cHdr  = padToWidth(G2_MARK_CANDIDATE + ' ' + cRef, cPct, G2_HDR_PX);
+          var cHdr  = pxClip(cRef, G2_HDR_PX);
           var cPages = buildPages(transForGlasses, state.transliteration, 1);
           if (!state.practiceMode) {
             var lockDots = (state._lockingDots !== undefined) ? '.'.repeat(state._lockingDots) : '\u2026';
-            cPages[cPages.length - 1] += '\nAuto locking' + lockDots + ' ' + (state.candidateScore || 0) + '%';
+            cPages[cPages.length - 1] += '\nAuto locking' + lockDots;
           }
           return { hdr: cHdr, pages: cPages };
         }
@@ -3027,8 +2834,7 @@ body {
         // Practice: keep current verse on glasses while listening for next (fresh surah jump).
         if (state.userSearching && (state.translation || state.translationGlasses)) {
           var uRef  = glassesRef(state);
-          var uPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
-          var uHdr  = padToWidth(G2_MARK_LOCKED + ' ' + uRef, uPct, G2_HDR_PX);
+          var uHdr  = pxClip(uRef, G2_HDR_PX);
           var uPages = buildPages(transForGlasses, state.transliteration);
           uPages[uPages.length - 1] += '\nListening for next verse\u2026';
           return { hdr: uHdr, pages: uPages };
@@ -3037,8 +2843,7 @@ body {
 
       case 'LOCKED': {
         var lRef  = glassesRef(state);
-        var lPct  = 'Match: ' + Math.round((state.confidence || 0) * 100) + '%';
-        var lHdr  = padToWidth(G2_MARK_LOCKED + ' ' + lRef, lPct, G2_HDR_PX);
+        var lHdr  = pxClip(lRef, G2_HDR_PX);
         return { hdr: lHdr, pages: buildPages(transForGlasses, state.transliteration) };
       }
 
@@ -3078,11 +2883,12 @@ body {
   }
 
   // Show a specific page from a multi-page display
-  function showGlassesPage(display, pageIdx) {
+  function showGlassesPage(display, pageIdx, timerMs) {
     var total = display.pages.length;
     var idx = Math.min(pageIdx, total - 1);
     var hdr = _hdrWithPage(display.hdr, idx, total);
-    glassesUpdate({ hdr: hdr, body: display.pages[idx] });
+    var shownHdr = timerMs > 0 ? padToWidth(hdr, Math.ceil(timerMs / 1000) + 's', G2_HDR_PX) : hdr;
+    glassesUpdate({ hdr: shownHdr, body: display.pages[idx] });
     return hdr;
   }
 
@@ -3109,13 +2915,13 @@ body {
     _pageIdx     = 0;
     var total    = display.pages.length;
     _pageMs      = total > 1 ? Math.floor(totalMs / total) : totalMs;
-    var baseHdr  = showGlassesPage(display, 0);
+    var baseHdr  = showGlassesPage(display, 0, _pageMs);
     startCountdown(_pageMs, baseHdr, display.pages[0] || '');
     if (total > 1) {
       _pageTimer = setInterval(function () {
         _pageIdx++;
         if (_pageIdx >= total) { stopPageFlip(); return; }
-        var h = showGlassesPage(_pageDisplay, _pageIdx);
+        var h = showGlassesPage(_pageDisplay, _pageIdx, _pageMs);
         startCountdown(_pageMs, h, _pageDisplay.pages[_pageIdx] || '');
       }, _pageMs);
     }
@@ -3137,6 +2943,7 @@ body {
     _searchingDotsIdx = 0;
     _searchingDotsTimer = setInterval(function () {
       if (!S.isRecording || !S.isG2 || !S.bridge) return;
+      if (_glassesPreamble) return;
       if (S._lastGlassesState && (S._lastGlassesState.isCandidate || S._lastGlassesState.mode === 'LOCKED')) {
         // Stale searching animation must not block verse display (common after stop→start).
         stopSearchingDots();
@@ -3260,19 +3067,6 @@ body {
     var showVerse = state.mode === 'LOCKED' || state.mode === 'RESUMING'
       || (state.isCandidate && state.arabic)
       || (state.mode === 'SEARCHING' && state.userSearching && state.arabic);
-
-    // Any posture but standing means nothing is being recited — the position
-    // overlay takes over from the verse panel.
-    if (_taraweehMode && _taraweehPos !== 'QIYAM') {
-      searching.style.display = 'none';
-      locked.style.display = 'none';
-      var navRow = document.getElementById('verseNavRow');
-      if (navRow) navRow.style.display = 'none';
-      return;
-    }
-    // Coming out of ruku/sajda — hide overlay
-    var twOverlay = document.getElementById('taraweehOverlay');
-    if (twOverlay) twOverlay.classList.remove('visible');
 
     if (showVerse) {
       // Reset match panel so it's fresh when we return to SEARCHING
@@ -3562,6 +3356,54 @@ body {
     istiadhah: { en: "A'udhu billah", ar: 'أعوذ بالله من الشيطان الرجيم' },
     bismillah: { en: 'Bismillah', ar: 'بسم الله الرحمن الرحيم' },
   };
+  var PREAMBLE_GLASSES = {
+    istiadhah: {
+      latin: "A'udhu billahi minash-shaytanir-rajim",
+      translation: 'I seek refuge in Allah from Satan, the rejected.',
+    },
+    bismillah: {
+      latin: 'Bismillahir-Rahmanir-Rahim',
+      translation: 'In the name of Allah, the Most Merciful, the Especially Merciful.',
+    },
+  };
+  var _glassesPreamble = null;
+  var _glassesPreambleTimer = null;
+  var _lastGlassesPreambleKind = '';
+
+  function clearGlassesPreamble() {
+    if (_glassesPreambleTimer) clearTimeout(_glassesPreambleTimer);
+    _glassesPreambleTimer = null;
+    _glassesPreamble = null;
+  }
+
+  function preambleDisplay(kind) {
+    var info = PREAMBLE_GLASSES[kind];
+    return { hdr: PREAMBLE_LABELS[kind].en,
+      pages: [wrapPx(info.latin, G2_BODY_PX).join('\n') + '\n\n'
+        + wrapPx(info.translation, G2_BODY_PX).join('\n')] };
+  }
+
+  function showGlassesPreamble(kind) {
+    if (!PREAMBLE_GLASSES[kind] || !S.isRecording || !S.isG2 || !S.bridge) return;
+    // Overlapping ASR windows can repeat one opening phrase. Do not extend
+    // its display or bring it back after the brief notice has expired.
+    if (_lastGlassesPreambleKind === kind) return;
+    _lastGlassesPreambleKind = kind;
+    clearGlassesPreamble();
+    _glassesPreamble = kind;
+    stopPageFlip(); stopCountdown(); stopSearchingDots(); stopLockingDots();
+    showGlassesPage(preambleDisplay(kind), 0);
+    _glassesPreambleTimer = setTimeout(finishGlassesPreamble, 1500);
+  }
+
+  function finishGlassesPreamble() {
+    clearGlassesPreamble();
+    if (!S.isRecording || !S.isG2 || !S.bridge) return;
+    if (_taraweehMode && _taraweehPos !== 'QIYAM') return;
+    var state = S._lastGlassesState || { mode: 'SEARCHING' };
+    showGlassesPage(buildGlassesText(state), 0);
+    if (state.mode === 'SEARCHING' && !state.isCandidate && !state.userSearching) startSearchingDots();
+  }
   // Fallback for older backends that don't send msg.preamble yet: recognize the
   // isti'adhah / bismillah opening in the raw transcript (display-only).
   function detectPreamble(text) {
@@ -3571,8 +3413,8 @@ body {
     var isti = istiRe.test(t);
     var rest = isti ? t.replace(istiRe, '').trim() : t;
     var bismMatch = rest.match(/^بسم\s*الله\s+الرحمن\s+الرحيم[\sۙ،.،]*/);
-    if (bismMatch && rest.slice(bismMatch[0].length).trim().length < 5) return 'bismillah';
-    if (isti && rest.length < 3) return 'istiadhah';
+    if (bismMatch && !rest.slice(bismMatch[0].length).trim()) return 'bismillah';
+    if (isti && !rest.length) return 'istiadhah';
     return '';
   }
 
@@ -3612,7 +3454,13 @@ body {
 
     if (msg.whisperText) {
       setHeardPreview(msg.whisperText, msg.whisperTextMarked);
-      setPreambleChip(msg.preamble || detectPreamble(msg.whisperText));
+    }
+    var preamble = msg.preamble || detectPreamble(msg.whisperText);
+    setPreambleChip(preamble);
+    if (preamble) showGlassesPreamble(preamble);
+    else if (msg.whisperText) {
+      _lastGlassesPreambleKind = '';
+      if (_glassesPreamble) finishGlassesPreamble();
     }
 
     var w = msg.lockProgress && msg.lockProgress.wins !== undefined
@@ -3725,6 +3573,12 @@ body {
         }));
       }
     } else if (msg.type === 'state') {
+      // A confirmed/candidate verse immediately replaces the opening phrase.
+      // Plain search heartbeats must not erase it before the wearer can read it.
+      if (msg.state.mode !== 'SEARCHING' || msg.state.isCandidate || msg.state.userSearching) {
+        clearGlassesPreamble();
+        _lastGlassesPreambleKind = '';
+      }
       if (msg.whisperText) {
         log('Heard: ' + msg.whisperText.slice(0, 60), 'w');
         // Keep the live "hearing" preview fresh from state packets too — during
@@ -3836,6 +3690,7 @@ body {
         }
       }
     } else if (msg.type === 'ameen') {
+      clearGlassesPreamble();
       log('Ameen', 'ok');
       if (S.isG2) {
         glassesUpdate({ hdr: 'Ameen', body: 'Ameen' });
@@ -3968,39 +3823,6 @@ body {
     });
   }
 
-  function handleForegroundExit() {
-    if (!S.isRecording) return;
-    S.pausedByBackground = true;
-    stopSearchingDots();
-    stopLockingDots();
-    stopPageFlip();
-    stopCountdown();
-    try { stopG2Mic(); } catch (_) {}
-    try { stopBrowserMic(); } catch (_) {}
-    // Use 'pause' (not 'stop') — preserves pipeline state, remembers display
-    // position + timer remainder, keeps Whisper listening so resume is seamless.
-    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      try { S.ws.send(JSON.stringify({ type: 'pause' })); } catch (_) {}
-    }
-    setStatus('Paused in background', 'error');
-    log('Paused capture while app is backgrounded', 'w');
-  }
-
-  function handleForegroundEnter() {
-    if (!S.pausedByBackground) return;
-    S.pausedByBackground = false;
-    // Resume from saved state — do NOT send init, that destroys the pipeline
-    // and resets to SEARCHING. audio_return restores from the paused position.
-    if (S.ws && S.ws.readyState === WebSocket.OPEN) {
-      try { S.ws.send(JSON.stringify({ type: 'audio_return' })); } catch (_) {}
-    }
-    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
-    if (useBrowserMic) startBrowserMic();
-    else startG2Mic();
-    setStatus('Resumed in foreground', 'result');
-    log('Resumed capture after foreground enter', 'ok');
-  }
-
   function requestG2MicPermission() {
     if (!S.bridge || !S.isG2 || !S.startupPageCreated) {
       return Promise.reject(new Error('G2 bridge not ready'));
@@ -4096,6 +3918,11 @@ body {
   }
 
   function onG2Event(event) {
+    if (event.menuItemClickEvent) {
+      var itemID = event.menuItemClickEvent.itemID;
+      if (_taraweehMode && (itemID === 1 || itemID === 2)) window.adjustRakat(itemID === 1 ? -1 : 1);
+      return;
+    }
     if (event.audioEvent && event.audioEvent.audioPcm) {
       sendPcm(event.audioEvent.audioPcm);
       return;
@@ -4109,14 +3936,13 @@ body {
     if (event.sysEvent) {
       var st = (event.sysEvent.eventType == null ? 0 : event.sysEvent.eventType);
       if (st === 4) {
-        log('G2 foreground enter', 'ok');
-        if (S.isRecording && S.ws && S.ws.readyState === WebSocket.OPEN) {
-          sendStartForCurrentAudioSource();
-        }
-        handleForegroundEnter();
+        // These events describe a system overlay (including the contextual
+        // menu), not our capture lifecycle. Keep the prayer session running.
+        trace('g2.overlay', 'opened');
+        return;
       } else if (st === 5) {
-        log('G2 foreground exit', 'w');
-        handleForegroundExit();
+        trace('g2.overlay', 'closed');
+        return;
       } else if (st === 6 || st === 7) {
         log('G2 exit event ' + st + ' — cleaning up', 'w');
         _cleanupBridgeResources();
@@ -4157,7 +3983,7 @@ body {
       if (_pageDisplay && _pageDisplay.pages && _pageDisplay.pages.length > 1 && _pageIdx < _pageDisplay.pages.length - 1) {
         // Multi-page ayah, not on last page — advance to next page
         _pageIdx++;
-        var h = showGlassesPage(_pageDisplay, _pageIdx);
+        var h = showGlassesPage(_pageDisplay, _pageIdx, _pageMs);
         // Reset page-flip timer from this point
         if (_pageTimer) { clearInterval(_pageTimer); _pageTimer = null; }
         if (_pageIdx < _pageDisplay.pages.length - 1) {
@@ -4165,7 +3991,7 @@ body {
           _pageTimer = setInterval(function () {
             _pageIdx++;
             if (_pageIdx >= _pageDisplay.pages.length) { stopPageFlip(); return; }
-            var hh = showGlassesPage(_pageDisplay, _pageIdx);
+            var hh = showGlassesPage(_pageDisplay, _pageIdx, _pageMs);
             startCountdown(_pageMs, hh, _pageDisplay.pages[_pageIdx] || '');
           }, _pageMs);
         } else {
@@ -4213,6 +4039,8 @@ body {
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {
+    clearGlassesPreamble();
+    _lastGlassesPreambleKind = '';
     // BYOK only: block start if no API key for the selected provider. Shared
     // mode uses server-held keys — no precheck needed (backend will tell us
     // via sys_status if neither shared key is configured).
@@ -4292,6 +4120,7 @@ body {
   }
 
   function stopListening() {
+    clearGlassesPreamble();
     S.isRecording = false;
     releaseWakeLock();
     _cancelReconnect();
@@ -4332,6 +4161,7 @@ body {
   }
 
   function _cleanupBridgeResources() {
+    clearGlassesPreamble();
     S.startupPageCreated = false;
     stopSearchingDots();
     stopLockingDots();
@@ -4390,7 +4220,7 @@ body {
         } catch (_) {}
       }
       if (!loaded) {
-        sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.10/dist/index.js');
+        sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.15/dist/index.js');
         log('Loaded SDK from CDN', 'ok');
       }
       S.sdk = sdk;

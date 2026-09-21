@@ -9,6 +9,7 @@ import { spawnSync } from 'child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const sdk = JSON.parse(readFileSync(join(root, 'node_modules', '@evenrealities', 'even_hub_sdk', 'package.json'), 'utf8'));
 const outName = `taraweeh-companion-v${pkg.version}.ehpk`;
 const check = process.argv.includes('--check');
 
@@ -26,6 +27,8 @@ const packArgs = [
   'dist',
   '-o',
   outName,
+  '--sdk-ver',
+  sdk.version,
 ];
 if (check) packArgs.push('--check');
 

@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.4.4 - 2026-09-20
+
+- Treat Bismillah as the start of a new surah search, releasing the previous verse, candidates, and display timer while preserving prayer counts and fresh audio.
+- Preserve short Quran openers such as Ya-Sin after Bismillah or isti'adhah, instead of misclassifying them as preamble-only speech.
+- Match opening-plus-verse transcripts immediately even during a previous lock; reject delayed responses belonging to the old lock.
+- Apply the same short-opener correction to the phone/glasses fallback detector.
+
+## 3.4.3 - 2026-09-20
+
+- Show only the surah/ayah reference and countdown in the glasses verse header, with the timer visible from the first frame.
+- Limit opening-preamble notices to 1.5 seconds without extending them on duplicate detections; fresh verse text takes over immediately.
+- Consume recognized opening audio and keep the next search window short, preserving audio received during transcription for the next verse.
+
+## 3.4.2 - 2026-09-20
+
+- Upgrade Even Hub SDK to 0.0.15; require Even App 2.2.10 and derive package compatibility from the installed SDK.
+- Add rak'ah minus/plus actions to the native glasses contextual menu and retain them across page rebuilds.
+- Keep capture running when the system menu opens or closes.
+- Show Bismillah and A'udhu billah detections on glasses in transliteration and English for up to four seconds; a recognized verse takes over immediately.
+
+## 3.4.1 - 2026-09-20
+
+- Replace the multi-row prayer panel with a compact rak'ah count and minus/plus controls.
+- Remove phone posture chips, set details, target selectors, reset controls, and the posture overlay to keep the verse area in place.
+- Keep automatic posture and tashahhud tracking in the backend, with the existing glasses display.
+
 ## 3.4.0 - 2026-09-20
 
 Rak'ah tracking, rebuilt. The old tracker was a three-state machine
