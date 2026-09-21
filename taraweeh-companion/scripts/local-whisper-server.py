@@ -14,6 +14,7 @@ import argparse
 import io
 import json
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -30,6 +31,25 @@ MODEL = WhisperModel(args.model, device='cpu', compute_type=args.compute)
 print(f'[whisper] ready on :{args.port}', flush=True)
 
 calls = 0
+INFER_LOCK = threading.Lock()
+
+
+def extract_wav(body: bytes) -> bytes:
+    """
+    The providers post multipart/form-data, not a bare WAV, so the body has a
+    boundary and headers wrapped around the audio. The RIFF header carries its
+    own length, which is a more reliable way to find the end of the payload
+    than parsing the multipart framing.
+    """
+    start = body.find(b'RIFF')
+    if start < 0:
+        return body
+    if len(body) >= start + 8:
+        size = int.from_bytes(body[start + 4:start + 8], 'little')
+        end = start + 8 + size
+        if start + 8 < end <= len(body):
+            return body[start:end]
+    return body[start:]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -40,18 +60,22 @@ class Handler(BaseHTTPRequestHandler):
         global calls
         length = int(self.headers.get('content-length', 0))
         body = self.rfile.read(length)
+        body = extract_wav(body)
         t0 = time.time()
         try:
             # Groq returns text for these short windows, so keep this model from
             # discarding them: the default no-speech and compression gates drop a
             # lot of 6s recitation clips outright, which would look like a
             # pipeline failure rather than an ASR one.
-            segments, _ = MODEL.transcribe(
-                io.BytesIO(body), language='ar', word_timestamps=True,
-                temperature=[0.0, 0.2, 0.4], condition_on_previous_text=False,
-                no_speech_threshold=0.95, compression_ratio_threshold=4.0,
-                log_prob_threshold=-2.0, vad_filter=False, beam_size=5,
-            )
+            with INFER_LOCK:
+                # One inference at a time on CPU. Concurrent windows otherwise
+                # thrash the cores and every cue comes back late.
+                segments, _ = MODEL.transcribe(
+                    io.BytesIO(body), language='ar', word_timestamps=True,
+                    temperature=[0.0, 0.2], condition_on_previous_text=False,
+                    no_speech_threshold=0.95, compression_ratio_threshold=4.0,
+                    log_prob_threshold=-2.0, vad_filter=False, beam_size=1,
+                )
             words, texts = [], []
             for seg in segments:
                 texts.append(seg.text)
