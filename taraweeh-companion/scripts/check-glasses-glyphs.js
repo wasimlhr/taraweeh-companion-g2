@@ -58,7 +58,7 @@ const RUNTIME_SAMPLES = [
   '12:59 PM', '1:05 AM',              // clockHdr()
   'R20/20 TSHD', 'R1/8 SJD1', 'Practice',   // rakatHdr()
   "Rak'ah 20 of 20", 'Set 10 \u00B7 2/2',   // posture body
-  'Match: 100%', '3/4',                     // header right column, page indicator
+  'Al-Fatihah 1:2 8s', '3/4',              // verse/countdown header, page indicator
 ];
 
 const chars = new Map();   // char → sample context

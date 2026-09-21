@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   detectPrayerCue, normalizeCue, hasSajdah, SAJDAH_AYAT,
   isTakbeer, isTasmee, isTasleem, isTashahhud, isFatihaEnd, isPrayerTransition,
+  isTahmeed,
 } from './prayerKeywords.js';
 import { PrayerTracker, POSITIONS, TIMING, RAKAH_CYCLE } from './prayerTracker.js';
 
@@ -58,6 +59,7 @@ test('prayerKeywords', async (t) => {
     for (const v of [
       'الله أكبر', 'اللَّهُ أَكْبَرُ', 'الله اكبر', 'الله اكبى', 'الله اكبي',
       'اللّٰه أكبر', 'اللە اكبر', 'الله أكبرا',
+      'اللهم أكبر', 'اللهم اكبر',
     ]) {
       assert.equal(isTakbeer(v), true, `expected takbeer: ${v}`);
     }
@@ -68,6 +70,10 @@ test('prayerKeywords', async (t) => {
   await t.test('matches tasmee, tasleem, tashahhud and the Fatiha close', () => {
     assert.equal(isTasmee('سمع الله لمن حمده'), true);
     assert.equal(isTasmee('سميع الله لمن حمد'), true);
+    assert.equal(isTasmee('الله لمن حميدا'), true, 'small-whisper drops سمع');
+    assert.equal(isTahmeed('ربنا ولك الحمد'), true);
+    assert.equal(isTahmeed('أولك الحمد'), true);
+    assert.equal(isTahmeed('ولك الحمد'), true);
     assert.equal(isTasleem('السلام عليكم ورحمة الله'), true);
     assert.equal(isTashahhud('التحيات لله والصلوات'), true);
     assert.equal(isTashahhud('اللهم صل على محمد'), true);
@@ -215,8 +221,10 @@ test('prayerTracker — debouncing and duplicate suppression', async (t) => {
   await t.test('rejects a cue that arrives faster than the posture allows', () => {
     const h = makeTracker();
     h.cue(TAKBEER);                      // → ruku at t0
-    // Ruku' has a 3 s floor; 2 s of "different" audio is still too fast.
-    assert.equal(h.cue('اللهم أكبر', { wait: 2000 }), null);
+    // Past the 1.8 s refractory but inside ruku's 3 s floor, so the dwell gate
+    // is what has to reject it — not the refractory, and not a failure to
+    // recognise the phrase.
+    assert.equal(h.cue(TAKBEER, { wait: 2000 }), null);
     assert.equal(h.tracker.position, POSITIONS.RUKU);
   });
 });
@@ -326,6 +334,26 @@ test('prayerTracker — Quran alignment anchors', async (t) => {
     const before = h.tracker.completedRakat;
     h.verse({ surah: 1, ayah: 7, fatihaEnd: true, locked: true, confidence: 1 });
     assert.equal(h.tracker.completedRakat, before, 'sitting is not a lost rak\'ah');
+    assert.equal(h.tracker.position, POSITIONS.TASHAHHUD);
+  });
+
+  await t.test('Fatiha locked during sujood closes the rak\'ah (night-26 mosque audio)', () => {
+    const h = makeTracker();
+    h.cue(TAKBEER); h.cue(TASMEE); h.cue(TAKBEER);
+    assert.equal(h.tracker.position, POSITIONS.SAJDA1);
+    h.advance(8000);
+    const res = h.verse({ surah: 1, ayah: 2, locked: true, confidence: 0.62 });
+    assert.equal(res.position, POSITIONS.QIYAM);
+    assert.equal(h.tracker.completedRakat, 1, 'imam already stood for the next rak\'ah');
+  });
+
+  await t.test('Fatiha locked during ruku does not count a rak\'ah', () => {
+    const h = makeTracker();
+    h.cue(TAKBEER);
+    h.advance(5000);
+    const res = h.verse({ surah: 1, ayah: 2, locked: true, confidence: 0.62 });
+    assert.equal(res.position, POSITIONS.QIYAM);
+    assert.equal(h.tracker.completedRakat, 0, 'opening takbeer misread as ruku');
   });
 });
 
@@ -421,6 +449,18 @@ test('prayerTracker — sajdah as-sahw', async (t) => {
     const next = h.cue(TAKBEER, { wait: 25000 });
     assert.equal(next.position, POSITIONS.RUKU, 'the next set must start normally');
     assert.equal(next.reason, 'cue-takbeer');
+  });
+
+  await t.test('a Quranic سلام does not end the set from the first sujood', () => {
+    const h = makeTracker({ rakatPerSet: 2 });
+    h.cue(TAKBEER); h.cue(TASMEE); h.cue(TAKBEER);
+    assert.equal(h.tracker.position, POSITIONS.SAJDA1);
+    h.advance(8000);
+    const res = h.cue('السلام عليكم ورحمة الله', { wait: 100 });
+    assert.equal(res, null);
+    assert.equal(h.tracker.position, POSITIONS.SAJDA1);
+    assert.equal(h.tracker.setsCompleted, 0);
+    assert.equal(h.tracker.completedRakat, 0);
   });
 });
 
@@ -660,4 +700,37 @@ test('prayerTracker — cycle metadata', () => {
     POSITIONS.QIYAM, POSITIONS.RUKU, POSITIONS.ITIDAL,
     POSITIONS.SAJDA1, POSITIONS.JALSAH, POSITIONS.SAJDA2,
   ]);
+});
+
+// Strings taken from faster-whisper-small on Makkah night-26 1446 last-4-rakah.
+test('prayerTracker — night-26 mosque ASR sequence', () => {
+  const h = makeTracker({ rakatPerSet: 2 });
+  // Opening takbeer was standing up, then Fatiha — not a bow.
+  h.cue('الله أكبر  الله  الله', { wait: 6000 });
+  assert.equal(h.tracker.position, POSITIONS.RUKU);
+  h.advance(7000);
+  h.verse({ surah: 1, ayah: 2, locked: true, confidence: 0.62 });
+  assert.equal(h.tracker.position, POSITIONS.QIYAM);
+  assert.equal(h.tracker.completedRakat, 0);
+
+  // Real ruku' after ~3 min of Az-Zukhruf. Whisper dropped "سمع".
+  assert.equal(h.cue('الله أكبر', { wait: 180000 }).position, POSITIONS.RUKU);
+  assert.equal(h.cue('الله لمن حميدا', { wait: 4000 }).position, POSITIONS.ITIDAL);
+  assert.equal(h.cue('الله أكبر', { wait: 18000 }).position, POSITIONS.SAJDA1);
+  // "اللهم أكبر" ~17s later: jalsah elapsed, land in second sujood.
+  assert.equal(h.cue('اللهم أكبر', { wait: 17000 }).position, POSITIONS.SAJDA2);
+  h.advance(4000);
+  h.verse({ surah: 1, ayah: 2, locked: true, confidence: 0.62 });
+  assert.equal(h.tracker.position, POSITIONS.QIYAM);
+  assert.equal(h.tracker.completedRakat, 1);
+
+  // 43:89 "وقل سلام" transcribed as a full tasleem during the next sujood
+  // must not close the set.
+  h.cue(TAKBEER, { wait: 20000 });
+  h.cue(TASMEE, { wait: 8000 });
+  h.cue(TAKBEER, { wait: 8000 });
+  assert.equal(h.tracker.position, POSITIONS.SAJDA1);
+  assert.equal(h.cue('السلام عليكم ورحمة الله', { wait: 8000 }), null);
+  assert.equal(h.tracker.setsCompleted, 0);
+  assert.equal(h.tracker.completedRakat, 1);
 });

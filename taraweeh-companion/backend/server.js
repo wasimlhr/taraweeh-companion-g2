@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.0 — rak'ah tracking: full posture state machine, rak'ah + clock on the glasses top bar
+ * v3.4.6 — rak'ah tracking: full posture state machine, rak'ah + clock on the glasses top bar
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -18,6 +18,8 @@ import { buildMushafIndex } from './mushafIndex.js';
 import { closeTranscription, PROVIDER, sharedKeyAvailability, compareProviders, probeProviderKey, STT_ENGINES, collectKeys, resolveProvider } from './transcriptionRouter.js';
 import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
 import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
+import { SessionTrace } from './sessionTrace.js';
+import { TraceStore } from './traceStore.js';
 
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
@@ -188,6 +190,37 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// ── Field diagnostics ───────────────────────────────────────────────────────
+// One tap in the app sends the session trace here. Reading it back needs
+// DIAG_TOKEN; without that variable the read routes do not exist.
+const traceStore = new TraceStore();
+const DIAG_TOKEN = (process.env.DIAG_TOKEN || '').trim();
+
+app.post('/api/trace', (req, res) => {
+  const { ok, id, error } = traceStore.add(req.body?.report, { note: req.body?.note });
+  if (!ok) return res.status(400).json({ ok: false, error });
+  const s = req.body.report.summary || {};
+  console.log(`[Diag] Report ${id} from session ${String(req.body.report.sessionId || '').slice(0, 8)}… `
+    + `— ${s.events || 0} events, ${s.cues?.total || 0} cues, rak'ah ${s.prayer?.rakatReached ?? '?'}`
+    + (req.body?.note ? ` — "${String(req.body.note).slice(0, 80)}"` : ''));
+  res.json({ ok: true, id });
+});
+
+if (DIAG_TOKEN) {
+  const requireToken = (req, res, next) => {
+    const given = req.get('x-diag-token') || req.query.token || '';
+    if (given !== DIAG_TOKEN) return res.status(404).end();
+    next();
+  };
+  app.get('/api/traces', requireToken, (req, res) => res.json({ reports: traceStore.list() }));
+  app.get('/api/traces/:id', requireToken, (req, res) => {
+    const hit = traceStore.get(req.params.id);
+    if (!hit) return res.status(404).json({ error: 'no such report' });
+    res.json(hit);
+  });
+  console.log('[Diag] DIAG_TOKEN set — /api/traces is readable');
+}
+
 app.post('/api/transcription/test-key', async (req, res) => {
   const provider = String(req.body?.provider || '').toLowerCase();
   const apiKey = String(req.body?.apiKey || '').trim();
@@ -338,6 +371,11 @@ wss.on('connection', (ws, req) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   }
 
+  // One trace per connection, recording whether or not anyone is watching.
+  // Turning diagnostics on in the app only starts the streaming — the history
+  // leading up to the bug is already there.
+  const trace = new SessionTrace({ onEvent: (event) => send({ type: 'trace', event }) });
+
   let pipelineVersion = 'v4';
 
   function createPipeline(preferredSurah = 0, opts = {}, version) {
@@ -410,11 +448,17 @@ wss.on('connection', (ws, req) => {
       // backend restarts without any cross-user server state.
       recoveryState: validRecoveryState(opts.recoveryState),
       prayerConfig: opts.prayerConfig || {},
+      trace,
       onRecoveryState: (state) => send({ type: 'recovery_state', state }),
       onStateUpdate: (msg) => send(msg),
       onStatus: (s) => {
         updateEndpointLifecycle(s, 'pipeline');
-        send({ type: 'sys_status', ...s });
+        // Statuses that name a sub-type used to overwrite the envelope —
+        // { type: 'sys_status', ...{ type: 'taraweeh_mode' } } is just
+        // { type: 'taraweeh_mode' }, which matches no branch on the client, so
+        // every mode echo was silently dropped. Carry the sub-type beside the
+        // envelope instead, and keep sending it as `type` for older clients.
+        send({ ...s, type: 'sys_status', statusType: s.type || '' });
       },
       onError: (err) => send({ type: 'error', error: err }),
     });
@@ -522,6 +566,16 @@ wss.on('connection', (ws, req) => {
               _activeSessions.set(sessionId, ws);
             }
             console.log(`[Init] preferredSurah=${surah} pipeline=${ver} sid=${sessionId ? sessionId.slice(0,8) : '(none)'} (client requested: ${requestedVer})`);
+            trace.sessionId = sessionId || '';
+            // Keys are stripped on the way in, so a report can name the
+            // provider and model without ever carrying the credential.
+            trace.setMeta({
+              appVersion: msg.appVersion || '', backendVersion: APP_VERSION,
+              pipeline: ver, provider: msg.transcriptionProvider || '',
+              model: msg.transcriptionModel || '', audioSource: msg.audioSource || '',
+              lang: msg.lang || '', practiceMode: !!msg.practiceMode,
+              prayerConfig: msg.prayerConfig || {}, userAgent: msg.userAgent || '',
+            });
             createPipeline(surah, msg, ver);
             _binaryLogged = false;
             break;
@@ -551,6 +605,17 @@ wss.on('connection', (ws, req) => {
           case 'set_prayer_position': pipeline?.setPrayerPosition?.(String(msg.position || '')); break;
           case 'next_prayer_position': pipeline?.nextPrayerPosition?.(); break;
           case 'set_prayer_config': pipeline?.setPrayerConfig?.(msg.config || {}); break;
+          case 'set_trace':
+            trace.setStreaming(!!msg.enabled);
+            send({ type: 'sys_status', statusType: 'trace', streaming: trace.streaming,
+                   buffered: trace.events.length });
+            break;
+          case 'get_trace':
+            // The whole buffer, so the app can export a report covering what
+            // happened before diagnostics were switched on.
+            send({ type: 'trace_report', report: trace.report({ backendVersion: APP_VERSION, pipeline: pipelineVersion }) });
+            break;
+          case 'clear_trace': trace.clear(); break;
         }
       } catch {}
     }

@@ -55,7 +55,7 @@ export function stripIstiAdhaPrefix(text) {
   const match = norm.match(ISTI_ADHA_PREFIX_RE);
   if (!match) return norm;
   const remainder = norm.slice(match[0].length).trim();
-  if (remainder.length < 3) return norm;
+  if (!remainder) return norm;
   console.log(`[Pipeline] Stripped isti'adha prefix → "${remainder.substring(0, 60)}"`);
   return remainder;
 }
@@ -65,7 +65,7 @@ export function stripBismillahPrefix(text) {
   const match = norm.match(BISMILLAH_NORM_RE);
   if (!match) return norm;
   const remainder = norm.slice(match[0].length).trim();
-  if (remainder.length < 5) return norm;
+  if (!remainder) return norm;
   console.log(`[Pipeline] Stripped bismillah prefix → "${remainder.substring(0, 60)}"`);
   return remainder;
 }
@@ -80,7 +80,9 @@ export function isBismillahOnly(text) {
   if (isti) norm = norm.slice(isti[0].length).trim();
   const match = norm.match(BISMILLAH_NORM_RE);
   if (!match) return false;
-  return norm.slice(match[0].length).trim().length < 5;
+  // Even a one-letter remainder can be Quran (ص / ق / ن); never swallow
+  // short openers such as يس or طه as if they were part of the basmala.
+  return !norm.slice(match[0].length).trim();
 }
 
 export function isIstiAdhaOnly(text) {
@@ -88,7 +90,16 @@ export function isIstiAdhaOnly(text) {
   const norm = normalizeMarks(text);
   const match = norm.match(ISTI_ADHA_PREFIX_RE);
   if (!match) return false;
-  return norm.slice(match[0].length).trim().length < 3;
+  return !norm.slice(match[0].length).trim();
+}
+
+/** Identify a leading opening formula, including one followed by verse text. */
+export function openingPreambleKind(text) {
+  let norm = normalizeMarks(cleanWhisperText(text));
+  const isti = norm.match(ISTI_ADHA_PREFIX_RE);
+  if (isti) norm = norm.slice(isti[0].length).trim();
+  if (BISMILLAH_NORM_RE.test(norm)) return 'bismillah';
+  return isti ? 'istiadhah' : null;
 }
 
 /** True only when the chunk is the preamble itself, not a verse that quotes it. */

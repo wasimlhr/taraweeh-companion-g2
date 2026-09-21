@@ -15,7 +15,7 @@ import { getVerseData } from './verseData.js';
 import { findAnchor, isRefrain, getAyah, spotCheck, ayahWordsCovered, normalize as normalizeArabic, normalizeDaggerAlef } from './keywordMatcher.js';
 import {
   prepareMatcherText,
-  isBismillahOnly,
+  openingPreambleKind,
   isIstiAdhaOnly,
   isOpeningPreamble,
   isPreRecitationPhrase,
@@ -24,6 +24,7 @@ import {
 } from './whisperClean.js';
 import { PrayerTracker, POSITIONS } from './prayerTracker.js';
 import { detectPrayerCue, isFatihaEnd, normalizeCue } from './prayerKeywords.js';
+import { SessionTrace } from './sessionTrace.js';
 
 // ── Word-level corpus data (morphology + tajweed weights) ───────────────────
 const __dirname_v4 = dirname(fileURLToPath(import.meta.url));
@@ -265,6 +266,13 @@ function applyClipGuard(pcm, rms, profile) {
   return out;
 }
 
+// End-of-utterance flush. A takbeer is ~700ms of speech; below the floor it is
+// a cough or a chair, and above the ceiling it is recitation, which the normal
+// window path will pick up on its own once three seconds have buffered.
+const CUE_FLUSH_MIN_VOICED_MS = 400;
+const CUE_FLUSH_MAX_VOICED_MS = 2500;
+const CUE_FLUSH_MIN_BUF_MS = 900;
+
 // How often the prayer tracker is given a chance to time out of a position.
 // A silent sujood produces no transcripts at all, so the machine cannot rely on
 // audio arriving to notice that it is stuck.
@@ -273,7 +281,7 @@ const PRAYER_TICK_MS = 2000;
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
 export class AudioPipeline {
-  constructor({ onStateUpdate, onStatus, onError, onRecoveryState, recoveryState, preferredSurah = 0, translationLang = '', whisperOpts, audioSource = 'g2', prayerConfig = {} }) {
+  constructor({ onStateUpdate, onStatus, onError, onRecoveryState, recoveryState, preferredSurah = 0, translationLang = '', whisperOpts, audioSource = 'g2', prayerConfig = {}, trace = null }) {
     this.onStateUpdate   = onStateUpdate;
     this.onStatus        = onStatus || (() => {});
     this.onError         = onError  || (() => {});
@@ -411,12 +419,23 @@ export class AudioPipeline {
     this._practiceFreshRun    = false; // true → global search, no sequential bias
     this._expectFatiha   = false;    // set after a rak'ah closes — next recitation is Fatiha
 
+    // What the pipeline heard and what it decided, kept on a bounded ring
+    // buffer so a field report can answer "why was that takbeer ignored"
+    // without the user having to reproduce anything.
+    this.trace = trace || new SessionTrace();
+
     // The posture machine. It owns every rak'ah/position decision; the pipeline
     // only feeds it transcripts and verse anchors, and mirrors its position into
     // _taraweehPos for the display-side code that reads it.
     this.prayer = new PrayerTracker({
       config: prayerConfig,
       onChange: (snap) => this._onPrayerChange(snap),
+      onDecision: (d) => this.trace.record('cue', {
+        kind: d.kind, accepted: d.accepted, reason: d.reason,
+        from: d.from, to: d.to, text: d.text,
+        pAudio: d.pAudio, pVerse: d.pVerse, pTemporal: d.pTemporal,
+        score: d.score, dwellMs: Math.round(d.dwellMs),
+      }),
     });
     this._taraweehPos    = POSITIONS.QIYAM;
     this._prayerTickTimer = null;
@@ -1181,6 +1200,14 @@ export class AudioPipeline {
     if (now - this._lastAudioStatusMs >= 3000) {
       this._lastAudioStatusMs = now;
       console.log(`[Pipeline] Audio: source=${this.audioSource} rms=${rms.toFixed(4)} gate=${detectionGate.toFixed(4)} voice=${hasVoice} mode=${this.state.mode}`);
+      // Sampled, not per-frame: enough to tell "the mic is dead" and "the gate
+      // never opened" apart from "the model heard nothing useful", which are
+      // the three ways a session can look identically broken from outside.
+      this.trace.record('audio', {
+        source: this.audioSource, rms: +rms.toFixed(4), gate: +detectionGate.toFixed(4),
+        voice: hasVoice, mode: this.state.mode, posture: this._taraweehPos,
+        bufferedMs: Math.round((lockedTracking ? this._lockedBuf.length : this._searchBuf.length) / BYTES_PER_MS),
+      });
       this.onStatus({ component: 'audio', status: 'active', source: this.audioSource, rms: +rms.toFixed(4), voice: hasVoice });
     }
 
@@ -1200,7 +1227,28 @@ export class AudioPipeline {
     }
 
     if (this._searchLastVoiceAt && now - this._searchLastVoiceAt > this._voiceHangoverMs() && !this.processing) {
-      this._resetSearchBuf();
+      // A posture cue is about a second of speech sitting in silence, and the
+      // search window will not fire until three seconds have buffered — so the
+      // hangover reset was throwing takbeers away before they were ever sent.
+      // The trace made this visible: between a surah ending and the tasmee'
+      // that followed, ten seconds passed with no transcription at all.
+      //
+      // A short burst that ends in silence is a cue, whatever the machine
+      // thinks the posture is — the takbeer that ends qiyam looks exactly like
+      // the ones that follow it. Recitation runs long enough that the ordinary
+      // window fires first, so this adds no calls while the imam is reading.
+      const bufferedMs = this._searchBuf.length / BYTES_PER_MS;
+      const endpointCue = this.taraweehMode
+        && this._searchVoicedMs >= CUE_FLUSH_MIN_VOICED_MS
+        && this._searchVoicedMs <= CUE_FLUSH_MAX_VOICED_MS
+        && bufferedMs >= CUE_FLUSH_MIN_BUF_MS;
+      if (endpointCue) {
+        this.trace.record('note', { what: 'cue-endpoint-flush', voicedMs: Math.round(this._searchVoicedMs), bufferedMs: Math.round(bufferedMs) });
+        this._forceNextSearch = true;
+        this._processSearchChunk();
+      } else {
+        this._resetSearchBuf();
+      }
     }
     if (hasVoice) {
       this._searchVoicedMs += pcmMs;
@@ -1347,6 +1395,39 @@ export class AudioPipeline {
 
   // ── Search mode ────────────────────────────────────────────────────────────
 
+  _resetVerseForOpening() {
+    // An opening announces a new recitation, without changing prayer counts.
+    this._cancelReadAdvance();
+    this.state = createState();
+    this._displaySurah = this._displayAyah = 0;
+    this._whisperSurah = this._whisperAyah = 0;
+    this._whisperLastConfirmMs = 0;
+    this._userSearchingDisplay = false;
+    this._completedSurah = this._completedAt = 0;
+    this._arRahmanRefrainSeen = false;
+    this._lastSearchTexts = [];
+    this._lastTexts = [];
+    this._lastPromptText = '';
+    this._preRecitSkips = 0;
+    this._sameAyahStreak = this._bumpCountForAyah = 0;
+    this._driftMult = 1;
+    this._wordTimestamps = [];
+    this._currentWordIndex = 0;
+    this._wordClockKey = '';
+  }
+
+  _queueBufferedSearch() {
+    const generation = this._searchGen;
+    setTimeout(() => {
+      if (this._searchGen === generation && this.active && !this.processing
+          && this.state.mode === 'SEARCHING'
+          && this._searchBuf.length / BYTES_PER_MS >= SEARCH_WINDOWS_MS[this._searchWinIdx]
+          && this._searchGateOpen() && !this._isRateLimited()) {
+        this._processSearchChunk();
+      }
+    }, 0);
+  }
+
   _resetSearchBuf() {
     this._searchBuf    = Buffer.alloc(0);
     this._searchWinIdx = 0;
@@ -1384,6 +1465,7 @@ export class AudioPipeline {
     // Preserve cumulative context during initial locking. A short first result
     // may contain only a generic Quran prefix; the next call must still include
     // that prefix plus the identifying words that followed it.
+    const submittedBufferBytes = this._searchBuf.length;
     const sendSlice = this._searchBuf.length > SEARCH_SEND_BYTES
       ? this._searchBuf.subarray(this._searchBuf.length - SEARCH_SEND_BYTES)
       : this._searchBuf;
@@ -1415,10 +1497,17 @@ export class AudioPipeline {
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
-        if (text) this._lastPromptText = text;
+        this.trace.record('asr', {
+          mode: 'search', text, words: words.length,
+          audioMs: sendMs, bufferedMs: bufMs, window: this._searchWinIdx + 1,
+          rms: +rms.toFixed(4), latencyMs: Date.now() - now,
+          posture: this._taraweehPos,
+        });
         if (stale()) { console.log('[Pipeline] Stale search result discarded'); return; }
+        if (text) this._lastPromptText = text;
         console.log(`[Pipeline] Whisper (${sendMs}ms): "${text.substring(0, 80)}"${words.length > 0 ? ` [${words.length} words]` : ''}`);
       } catch (err) {
+        this.trace.record('error', { where: 'search-transcribe', message: String(err.message || err).slice(0, 160), status: err.status || 0 });
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
         this._handleTranscriptionError(err);
         this.onError(err.message);
@@ -1426,7 +1515,26 @@ export class AudioPipeline {
         return;
       }
 
+      await this._processSearchTranscript({ text, words, rms, bufMs, audioWindow, submittedBufferBytes, myGen });
+    } catch (err) {
+      this.onError(err.message);
+      if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
+    }
+  }
+
+  // Shared by initial search and an opening heard while a previous verse is
+  // locked. Reuse an already-transcribed opening + verse without another ASR call.
+  async _processSearchTranscript({ text, words, rms, bufMs, audioWindow, submittedBufferBytes, myGen }) {
+    const stale = () => this._searchGen !== myGen || !this.active;
+    if (stale()) return;
+    try {
       const cleaned = prepareMatcherText(text.trim());
+      // A mixed opening + verse must also release previous candidates, but an
+      // overlapping retry of the same window must retain its new match wins.
+      if (openingPreambleKind(text) && this._searchOpeningGen !== myGen) {
+        this._resetVerseForOpening();
+        this._searchOpeningGen = myGen;
+      }
 
       if (this.taraweehMode) {
         if (!detectPrayerCue(cleaned) && /الله|اكبر|أكبر|سمع/i.test(cleaned) && cleaned.length < 80) {
@@ -1459,14 +1567,10 @@ export class AudioPipeline {
         return;
       }
 
-      // In RUKU we expect Fatiha — allow bismillah to reach matcher so we can lock on 1:2+.
-      // Otherwise bismillah-only is generic (could be any surah) — skip the matcher,
-      // but still add to _lastSearchTexts so the NEXT chunk combines with it
-      // (e.g. "بسم الله..." + "الحمد لله..." = strong Fatiha match).
+      // An opening is recognized speech, not a failed verse match. Consume it
+      // and keep the next search short instead of growing/replaying its window.
       if (isOpeningPreamble(cleaned)) {
         console.log(`[Pipeline] Opening preamble — showing it, never locking on it: "${cleaned}"`);
-        this._lastSearchTexts.push(cleaned);
-        if (this._lastSearchTexts.length > 3) this._lastSearchTexts.shift();
         // Surface the text so the user can see the mic is working; the anchor
         // stays in SEARCHING because bismillah identifies no surah. The kind
         // tag lets the UI name what it recognized (isti'adhah vs bismillah),
@@ -1476,9 +1580,19 @@ export class AudioPipeline {
         const preambleMarked = preambleKind === 'bismillah'
           ? (getAyah(1, 1)?.text || null)
           : 'أَعُوذُ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيمِ';
-        this._emitMatchProgress(cleaned, rms, bufMs, preambleKind, preambleMarked);
-        this.onStatus({ component: 'search', status: 'noise', audioSec: bufMs / 1000 });
-        if (!stale()) { this._advanceSearchWindow(); this.processing = false; }
+        if (!stale()) {
+          // Audio received while ASR was running may already be the next ayah.
+          // Preserve it, along with the fresh voice counters, for the next call.
+          this._searchBuf = this._searchBuf.subarray(submittedBufferBytes);
+          this._searchHasSignal = this._searchBuf.length > 0;
+          this._searchWinIdx = 0;
+          this._resetVerseForOpening();
+          this.processing = false;
+          this._emitState(null, rms);
+          this._emitMatchProgress(cleaned, rms, bufMs, preambleKind, preambleMarked);
+          this.onStatus({ component: 'search', status: 'listening', message: 'Opening detected — listening for the surah' });
+          this._queueBufferedSearch();
+        }
         return;
       }
 
@@ -1631,6 +1745,12 @@ export class AudioPipeline {
         this._whisperLastConfirmAyah = this.state.ayah;
         this._whisperLastConfirmSurah = this.state.surah;
 
+        this.trace.record('lock', {
+          at: `${this.state.surah}:${this.state.ayah}`,
+          confidence: +(this.state.confidence || 0).toFixed(2),
+          posture: this._taraweehPos, expectedFatiha: this._expectFatiha,
+          resumeTarget: this._preRukuSurah ? `${this._preRukuSurah}:${this._preRukuAyah}` : null,
+        });
         // Recitation is the ground truth the cue chain is corrected against: a
         // verse locking while the machine thinks he is bowing means takbeers
         // were lost, so hand the anchor over and let it resynchronise.
@@ -1717,6 +1837,8 @@ export class AudioPipeline {
   async _processLockedChunk(chunk, seq = 0, audioWindow = null) {
     this.processing = this._lockedInFlight > 0;
     const startedAt = Date.now();
+    const myGen = this._searchGen;
+    const submittedEndMs = audioWindow?.endMs ?? this._audioClockMs;
     try {
       const rms = computeRms(chunk);
       this.onStatus({ component: 'audio', status: 'active', rms: +rms.toFixed(4) });
@@ -1747,18 +1869,25 @@ export class AudioPipeline {
         const result = await transcribe(audioToSend, this.whisperOpts, this.onStatus);
         text = result.text || '';
         words = result.words || [];  // V4: Extract word timestamps
-        if (text) this._lastPromptText = text;
         resultAgeMs = Date.now() - startedAt;
+        this.trace.record('asr', {
+          mode: 'locked', text, words: words.length,
+          audioMs: chunkMs, rms: +rms.toFixed(4), latencyMs: resultAgeMs,
+          at: `${this.state.surah}:${this.state.ayah}`, posture: this._taraweehPos,
+        });
       } catch (err) {
+        this.trace.record('error', { where: 'locked-transcribe', message: String(err.message || err).slice(0, 160), status: err.status || 0 });
         console.error('[Pipeline] Transcription error:', err.message?.substring(0, 100));
         this._handleTranscriptionError(err);
         return;
       }
 
-      if (!this.active) {
+      if (!this.active || this._searchGen !== myGen
+          || (seq > 0 && seq < this._lockedLastAppliedSeq)) {
         console.log('[Pipeline] Stale locked-check result discarded');
         return;
       }
+      if (text) this._lastPromptText = text;
       if (this.state.mode === 'PAUSED') {
         // pause() promises "keep listening; on resume snap to the latest
         // Whisper position" — but results here used to be discarded wholesale,
@@ -1803,8 +1932,26 @@ export class AudioPipeline {
         return;
       }
 
-      if (isBismillahOnly(cleaned)) {
-        return;  // generic — don't use to re-anchor or jump
+      if (openingPreambleKind(text)) {
+        // Keep only audio received after this submitted window. The rolling
+        // locked buffer otherwise replays the same opening on every spot check.
+        const freshBytes = Math.max(0, Math.round((this._audioClockMs - submittedEndMs) * BYTES_PER_MS));
+        const tail = freshBytes > 0 ? this._lockedBuf.subarray(-freshBytes) : Buffer.alloc(0);
+        const voicedMs = this._lockedVoicedMs;
+        const lastVoiceAt = this._lockedLastVoiceAt;
+        this._resetSearchBuf();
+        this._resetVerseForOpening();
+        this._searchBuf = tail;
+        this._searchVoicedMs = voicedMs;
+        this._searchLastVoiceAt = lastVoiceAt;
+        this._searchHasSignal = tail.length > 0;
+        this._lastSearchCall = this._lastLockedCall;
+        this._lockedBuf = Buffer.alloc(0);
+        this._lockedVoicedMs = this._lockedLastVoiceAt = 0;
+        this.processing = true;
+        await this._processSearchTranscript({ text, words, rms, bufMs: chunkMs,
+          audioWindow, submittedBufferBytes: 0, myGen: this._searchGen });
+        return;
       }
 
       // Hallucination guard: same text 3x in a row → skip
@@ -1889,7 +2036,7 @@ export class AudioPipeline {
       console.error('[Pipeline] Locked chunk error:', err.message);
     } finally {
       this._lockedInFlight = Math.max(0, this._lockedInFlight - 1);
-      this.processing = this._lockedInFlight > 0;
+      if (this._searchGen === myGen) this.processing = this._lockedInFlight > 0;
       // If enough buffered audio is already waiting, run the next spot check
       // immediately instead of waiting for another ingest tick.
       setTimeout(() => this._maybeProcessLockedBufferedChunk(), 0);
@@ -2941,6 +3088,12 @@ export class AudioPipeline {
   _onPrayerChange(snap) {
     const prev = this._taraweehPos;
     this._taraweehPos = snap.position;
+    this.trace.record('prayer', {
+      from: prev, to: snap.position, reason: snap.reason,
+      rakat: snap.rakat, rakatInSet: snap.rakatInSet, setNumber: snap.setNumber,
+      completedRakat: snap.completedRakat, score: snap.confidence,
+      holding: this._preRukuSurah ? `${this._preRukuSurah}:${this._preRukuAyah}` : null,
+    });
     if (!this.taraweehMode) { this._emitTaraweeh(snap); return; }
 
     const wasStanding = prev === POSITIONS.QIYAM;

@@ -130,8 +130,14 @@ export class PrayerTracker {
    * @param {object}   [opts.config]   see DEFAULT_CONFIG
    * @param {number}   [opts.now]      injectable clock for tests
    */
-  constructor({ onChange = () => {}, log = null, config = {}, now = Date.now() } = {}) {
+  constructor({ onChange = () => {}, onDecision = null, log = null, config = {}, now = Date.now() } = {}) {
     this.onChange = onChange;
+    /**
+     * Called for every cue considered, accepted or not, with the score
+     * breakdown behind the verdict. Field reports almost always turn on "why
+     * was that takbeer ignored", and a silent `return null` cannot answer it.
+     */
+    this.onDecision = onDecision || (() => {});
     this._log = log || ((m) => console.log(`[Prayer] ${m}`));
     this.config = { ...DEFAULT_CONFIG };
     this.setConfig(config, { silent: true });
@@ -295,12 +301,36 @@ export class PrayerTracker {
     if (!cue || !cue.kind) return null;
     const kind = cue.kind;
     const pAudio = Number.isFinite(cue.confidence) ? cue.confidence : 1;
-    if (pAudio < MIN_AUDIO_CONFIDENCE) return null;
+    const from = this.position;
+    const dwellMs = now - this.enteredAt;
+
+    /** Record the verdict, then hand the caller the usual null-or-snapshot. */
+    const verdict = (reason, extra = {}) => {
+      const accepted = reason === 'accepted';
+      try {
+        this.onDecision({
+          kind, accepted, reason, from,
+          to: accepted ? this.position : from,
+          dwellMs,
+          text: cue.text || '',
+          pAudio, verseActive,
+          leading: cue.leading || 0,
+          trailing: cue.trailing || 0,
+          ...extra,
+        });
+      } catch (_) {}
+      if (!accepted && reason !== 'refractory' && reason !== 'replayed-audio') {
+        this._log(`cue ${kind} ignored (${reason})`);
+      }
+      return extra.result ?? null;
+    };
+
+    if (pAudio < MIN_AUDIO_CONFIDENCE) return verdict('buried-in-recitation');
 
     // Hard veto 1 — refractory. Loudspeaker echo and clipping produce a second
     // copy of the same syllables a few hundred ms later.
     if (this.lastAcceptedAt && now - this.lastAcceptedAt < TIMING.REFRACTORY_MS) {
-      return null;
+      return verdict('refractory', { sinceLastMs: now - this.lastAcceptedAt });
     }
 
     // Hard veto 2 — audio we have already acted on. The search buffer grows and
@@ -311,7 +341,7 @@ export class PrayerTracker {
     // seconds apart (sajda → jalsah → sajda).
     if (windowEndMs > 0 && this.consumedWindowEndMs
         && windowStartMs < this.consumedWindowEndMs) {
-      return null;
+      return verdict('replayed-audio', { windowStartMs, consumedUntil: this.consumedWindowEndMs });
     }
 
     this.lastCueKind = kind;
@@ -321,7 +351,9 @@ export class PrayerTracker {
     // Hard veto 3 — physiologically impossible dwell. A tasleem is exempt:
     // it is unambiguous and ends the set whenever it lands.
     const pTemporal = this._temporalScore(now);
-    if (pTemporal === 0 && kind !== 'tasleem') return null;
+    if (pTemporal === 0 && kind !== 'tasleem') {
+      return verdict('too-soon', { pTemporal, minDwellMs: this._windowFor(from).min });
+    }
 
     // Hard veto 4 — the ayah being recited contains this phrase and the chunk
     // carries more than the phrase alone. A cue spoken by itself still counts
@@ -329,29 +361,36 @@ export class PrayerTracker {
     // in a verse known to quote it, is the verse.
     const pVerse = 1 - Math.max(0, Math.min(1, verseActive));
     if (verseActive >= 0.85 && ((cue.leading || 0) > 0 || (cue.trailing || 0) > 0)) {
-      this._log(`cue ${kind} is part of the ayah being recited — ignored`);
-      return null;
+      return verdict('quoted-by-the-ayah', { pTemporal, pVerse });
     }
 
     const score = W_AUDIO * pAudio + W_VERSE * pVerse + W_TEMPORAL * pTemporal;
     if (score < ACCEPT_THRESHOLD) {
-      this._log(`cue ${kind} rejected (p=${score.toFixed(2)}: audio=${pAudio} verse=${pVerse.toFixed(2)} temporal=${pTemporal})`);
-      return null;
+      return verdict('outvoted', { pTemporal, pVerse, score: +score.toFixed(3), threshold: ACCEPT_THRESHOLD });
     }
 
     const result = this._applyCue(kind, now, score);
-    if (result && windowEndMs) this.consumedWindowEndMs = windowEndMs;
-    return result;
+    if (!result) return verdict('no-transition-from-here', { pTemporal, pVerse, score: +score.toFixed(3) });
+    if (windowEndMs) this.consumedWindowEndMs = windowEndMs;
+    return verdict('accepted', { pTemporal, pVerse, score: +score.toFixed(3), result });
   }
 
   _applyCue(kind, now, score) {
     const dwell = now - this.enteredAt;
 
-    // The tasleem is the one cue that means the same thing from anywhere: the
-    // set is over. Whatever posture the machine thought it was in, it was
-    // wrong, and insisting on tashahhud first would strand it for the rest of
-    // the prayer.
-    if (kind === 'tasleem') return this._completeSet(now, score);
+    // Salam is said sitting, after tashahhud. Treating it as valid from ruku'
+    // or the first sujood lets a Quranic "سلام" (43:89 "وقل سلام") or a
+    // hallucinated greeting wipe the rak'ah count — that is what happened on a
+    // real Makkah night-26 recording. If the machine is lost in sujood, the
+    // dwell timeout still walks it to jalsah / sajda 2, where a real tasleem
+    // is accepted.
+    if (kind === 'tasleem') {
+      const seated = this.position === POSITIONS.TASHAHHUD
+        || this.position === POSITIONS.SAJDA2
+        || this.position === POSITIONS.JALSAH;
+      if (!seated) return null;
+      return this._completeSet(now, score);
+    }
 
     // Sujood immediately after tasleem are corrective, never a new rak'ah.
     if (kind === 'takbeer' && now < this.postSalamUntil && !this.inSahw) {
@@ -557,13 +596,20 @@ export class PrayerTracker {
     const certain = fatihaEnd || (s === 1 && a >= 5);
     if (!certain && !(locked && confidence >= 0.6)) return null;
     if (this.position === POSITIONS.QIYAM) return null;
+    // Tashahhud is already sitting after a counted rak'ah. A stray 1:2 lock
+    // must not stand him up or the tasleem that follows is missed.
+    if (this.position === POSITIONS.TASHAHHUD) return null;
 
     // Recitation while we believed he was bowing or prostrating means the rest
-    // of the cue chain was lost. Anything past the second sujood closes the
-    // rak'ah we were in; earlier than that we only know he is standing again.
-    const shouldClose = certain && this.position !== POSITIONS.TASHAHHUD
-      && this.position !== POSITIONS.SAJDAH_TILAWAH
-      && this.position !== POSITIONS.QUNOOT;
+    // of the cue chain was lost. Al-Fatiha (or any lock) during the sujood
+    // cycle means the imam has already stood for the next rak'ah — close the
+    // one we were in. The same lock during ruku' / i'tidal is usually a false
+    // bow (opening takbeer, "rabbana lakal hamd" matching 1:2), so we stand
+    // back up without counting.
+    const inSujoodCycle = this.position === POSITIONS.SAJDA1
+      || this.position === POSITIONS.JALSAH
+      || this.position === POSITIONS.SAJDA2;
+    const shouldClose = inSujoodCycle;
     this.resyncs += 1;
     this.missedCues += 1;
     this._log(`verse anchor ${s}:${a}${fatihaEnd ? ' (end of Fatiha)' : ''} while in ${this.position} — resyncing to qiyam`);

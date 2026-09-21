@@ -1,5 +1,61 @@
 # Changelog
 
+## 3.4.6 - 2026-09-20
+
+- Include PR #15 through a072c0e: mosque Whisper cue variants, seated-only tasleem handling, and safeguards against false rak'ah counts and tashahhud resets.
+- Add real-WAV replay commands and multipart support for the optional local CPU Whisper endpoint.
+- Keep the CPU lock held during lazy transcription and initialize the replay clock before receiving backend events.
+- Add multipart/concurrency and WAV streaming regression tests while retaining the compact UI, SDK menu, diagnostics, and Bismillah/Ya-Sin fixes.
+
+## 3.4.5 - 2026-09-20
+
+- **Field diagnostics.** Each connection now carries a bounded, structured
+  trace of what the pipeline heard and what it decided — transcripts with
+  their audio window and latency, sampled voice-gate levels, verse locks,
+  posture transitions, errors. Recording is always on; the toggle in
+  Settings → Advanced only opens the live feed, so the minute before someone
+  noticed a problem is already captured. Every cue considered is recorded with
+  its verdict and score breakdown, because the question a report has to answer
+  is almost always "why was that takbeer ignored". A user sends one with a tap;
+  `DIAG_TOKEN` gates reading them back, and without it the read routes do not
+  exist. Reports carry transcripts, never audio, and anything credential-shaped
+  is replaced with its length and last four characters.
+- **Short utterances are no longer discarded.** The trace found this on its
+  first run: a takbeer is about a second of speech in silence, but the search
+  window does not fire until three seconds have buffered, so the voice-hangover
+  reset was throwing it away before it was ever transcribed. A burst between
+  400 ms and 2.5 s that ends in silence is now sent.
+- **Mode echoes from the backend reach the client again.**
+  `{ type: 'sys_status', ...s }` where `s` names its own sub-type collapses to
+  `{ type: 'taraweeh_mode' }`, which matched no branch on the client, so every
+  one was silently dropped. The sub-type now travels beside the envelope.
+
+## 3.4.4 - 2026-09-20
+
+- Treat Bismillah as the start of a new surah search, releasing the previous verse, candidates, and display timer while preserving prayer counts and fresh audio.
+- Preserve short Quran openers such as Ya-Sin after Bismillah or isti'adhah, instead of misclassifying them as preamble-only speech.
+- Match opening-plus-verse transcripts immediately even during a previous lock; reject delayed responses belonging to the old lock.
+- Apply the same short-opener correction to the phone/glasses fallback detector.
+
+## 3.4.3 - 2026-09-20
+
+- Show only the surah/ayah reference and countdown in the glasses verse header, with the timer visible from the first frame.
+- Limit opening-preamble notices to 1.5 seconds without extending them on duplicate detections; fresh verse text takes over immediately.
+- Consume recognized opening audio and keep the next search window short, preserving audio received during transcription for the next verse.
+
+## 3.4.2 - 2026-09-20
+
+- Upgrade Even Hub SDK to 0.0.15; require Even App 2.2.10 and derive package compatibility from the installed SDK.
+- Add rak'ah minus/plus actions to the native glasses contextual menu and retain them across page rebuilds.
+- Keep capture running when the system menu opens or closes.
+- Show Bismillah and A'udhu billah detections on glasses in transliteration and English for up to four seconds; a recognized verse takes over immediately.
+
+## 3.4.1 - 2026-09-20
+
+- Replace the multi-row prayer panel with a compact rak'ah count and minus/plus controls.
+- Remove phone posture chips, set details, target selectors, reset controls, and the posture overlay to keep the verse area in place.
+- Keep automatic posture and tashahhud tracking in the backend, with the existing glasses display.
+
 ## 3.4.0 - 2026-09-20
 
 Rak'ah tracking, rebuilt. The old tracker was a three-state machine

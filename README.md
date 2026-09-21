@@ -86,6 +86,49 @@ Drive the whole chain without an API key or a microphone:
 npm run replay:prayer -- --rakat=4     # real server + WebSocket + stand-in ASR
 ```
 
+### Diagnosing a bug that happened to someone else
+Console logs are the wrong tool for a field bug: they interleave every user on
+a shared host, they are unstructured, and by the time someone says "it counted
+nine rak'ah instead of eight" they are long gone.
+
+Each WebSocket connection carries a bounded, structured trace of what the
+pipeline heard and what it decided — transcripts with their audio window and
+round-trip latency, sampled voice-gate levels, verse locks, posture
+transitions, and errors. Recording is always on; the toggle in
+**Settings → Advanced → Listening trace** only opens the live feed, so the
+minute leading up to a problem is already captured.
+
+The question a report has to answer is nearly always *why was that takbeer
+ignored*, so rejections are recorded as deliberately as acceptances, each with
+the score breakdown behind it:
+
+| Verdict | Means |
+| :-- | :-- |
+| `accepted` | the posture moved |
+| `refractory` | inside the 1.8 s window after the last accepted cue — an echo |
+| `replayed-audio` | this audio was already acted on; the search buffer re-sent it |
+| `too-soon` | below the current posture's minimum dwell |
+| `quoted-by-the-ayah` | the verse being recited contains the phrase verbatim |
+| `buried-in-recitation` | too many words follow the cue for it to be a cue |
+| `outvoted` | the weighted vote came in under the threshold |
+| `no-transition-from-here` | valid cue, but this posture has nowhere to go on it |
+
+A user sends a report with one tap (**Send to developer**), or exports it with
+**Copy report** / **Save report**. Reports carry transcripts, never audio, and
+anything credential-shaped is replaced with its length and last four
+characters on both sides of the wire.
+
+Set `DIAG_TOKEN` on the backend to read them back; without it the read routes
+are not mounted at all.
+
+```bash
+curl -H "x-diag-token: $DIAG_TOKEN" $BACKEND/api/traces        # index
+curl -H "x-diag-token: $DIAG_TOKEN" $BACKEND/api/traces/r7     # one report
+```
+
+The last 40 reports are held in memory only — a redeploy drops them, and they
+do not accumulate.
+
 ### Display
 - **Three-line verse card** — Arabic (Amiri font), transliteration, and English translation
 - **G2 glasses rendering** — formatted text pushed to the 576×288 micro-LED display via Even Hub SDK
