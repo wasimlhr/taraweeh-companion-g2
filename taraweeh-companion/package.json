@@ -1,6 +1,6 @@
 {
   "name": "taraweeh-companion",
-  "version": "3.4.5",
+  "version": "3.4.6",
   "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {
@@ -20,11 +20,13 @@
     "build:evenhub": "node scripts/build-evenhub-dist.js",
     "pack:evenhub": "node scripts/pack-evenhub.js",
     "pack:evenhub:check": "node scripts/pack-evenhub.js --check",
-    "test": "node scripts/check-version-alignment.js && node scripts/check-glasses-glyphs.js && node --test backend/transcriptionRouter.test.js backend/prayerTracker.test.js backend/prayerPipeline.test.js backend/sessionTrace.test.js scripts/glasses-ui.test.js",
+    "test": "node scripts/check-version-alignment.js && node scripts/check-glasses-glyphs.js && node --test backend/transcriptionRouter.test.js backend/prayerTracker.test.js backend/prayerPipeline.test.js backend/sessionTrace.test.js scripts/glasses-ui.test.js scripts/replay-wav.test.js",
+    "test:local-whisper": "python scripts/test_local_whisper_server.py",
     "test:version": "node scripts/check-version-alignment.js",
     "test:provider-key": "node scripts/check-provider-key.js",
     "test:glyphs": "node scripts/check-glasses-glyphs.js",
-    "replay:prayer": "node scripts/replay-prayer-session.js"
+    "replay:prayer": "node scripts/replay-prayer-session.js",
+    "replay:wav": "node scripts/replay-wav-session.js"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "0.0.15",

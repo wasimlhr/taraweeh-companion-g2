@@ -1,6 +1,6 @@
 {
   "name": "taraweeh-companion",
-  "version": "3.4.5",
+  "version": "3.4.6",
   "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {
@@ -23,6 +23,7 @@
     "build:evenhub": "cd taraweeh-companion && npm run build:evenhub",
     "pack:evenhub": "cd taraweeh-companion && npm run pack:evenhub",
     "test": "cd taraweeh-companion && npm test",
+    "replay:wav": "cd taraweeh-companion && npm run replay:wav --",
     "replay:prayer": "cd taraweeh-companion && node scripts/replay-prayer-session.js"
   },
   "dependencies": {

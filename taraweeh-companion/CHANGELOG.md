@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.6 - 2026-09-20
+
+- Include PR #15 through a072c0e: mosque Whisper cue variants, seated-only tasleem handling, and safeguards against false rak'ah counts and tashahhud resets.
+- Add real-WAV replay commands and multipart support for the optional local CPU Whisper endpoint.
+- Keep the CPU lock held during lazy transcription and initialize the replay clock before receiving backend events.
+- Add multipart/concurrency and WAV streaming regression tests while retaining the compact UI, SDK menu, diagnostics, and Bismillah/Ya-Sin fixes.
+
 ## 3.4.5 - 2026-09-20
 
 - **Field diagnostics.** Each connection now carries a bounded, structured

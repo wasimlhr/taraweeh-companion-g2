@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.5 — rak'ah tracking: full posture state machine, rak'ah + clock on the glasses top bar
+ * v3.4.6 — rak'ah tracking: full posture state machine, rak'ah + clock on the glasses top bar
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
