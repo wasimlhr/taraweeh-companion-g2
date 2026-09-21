@@ -24,7 +24,8 @@
     "test:version": "node scripts/check-version-alignment.js",
     "test:provider-key": "node scripts/check-provider-key.js",
     "test:glyphs": "node scripts/check-glasses-glyphs.js",
-    "replay:prayer": "node scripts/replay-prayer-session.js"
+    "replay:prayer": "node scripts/replay-prayer-session.js",
+    "replay:wav": "node scripts/replay-wav-session.js"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.10",
