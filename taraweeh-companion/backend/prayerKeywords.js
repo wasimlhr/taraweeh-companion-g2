@@ -33,15 +33,18 @@ export function normalizeCue(text) {
 
 // ── Cue patterns (all tested against normalizeCue output) ───────────────────
 
-/** "الله أكبر" — every posture change except standing up from ruku'. */
-const TAKBEER_RE = /الله\s*(و\s*)?(ال)?اكب[ريا]/u;
+/** "الله أكبر" — every posture change except standing up from ruku'.
+ *  Mosque ASR often hears the opening as "اللهم أكبر". */
+const TAKBEER_RE = /الله(م)?\s*(و\s*)?(ال)?اكب[ريا]/u;
 
 // "سمع الله لمن حمده" — the imam says this rising out of ruku'. Whisper hears
-// the long vowel as often as not, so "سمع" and "سميع" both have to match.
-const TASMEE_RE = /سم[عي]ع?\s*ا?لله\s*(لمن|من)\s*حمد/u;
+// the long vowel as often as not, so "سمع" and "سميع" both have to match, and
+// the opening "سمع" is frequently dropped ("الله لمن حميدا").
+const TASMEE_RE = /(سم[عي]ع?\s*)?ا?لله\s*(لمن|من)\s*حم[ي]?د/u;
 
-/** "ربنا ولك الحمد" — the congregation's reply, so it also marks i'tidal. */
-const TAHMEED_RE = /ربنا\s*(و\s*)?لك\s*ال\s*حمد|ربنا\s*(و\s*)?لك\s*الحمد/u;
+/** "ربنا ولك الحمد" — the congregation's reply, so it also marks i'tidal.
+ *  Small Whisper often returns just "ولك الحمد" / "أولك الحمد". */
+const TAHMEED_RE = /ربنا\s*(و\s*)?(ل)?ك\s*ال\s*حمد|(ا?و)?لك\s*ال\s*حمد/u;
 
 /** "السلام عليكم ورحمة الله" — ends the set of rak'ahs. */
 const TASLEEM_RE = /(ال)?سلام\s*علي\s*كم|(ال)?سلام\s*عليكم/u;
