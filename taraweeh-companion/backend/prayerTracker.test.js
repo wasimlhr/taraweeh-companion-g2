@@ -734,4 +734,3 @@ test('prayerTracker — night-26 mosque ASR sequence', () => {
   assert.equal(h.tracker.setsCompleted, 0);
   assert.equal(h.tracker.completedRakat, 1);
 });
-
