@@ -1,0 +1,3 @@
+node_modules/
+# Generated from ../app/index.html by `npm run build:web`
+www/

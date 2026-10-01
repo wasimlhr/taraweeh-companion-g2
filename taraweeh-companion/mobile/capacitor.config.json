@@ -1,0 +1,11 @@
+{
+  "appId": "com.taraweehcompanion.app",
+  "appName": "Quran Companion",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

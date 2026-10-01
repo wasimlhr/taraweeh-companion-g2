@@ -1,0 +1,28 @@
+{
+  "name": "taraweeh-companion-mobile",
+  "version": "3.4.0",
+  "private": true,
+  "description": "Quran Companion standalone phone app (iOS + Android) — phone mic in, phone screen out",
+  "type": "module",
+  "scripts": {
+    "build:web": "node scripts/build-web.js",
+    "test": "node --test scripts/build-web.test.js",
+    "sync": "npm run build:web && cap sync",
+    "android:debug": "npm run sync && cd android && ./gradlew assembleDebug",
+    "android:open": "cap open android",
+    "ios:open": "cap open ios"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2"
+  }
+}

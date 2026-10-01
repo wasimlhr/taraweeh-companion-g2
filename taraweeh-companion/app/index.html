@@ -561,6 +561,17 @@ body {
   gap: 8px;
   margin: 0 0 10px;
 }
+/* Standalone phone app: no glasses, so glasses-only controls go away and the
+   phone screen becomes the display — the verse gets the room. */
+.standalone-only { display: none !important; }
+html.standalone .standalone-only { display: revert !important; }
+html.standalone .g2-only { display: none !important; }
+html.standalone #verseCard { min-height: 220px; max-height: 75vh; }
+html.standalone .verse-pos { font-size: 13px; }
+html.standalone .verse-arabic { font-size: 32px; line-height: 1.85; }
+html.standalone .verse-translit { font-size: 17px; }
+html.standalone .verse-translation { font-size: 16px; }
+
 .rk-count {
   font-size: 13px;
   font-weight: 600;
@@ -876,7 +887,8 @@ body {
 <div id="splashScreen" style="position:fixed;inset:0;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity 400ms ease;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
   <div style="font-size:40px;line-height:1;margin-bottom:16px">☽</div>
   <div style="font-size:22px;font-weight:600;letter-spacing:0.5px">Quran Companion</div>
-  <div style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">for Even Realities G2</div>
+  <div class="g2-only" style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">for Even Realities G2</div>
+  <div class="standalone-only" style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">Live recitation follow-along</div>
   <div id="splashVersion" style="position:absolute;bottom:24px;font-size:11px;opacity:0.4;letter-spacing:0.5px"></div>
 </div>
 
@@ -940,7 +952,8 @@ body {
       <div class="match-idle" id="matchIdle">
         <div class="anim">◌</div>
         <p>Press Start to begin</p>
-        <button type="button" class="help-link" onclick="showHelp()">G2 controls &amp; modes</button>
+        <button type="button" class="help-link g2-only" onclick="showHelp()">G2 controls &amp; modes</button>
+        <button type="button" class="help-link standalone-only" onclick="showHelp()">How it works</button>
       </div>
       <!-- Live matching panel (shown once audio is flowing) -->
       <div id="matchPanel" style="display:none">
@@ -1014,7 +1027,7 @@ body {
   <button id="wakeServerMainBtn" class="back-btn btn-primary btn-arrow" style="display:none;margin-top:8px;font-size:13px">Wake server</button>
 
   <!-- Glasses second-line selector (Arabic / Transliteration / English only) -->
-  <div style="margin-top:12px">
+  <div class="g2-only" style="margin-top:12px">
     <div class="mv-toggle-group" role="group">
       <button type="button" class="mv-toggle-btn active" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
       <button type="button" class="mv-toggle-btn" id="btnGlassesEnOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
@@ -1055,7 +1068,7 @@ body {
   <div class="s-section">Microphone</div>
   <div class="s-card">
     <div class="s-row">
-      <div class="toggle-group" role="group">
+      <div class="toggle-group g2-only" role="group">
         <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">G2 mic</button>
         <button type="button" class="toggle-btn" id="btnPhoneMic" onclick="setMicSource('phone')">Phone mic</button>
       </div>
@@ -1139,7 +1152,7 @@ body {
       </div>
       <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Madd, zabar, zer and the other marks on the verse text — and on the live hearing preview for recognized words.</span>
     </div>
-    <div class="s-row">
+    <div class="s-row g2-only">
       <span class="s-label">Second line on glasses</span>
       <div class="toggle-group" role="group">
         <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
@@ -1217,8 +1230,8 @@ body {
     <div style="width:60px"></div>
   </div>
 
-  <div class="s-section">Glasses gestures</div>
-  <div class="s-card" id="helpCard">
+  <div class="s-section g2-only">Glasses gestures</div>
+  <div class="s-card g2-only" id="helpCard">
     <div class="s-row">
       <p class="s-hint" style="margin:0 0 12px">Temple and R1 ring share the same gestures.</p>
       <ul class="help-list">
@@ -1252,6 +1265,28 @@ body {
 <script>
 (function () {
   const APP_VERSION = 'v3.4.6';
+
+  // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
+  // No glasses — the phone mic is the input and the phone screen the display.
+  const IS_NATIVE = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
+    && window.Capacitor.isNativePlatform());
+  const IS_STANDALONE = IS_NATIVE || window.__TARAWEEH_STANDALONE__ === true
+    || /[?&]standalone=1(&|$)/.test(location.search);
+  if (IS_STANDALONE) document.documentElement.classList.add('standalone');
+
+  /**
+   * A native Capacitor plugin, or null in a browser / the Even Hub WebView.
+   * The mobile build ships @capacitor/core's capacitor.js, whose registerPlugin
+   * proxies straight to the native side — no bundler needed for this page.
+   */
+  function nativePlugin(name) {
+    if (!IS_NATIVE) return null;
+    var cap = window.Capacitor;
+    if (cap.Plugins && cap.Plugins[name]) return cap.Plugins[name];
+    if (typeof cap.registerPlugin !== 'function') return null;
+    if (typeof cap.isPluginAvailable === 'function' && !cap.isPluginAvailable(name)) return null;
+    return cap.registerPlugin(name);
+  }
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1317,6 +1352,12 @@ body {
   }
 
   async function acquireWakeLock() {
+    // 0. Native app: the OS keep-awake flag. The silent-tone fallback below
+    //    would hold an output audio session next to the live mic, so skip it.
+    var keepAwake = nativePlugin('KeepAwake');
+    if (keepAwake) {
+      try { await keepAwake.keepAwake(); return; } catch (e) { /* fall through */ }
+    }
     // 1. Wake Lock API
     if ('wakeLock' in navigator) {
       try {
@@ -1334,6 +1375,8 @@ body {
   }
 
   function releaseWakeLock() {
+    var keepAwake = nativePlugin('KeepAwake');
+    if (keepAwake) { try { keepAwake.allowSleep(); } catch (e) {} }
     if (S.wakeLock) { try { S.wakeLock.release(); } catch(e) {} S.wakeLock = null; }
     _stopNoSleepAudio();
   }
@@ -4116,6 +4159,9 @@ body {
         } catch (_) {
           S.audioContext = new AudioContext();
         }
+        // iOS WKWebView starts a context made outside the tap handler suspended,
+        // which leaves onaudioprocess silent.
+        if (S.audioContext.state === 'suspended') S.audioContext.resume().catch(function () {});
         var _ratio = S.audioContext.sampleRate / TARGET_SR;
         var _lp = makeLowpass(S.audioContext.sampleRate, TARGET_SR);
         var src = S.audioContext.createMediaStreamSource(stream);
@@ -4567,6 +4613,29 @@ body {
       setPill('sPillG2', '', 'PC mic');
       btn.textContent = '\u2192 Start Listening';
       btn.disabled = false;
+    }
+  }
+
+  // ─── Standalone phone app ─────────────────────────────────────────────────
+  // Skips the G2 bridge probe entirely (it would sit on its 8s timeout) and
+  // goes straight to the phone-mic path that phone-only mode already uses.
+  function setupStandalone() {
+    S.isG2 = false;
+    log('Standalone app — phone mic' + (IS_NATIVE ? ' (native)' : ''), 'ok');
+    setPill('sPillG2', '', 'Phone mic');
+    var btn = document.getElementById('recordBtn');
+    btn.textContent = '\u2192 Start Listening';
+    btn.disabled = false;
+
+    // Android back button: close Settings / Help first. On the main screen,
+    // background the app rather than exit so the rak'ah count survives.
+    var app = nativePlugin('App');
+    if (app && typeof app.addListener === 'function') {
+      app.addListener('backButton', function () {
+        if (document.getElementById('settingsView').style.display === 'block') hideSettings();
+        else if (document.getElementById('helpView').style.display === 'block') hideHelp();
+        else app.minimizeApp();
+      });
     }
   }
 
@@ -5140,7 +5209,8 @@ body {
     // Connect WS eagerly on load so it's ready when user presses Start
     connectWS();
 
-    await detectBridge();
+    if (IS_STANDALONE) setupStandalone();
+    else await detectBridge();
 
     // Permission requests must be user-gesture initiated. Do not auto-start on G2.
   });
