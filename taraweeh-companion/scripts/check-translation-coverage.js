@@ -13,7 +13,7 @@
  *   node scripts/check-translation-coverage.js --all --samples
  */
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backendDir = join(__dirname, '..', 'backend');
@@ -24,8 +24,11 @@ const arg = (n, d) => {
   return hit ? hit.slice(n.length + 3) : d;
 };
 
-const { loadQuran } = await import(join(backendDir, 'keywordMatcher.js'));
-const { getVerseData } = await import(join(backendDir, 'verseData.js'));
+// Node's ESM loader needs a file URL for Windows absolute paths; importing a
+// raw C:\\ path is interpreted as an unsupported URL scheme.
+const moduleUrl = (name) => pathToFileURL(join(backendDir, name)).href;
+const { loadQuran } = await import(moduleUrl('keywordMatcher.js'));
+const { getVerseData } = await import(moduleUrl('verseData.js'));
 
 // The set server.js will actually accept (LOCAL_TRANSLATION_LANGS). Anything
 // outside it is rejected and falls back to built-in English, so only these
