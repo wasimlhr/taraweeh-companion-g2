@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.6 — rak'ah tracking: full posture state machine, rak'ah + clock on the glasses top bar
+ * v3.4.7 — Uzbek Latin + Cyrillic translations (Alauddin Mansour)
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -45,7 +45,7 @@ const ALLOWED_MODELS = {
   openai: new Set(['gpt-4o-mini-transcribe', 'gpt-transcribe', 'gpt-4o-transcribe', 'whisper-1']),
   deepgram: new Set(['nova-3', 'whisper-large']),
 };
-const LOCAL_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+const LOCAL_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc']);
 
 let lastEndpointLifecycle = {
   component: 'model',
@@ -185,7 +185,7 @@ app.get('/api/status', (req, res) => {
     allowedProviders: [...STT_ENGINES, 'auto'],
     allowedModels: Object.fromEntries(Object.entries(ALLOWED_MODELS).map(([k, v]) => [k, [...v]])),
     translationSource: 'local-bundled',
-    allowedTranslationLangs: ['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv'],
+    allowedTranslationLangs: ['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc'],
     endpointLifecycle: lastEndpointLifecycle,
   });
 });

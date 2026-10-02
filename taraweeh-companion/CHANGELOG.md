@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.4.7 - 2026-10-02
+
+- **Uzbek translations (Alauddin Mansour).** Both scripts are selectable:
+  Latin (`uz`) on phone and glasses, and Cyrillic (`uzc`) on the phone.
+  The G2 font has Russian Cyrillic and Ў but is missing Ғ, Қ and Ҳ, so
+  Cyrillic Uzbek is shown as the same translator's Latin on the glasses
+  rather than dropping those letters. Latin was completed from the full
+  Cyrillic text; the 22-ayah Latin sample matches that conversion.
+
 ## 3.4.6 - 2026-09-20
 
 - Include PR #15 through a072c0e: mosque Whisper cue variants, seated-only tasleem handling, and safeguards against false rak'ah counts and tashahhud resets.

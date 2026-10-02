@@ -30,7 +30,7 @@ const { getVerseData } = await import(join(backendDir, 'verseData.js'));
 // The set server.js will actually accept (LOCAL_TRANSLATION_LANGS). Anything
 // outside it is rejected and falls back to built-in English, so only these
 // count toward pass/fail.
-const SELECTABLE_LANGS = ['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv'];
+const SELECTABLE_LANGS = ['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc'];
 let langs;
 if (argv.includes('--all')) {
   langs = SELECTABLE_LANGS;

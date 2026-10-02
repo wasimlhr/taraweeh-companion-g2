@@ -885,7 +885,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.6</span>
+      <span class="version" id="versionEl">v3.4.7</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1125,11 +1125,13 @@ body {
           <option value="ru" title="Shown in Russian on both phone and glasses.">Russian</option>
           <option value="sv" title="Shown in Swedish on both phone and glasses.">Swedish</option>
           <option value="tr" title="Shown in Turkish on both phone and glasses.">Turkish</option>
+          <option value="uz" title="Alauddin Mansour. Latin Uzbek on both phone and glasses.">Uzbek (Latin)</option>
+          <option value="uzc" title="Alauddin Mansour. Cyrillic on the phone; Latin on the glasses because Ғ Қ Ҳ are missing from the G2 font.">Uzbek (Cyrillic)</option>
           <option value="ur" title="Urdu on phone; English fallback on glasses because Urdu glyph shaping is unavailable.">Urdu</option>
         </optgroup>
       </select>
       <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;min-height:1.4em"></span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Bundled locally. Urdu, Bengali and Arabic show English on the glasses.</span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Bundled locally. Urdu, Bengali and Arabic show English on the glasses. Cyrillic Uzbek shows Latin on the glasses (Ғ Қ Ҳ are not in the G2 font).</span>
     </div>
     <div class="s-row">
       <span class="s-label">Quranic marks (tashkeel)</span>
@@ -1251,7 +1253,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.6';
+  const APP_VERSION = 'v3.4.7';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1804,7 +1806,7 @@ body {
   const MAX_REBUILD_CHARS = 1000;  // rebuildPageContainer limit per G2 SDK docs
   const MAX_UPGRADE_CHARS = 2000;  // textContainerUpgrade limit
   const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
-  const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+  const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc']);
 
   // ─── Persistent storage ───────────────────────────────────────────────────
   // Browser localStorage is wiped on Even Hub / glasses restart inside the
