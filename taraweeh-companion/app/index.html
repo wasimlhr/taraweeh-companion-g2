@@ -247,6 +247,12 @@ body {
   color: var(--tc-2);
   line-height: 1.55;
 }
+.verse-lang-label {
+  font-size: 11px;
+  color: var(--tc-3, #888);
+  margin-top: 4px;
+  line-height: 1.4;
+}
 /* ── Matching Panel (SEARCHING state) ──────────────────────────────────── */
 .verse-searching {
   display: flex; flex-direction: column; gap: 10px; padding: 4px 0;
@@ -885,7 +891,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.6</span>
+      <span class="version" id="versionEl">v3.4.9</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -996,6 +1002,7 @@ body {
       <div class="verse-translit" id="verseTranslit"></div>
       <div class="verse-divider"></div>
       <div class="verse-translation" id="verseTrans"></div>
+      <div class="verse-lang-label" id="verseLangLabel"></div>
     </div>
     <div id="verseNavRow" class="verse-nav-row" style="display:none">
       <button type="button" class="nav-arrow-btn" onclick="manualPrevAyah()" title="Previous ayah">← Prev</button>
@@ -1114,7 +1121,7 @@ body {
     </div>
     <div class="s-row">
       <span class="s-label">Translation</span>
-      <select id="settingLang" onchange="updateTranslationDesc()">
+      <select id="settingLang" onchange="onTranslationLangChange()">
         <optgroup label="Languages">
           <option value="" title="Shown in English on both phone and glasses.">English (built-in)</option>
           <option value="bn" title="Bengali on phone; English fallback on glasses because Bengali glyphs are unavailable.">Bengali</option>
@@ -1125,11 +1132,15 @@ body {
           <option value="ru" title="Shown in Russian on both phone and glasses.">Russian</option>
           <option value="sv" title="Shown in Swedish on both phone and glasses.">Swedish</option>
           <option value="tr" title="Shown in Turkish on both phone and glasses.">Turkish</option>
+          <option value="uz" title="Alauddin Mansour. Download once, then Latin Uzbek on phone and glasses without Railway.">Uzbek (Latin)</option>
+          <option value="uzc" title="Alauddin Mansour. Download once. Cyrillic on the phone; Latin on the glasses because Ғ Қ Ҳ are missing from the G2 font.">Uzbek (Cyrillic)</option>
           <option value="ur" title="Urdu on phone; English fallback on glasses because Urdu glyph shaping is unavailable.">Urdu</option>
         </optgroup>
       </select>
       <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;min-height:1.4em"></span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Bundled locally. Urdu, Bengali and Arabic show English on the glasses.</span>
+      <span class="s-hint" id="langPackStatus" style="font-size:11px;display:block;margin-top:4px"></span>
+      <button type="button" class="toggle-btn" id="langPackBtn" style="display:none;margin-top:8px" onclick="downloadSelectedLangPack()">Download language pack</button>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">English is built in. Other languages download once (~250–420 KB) and stay on the device — Railway is only for listening, not for the translation text. Urdu and Bengali still show English on the glasses. Cyrillic Uzbek shows Latin on the glasses (Ғ Қ Ҳ are not in the G2 font).</span>
     </div>
     <div class="s-row">
       <span class="s-label">Quranic marks (tashkeel)</span>
@@ -1251,7 +1262,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.6';
+  const APP_VERSION = 'v3.4.9';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1804,7 +1815,245 @@ body {
   const MAX_REBUILD_CHARS = 1000;  // rebuildPageContainer limit per G2 SDK docs
   const MAX_UPGRADE_CHARS = 2000;  // textContainerUpgrade limit
   const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
-  const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+  const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc']);
+  const TRANSLATION_LABELS = {
+    '': 'English (built-in)',
+    en: 'English',
+    ur: 'Urdu',
+    fr: 'French',
+    es: 'Spanish',
+    id: 'Indonesian',
+    tr: 'Turkish',
+    bn: 'Bengali',
+    zh: 'Chinese',
+    ru: 'Russian',
+    sv: 'Swedish',
+    uz: 'Uzbek (Latin)',
+    uzc: 'Uzbek (Cyrillic)',
+  };
+  var _backendAllowedLangs = null;
+  var _backendVersion = '';
+  var _activeTranslationLang = null;
+  var _langPacks = {};
+  var _langPackLoading = null;
+  var _lastPhoneState = null;
+  var _lastPhoneWhisper = null;
+  var LANG_PACK_KEYS = {
+    en: 'en', ur: 'ur', fr: 'fr', es: 'es', id: 'id', tr: 'tr',
+    bn: 'bn', zh: 'zh', ru: 'ru', sv: 'sv', uz: 'uzc', uzc: 'uzc'
+  };
+  var LANG_PACK_KB = {
+    en: 255, ur: 358, fr: 290, es: 285, id: 285, tr: 257,
+    bn: 346, zh: 247, ru: 314, sv: 328, uzc: 418
+  };
+  var GLASSES_ENGLISH_LANGS = { ur: 1, bn: 1, ar: 1, fa: 1, hi: 1 };
+
+  // Same map as backend/uzbekLatin.js — G2-safe o‘ / g‘ (U+2018).
+  var UZ_CYR_LAT = {
+    'А':'A','а':'a','Б':'B','б':'b','В':'V','в':'v','Г':'G','г':'g',
+    'Ғ':'G\u2018','ғ':'g\u2018','Д':'D','д':'d','Ё':'Yo','ё':'yo',
+    'Ж':'J','ж':'j','З':'Z','з':'z','И':'I','и':'i','Й':'Y','й':'y',
+    'К':'K','к':'k','Қ':'Q','қ':'q','Л':'L','л':'l','М':'M','м':'m',
+    'Н':'N','н':'n','О':'O','о':'o','П':'P','п':'p','Р':'R','р':'r',
+    'С':'S','с':'s','Т':'T','т':'t','У':'U','у':'u','Ў':'O\u2018','ў':'o\u2018',
+    'Ф':'F','ф':'f','Х':'X','х':'x','Ҳ':'H','ҳ':'h','Ц':'Ts','ц':'ts',
+    'Ч':'Ch','ч':'ch','Ш':'Sh','ш':'sh','Щ':'Sh','щ':'sh','Ъ':'\u2019','ъ':'\u2019',
+    'Ь':'','ь':'','Э':'E','э':'e','Ю':'Yu','ю':'yu','Я':'Ya','я':'ya'
+  };
+  var UZ_VOWELS = /[аеиоуўэюяАЕИОУЎЭЮЯaeiouAEIOU]/;
+  var UZ_YE_BEFORE = /[\s(\-«"“]/;
+  function cyrillicToUzbekLatinClient(text) {
+    var s = String(text || '');
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === 'Е' || ch === 'е') {
+        var prev = i === 0 ? ' ' : s.charAt(i - 1);
+        var ye = i === 0 || UZ_YE_BEFORE.test(prev) || UZ_VOWELS.test(prev);
+        out += ch === 'Е' ? (ye ? 'Ye' : 'E') : (ye ? 'ye' : 'e');
+      } else if (Object.prototype.hasOwnProperty.call(UZ_CYR_LAT, ch)) {
+        out += UZ_CYR_LAT[ch];
+      } else {
+        out += ch;
+      }
+    }
+    return out;
+  }
+  function packKeyFor(lang) {
+    return LANG_PACK_KEYS[String(lang || '').trim()] || '';
+  }
+  function sendUsage(event, extra) {
+    try {
+      if (!S.ws || S.ws.readyState !== 1) return;
+      var msg = { type: 'usage', event: String(event || '').slice(0, 40) };
+      if (extra) {
+        if (extra.lang) msg.lang = String(extra.lang).slice(0, 16);
+        if (extra.ok === false) msg.ok = false;
+        else if (extra.ok === true) msg.ok = true;
+        if (extra.message) msg.message = String(extra.message).slice(0, 160);
+        if (extra.kind) msg.kind = String(extra.kind).slice(0, 40);
+      }
+      S.ws.send(JSON.stringify(msg));
+    } catch (_) {}
+  }
+  function hasLangPack(lang) {
+    var key = packKeyFor(lang);
+    return !!(key && Array.isArray(_langPacks[key]) && _langPacks[key].length === 114);
+  }
+  function lookupPackVerse(lang, surah, ayah) {
+    var key = packKeyFor(lang);
+    var row = key && _langPacks[key] && _langPacks[key][surah - 1];
+    return (row && row[ayah - 1]) || '';
+  }
+  function applyLocalTranslation(state) {
+    if (!state) return state;
+    var lang = (S.settings && S.settings.lang) || '';
+    if (!lang) return state;
+    var text = lookupPackVerse(lang, state.surah, state.ayah);
+    if (!text) return state;
+    var incoming = state.translation || '';
+    var latin = (lang === 'uz' || lang === 'uzc') ? cyrillicToUzbekLatinClient(text) : text;
+    if (lang === 'uz') state.translation = latin;
+    else if (lang === 'uzc') state.translation = text;
+    else state.translation = text;
+    if (GLASSES_ENGLISH_LANGS[lang]) state.translationGlasses = incoming;
+    else if (lang === 'uzc' || lang === 'uz') state.translationGlasses = latin;
+    else state.translationGlasses = state.translation;
+    state.translationLang = lang;
+    return state;
+  }
+  function applyLocalUzbek(state) { return applyLocalTranslation(state); }
+  function langDisplayable(lang) {
+    var n = String(lang || '').trim();
+    if (!n) return true;
+    if (hasLangPack(n)) return true;
+    return langOnBackend(n);
+  }
+  function normalizeLangPack(data) {
+    if (!data) return null;
+    if (Array.isArray(data.cyr) && data.cyr.length === 114) return data.cyr;
+    if (Array.isArray(data.verses) && data.verses.length === 114) return data.verses;
+    if (Array.isArray(data) && data.length === 114 && data[0] && Array.isArray(data[0].verses)) {
+      return data.map(function (ch) {
+        return (ch.verses || []).map(function (v) { return String((v && v.translation) || ''); });
+      });
+    }
+    return null;
+  }
+  function langPackUrls(key) {
+    var compact = 'translations/' + key + '.json';
+    var full = 'backend/data/quran-json/quran_' + key + '.json';
+    var urls = [];
+    try { urls.push(new URL(compact, location.href).href); } catch (_) {}
+    try { urls.push(new URL('/' + compact, location.href).href); } catch (_) {}
+    var base = '';
+    try { base = backendBase(); } catch (_) {}
+    if (base) {
+      urls.push(base + '/translations/' + key + '.json');
+      urls.push(base + '/app/translations/' + key + '.json');
+    }
+    var gh = 'https://cdn.jsdelivr.net/gh/wasimlhr/taraweeh-companion-g2';
+    var refs = ['cursor/uzbek-translations-3a5e', 'master'];
+    for (var i = 0; i < refs.length; i++) {
+      urls.push(gh + '@' + refs[i] + '/taraweeh-companion/app/' + compact);
+      urls.push(gh + '@' + refs[i] + '/taraweeh-companion/' + full);
+    }
+    return urls;
+  }
+  function setLangPackStatus(text, downloading) {
+    var el = document.getElementById('langPackStatus');
+    if (el) el.textContent = text || '';
+    var btn = document.getElementById('langPackBtn');
+    if (btn) {
+      var lang = (document.getElementById('settingLang') || {}).value || (S.settings && S.settings.lang) || '';
+      var need = !!packKeyFor(lang);
+      btn.style.display = (need && !hasLangPack(lang) && !downloading) ? '' : 'none';
+      btn.disabled = !!downloading;
+    }
+  }
+  function cachePackGet(key) {
+    if (!window.caches) return Promise.resolve(null);
+    return caches.open('qc-lang-packs-v1').then(function (c) {
+      return c.match('lang/' + key);
+    }).then(function (r) { return r ? r.json() : null; }).catch(function () { return null; });
+  }
+  function cachePackPut(key, verses) {
+    if (!window.caches) return Promise.resolve();
+    return caches.open('qc-lang-packs-v1').then(function (c) {
+      return c.put('lang/' + key, new Response(JSON.stringify({ v: 1, lang: key, verses: verses }), {
+        headers: { 'Content-Type': 'application/json' }
+      }));
+    }).catch(function () {});
+  }
+  function rememberInstalled(key) {
+    if (!S.settings) return;
+    var list = Array.isArray(S.settings.installedLangs) ? S.settings.installedLangs.slice() : [];
+    if (list.indexOf(key) < 0) list.push(key);
+    S.settings.installedLangs = list;
+    saveSettings();
+  }
+  function fetchLangPack(key) {
+    var urls = langPackUrls(key);
+    var i = 0;
+    function next() {
+      if (i >= urls.length) return Promise.reject(new Error('no pack source'));
+      var url = urls[i++];
+      return fetch(url, { cache: 'force-cache' }).then(function (r) {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      }).then(function (data) {
+        var verses = normalizeLangPack(data);
+        if (!verses) throw new Error('bad pack');
+        return verses;
+      }).catch(function () { return next(); });
+    }
+    return next();
+  }
+  function ensureLangPack(lang, opts) {
+    opts = opts || {};
+    var key = packKeyFor(lang);
+    if (!key) {
+      setLangPackStatus('');
+      return Promise.resolve(false);
+    }
+    if (hasLangPack(lang)) {
+      setLangPackStatus('Installed on this device · ' + (LANG_PACK_KB[key] || '?') + ' KB');
+      return Promise.resolve(true);
+    }
+    if (_langPackLoading === key) return Promise.resolve(false);
+    _langPackLoading = key;
+    var label = translationLabel(lang);
+    setLangPackStatus('Downloading ' + label + ' · ~' + (LANG_PACK_KB[key] || '?') + ' KB…', true);
+    return cachePackGet(key).then(function (cached) {
+      var verses = normalizeLangPack(cached);
+      if (verses) return verses;
+      return fetchLangPack(key).then(function (v) {
+        sendUsage('lang_pack', { lang: key, ok: true });
+        return v;
+      });
+    }).then(function (verses) {
+      _langPacks[key] = verses;
+      rememberInstalled(key);
+      cachePackPut(key, verses);
+      setLangPackStatus('Installed on this device · ' + (LANG_PACK_KB[key] || '?') + ' KB');
+      log(label + ' language pack ready (' + verses.reduce(function (n, s) { return n + (s ? s.length : 0); }, 0) + ' ayahs)', 'ok');
+      if (_lastPhoneState) updatePhoneUI(_lastPhoneState, _lastPhoneWhisper);
+      if (typeof updateTranslationDesc === 'function') updateTranslationDesc();
+      return true;
+    }).catch(function () {
+      sendUsage('lang_pack', { lang: key, ok: false });
+      setLangPackStatus('Download failed. Check the network and try again.');
+      if (opts.warn !== false) log('Could not download ' + label + ' language pack', 'warn');
+      return false;
+    }).finally(function () {
+      if (_langPackLoading === key) _langPackLoading = null;
+    });
+  }
+  window.downloadSelectedLangPack = function () {
+    var sel = document.getElementById('settingLang');
+    var lang = sel ? sel.value : (S.settings && S.settings.lang) || '';
+    return ensureLangPack(lang, { warn: true });
+  };
 
   // ─── Persistent storage ───────────────────────────────────────────────────
   // Browser localStorage is wiped on Even Hub / glasses restart inside the
@@ -2155,6 +2404,62 @@ body {
     var normalized = String(lang || '').trim();
     return ALLOWED_TRANSLATION_LANGS.has(normalized) ? normalized : '';
   }
+
+  function langOnBackend(lang) {
+    var n = String(lang || '').trim();
+    if (!n) return true;
+    if (!_backendAllowedLangs) return true;
+    return _backendAllowedLangs.has(n);
+  }
+
+  function translationLabel(lang) {
+    var n = String(lang || '').trim();
+    return TRANSLATION_LABELS[n] || n || TRANSLATION_LABELS[''];
+  }
+
+  function syncTranslationAvailability(status) {
+    if (!status) return;
+    _backendVersion = String(status.version || status.appVersion || _backendVersion || '');
+    if (Array.isArray(status.allowedTranslationLangs)) {
+      _backendAllowedLangs = new Set(status.allowedTranslationLangs.map(function (x) {
+        return String(x || '').trim();
+      }));
+    }
+    var requested = S.settings.lang || '';
+    if (requested && !langDisplayable(requested) && !packKeyFor(requested)) {
+      _activeTranslationLang = '';
+      log(translationLabel(requested) + ' is not available on this device or backend', 'warn');
+    }
+    if (typeof updateTranslationDesc === 'function') updateTranslationDesc();
+    var langEl = document.getElementById('verseLangLabel');
+    if (langEl && langEl.textContent) updateVerseLangLabel({ translationLang: _activeTranslationLang });
+  }
+
+  function updateVerseLangLabel(state) {
+    var el = document.getElementById('verseLangLabel');
+    if (!el) return;
+    var requested = (S.settings && S.settings.lang) || '';
+    var served = (state && state.translationLang != null)
+      ? state.translationLang
+      : (_activeTranslationLang != null ? _activeTranslationLang : requested);
+    if (requested && !langDisplayable(requested)) served = '';
+    var label = translationLabel(served);
+    if (requested && packKeyFor(requested) && !hasLangPack(requested)) {
+      el.textContent = 'Download ' + translationLabel(requested) + ' in Settings (~'
+        + (LANG_PACK_KB[packKeyFor(requested)] || '?') + ' KB) — English until then';
+      el.style.color = 'var(--tc-orange, #d97706)';
+    } else if (requested && !langDisplayable(requested)) {
+      el.textContent = 'Showing ' + label + ' — ' + translationLabel(requested) + ' is not installed';
+      el.style.color = 'var(--tc-orange, #d97706)';
+    } else {
+      el.textContent = label;
+      el.style.color = '';
+    }
+  }
+  window.syncTranslationAvailability = syncTranslationAvailability;
+  window.updateVerseLangLabel = updateVerseLangLabel;
+  window.applyLocalUzbek = applyLocalUzbek;
+  window.applyLocalTranslation = applyLocalTranslation;
 
   function loadSettings() {
     try {
@@ -3048,6 +3353,7 @@ body {
   // transliteration goes on the last page.
   // Header: surah/ayah left, with room for the countdown on the right.
   function buildGlassesText(state) {
+    state = applyLocalTranslation(state);
     if (_glassesPreamble && state.mode === 'SEARCHING' && !state.isCandidate && !state.userSearching) {
       return preambleDisplay(_glassesPreamble);
     }
@@ -3294,6 +3600,9 @@ body {
 
   // ─── Phone UI updater ─────────────────────────────────────────────────────
   function updatePhoneUI(state, whisper) {
+    state = applyLocalTranslation(state);
+    _lastPhoneState = state;
+    _lastPhoneWhisper = whisper;
     S.mode = state.mode;
 
     var searching = document.getElementById('searchingContent');
@@ -3344,6 +3653,7 @@ body {
       renderVerseArabic(state);
       document.getElementById('verseTranslit').textContent = state.transliteration || '';
       document.getElementById('verseTrans').textContent = state.translation || '';
+      updateVerseLangLabel(state);
 
       // Dim the verse slightly while it's a candidate or user searching (still confirming)
       var verseCard = locked.querySelector ? locked.querySelector('.verse-card') : null;
@@ -3528,6 +3838,7 @@ body {
       // A reconnect gets a fresh trace on the backend; resume streaming it if
       // the panel is open, otherwise the feed silently stops filling.
       if (_traceStreaming) S.ws.send(JSON.stringify({ type: 'set_trace', enabled: true }));
+      checkBackend();
       // If recording was already active (reconnect mid-session), re-send start
       if (S.isRecording) {
         sendStartForCurrentAudioSource();
@@ -3795,6 +4106,19 @@ body {
           log('Backend v' + beVer + ' (app ' + APP_VERSION + ') — server-side fixes apply', 'ok');
         }
       }
+    } else if (msg.type === 'translation_lang') {
+      _activeTranslationLang = (msg.active == null) ? null : String(msg.active);
+      if (msg.fallback) {
+        var wantLang = msg.requested || (S.settings && S.settings.lang) || '';
+        if (packKeyFor(wantLang) && !hasLangPack(wantLang)) ensureLangPack(wantLang);
+        else if (!packKeyFor(wantLang)) {
+          log((TRANSLATION_LABELS[wantLang] || wantLang) + ' is not on this backend', 'warn');
+        }
+      } else if (msg.active) {
+        log('Translation: ' + (TRANSLATION_LABELS[msg.active] || msg.active), 'ok');
+      }
+      var langEl = document.getElementById('verseLangLabel');
+      if (langEl && langEl.textContent) updateVerseLangLabel({ translationLang: _activeTranslationLang });
     } else if (msg.type === 'pipeline_version') {
       var pv = (msg.version || 'v3').toUpperCase();
       document.getElementById('versionEl').textContent = APP_VERSION + ' ' + pv;
@@ -4791,7 +5115,7 @@ body {
     S.settings.lang = clean;
     saveSettings();
     updateTranslationDesc && updateTranslationDesc();
-    // Re-init so the pipeline fetches the right translation bundle
+    ensureLangPack(clean);
     if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
     log('Translation: ' + (clean || 'English (built-in)'), 'ok');
   };
@@ -4877,7 +5201,19 @@ body {
     if (!sel || !descEl) return;
     var opt = sel.options[sel.selectedIndex];
     var title = opt ? opt.getAttribute('title') : '';
+    var lang = sel.value;
     descEl.textContent = title || '';
+    if (!packKeyFor(lang)) setLangPackStatus('');
+    else if (hasLangPack(lang)) setLangPackStatus('Installed on this device · ' + (LANG_PACK_KB[packKeyFor(lang)] || '?') + ' KB');
+    else setLangPackStatus('Not on this device yet · ~' + (LANG_PACK_KB[packKeyFor(lang)] || '?') + ' KB gzip. Download once; listening still uses the server.');
+  };
+
+  window.onTranslationLangChange = function () {
+    var sel = document.getElementById('settingLang');
+    var lang = sel ? sel.value : '';
+    if (S.settings) S.settings.lang = sanitizeTranslationLang(lang);
+    updateTranslationDesc();
+    if (packKeyFor(lang) && !hasLangPack(lang)) ensureLangPack(lang);
   };
 
   window.showHelp = function () {
@@ -4996,6 +5332,7 @@ body {
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');
     saveSettings();
+    ensureLangPack(S.settings.lang);
     scheduleReinit();
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('mainView').style.display = 'block';
@@ -5008,6 +5345,7 @@ body {
       el.textContent = '✓ Service online (live)';
       el.style.color = 'var(--tc-green)';
       applyBackendModeSettings(s || {});
+      syncTranslationAvailability(s || {});
       updateEndpointLifecycleUI(s.endpointLifecycle || { component: 'model', status: 'unknown' });
     }).catch(function () {
       // If realtime socket is already connected, keep status as online despite REST check hiccups.
@@ -5091,6 +5429,7 @@ body {
     }
 
     S.settings = loadSettings();
+    ensureLangPack(S.settings.lang);
     _originIsBackend = await detectOriginBackend();
     log('Backend: ' + backendBase() + (_originIsBackend ? ' (serving origin)' : ' (hosted)'), 'ok');
     if (S.settings.reciteMode === 'practice' || S.settings.reciteMode === 'taraweeh') {

@@ -1,6 +1,6 @@
 {
   "name": "taraweeh-companion",
-  "version": "3.4.6",
+  "version": "3.4.9",
   "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
   "type": "module",
   "scripts": {
@@ -17,10 +17,12 @@
     "simulator": "npm run sim",
     "live-monitor": "powershell -ExecutionPolicy Bypass -File scripts/live-monitor.ps1",
     "download-quran-db": "node scripts/download-quran-db.js",
+    "build:uzbek-client": "node scripts/build-uzbek-client-json.js",
+    "build:translation-packs": "node scripts/build-translation-packs.js",
     "build:evenhub": "node scripts/build-evenhub-dist.js",
     "pack:evenhub": "node scripts/pack-evenhub.js",
     "pack:evenhub:check": "node scripts/pack-evenhub.js --check",
-    "test": "node scripts/check-version-alignment.js && node scripts/check-glasses-glyphs.js && node --test backend/transcriptionRouter.test.js backend/prayerTracker.test.js backend/prayerPipeline.test.js backend/sessionTrace.test.js scripts/glasses-ui.test.js scripts/replay-wav.test.js",
+    "test": "node scripts/check-version-alignment.js && node scripts/check-glasses-glyphs.js && node --test backend/transcriptionRouter.test.js backend/prayerTracker.test.js backend/prayerPipeline.test.js backend/sessionTrace.test.js backend/uzbekLatin.test.js backend/usageStats.test.js backend/usageAnalytics.http.test.js scripts/translation-packs.test.js scripts/glasses-ui.test.js scripts/replay-wav.test.js",
     "test:local-whisper": "python scripts/test_local_whisper_server.py",
     "test:version": "node scripts/check-version-alignment.js",
     "test:provider-key": "node scripts/check-provider-key.js",
