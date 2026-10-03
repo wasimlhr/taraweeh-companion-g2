@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.7 — Uzbek Latin + Cyrillic translations (Alauddin Mansour)
+ * v3.4.8 — Uzbek on-device so a pack works against an older hosted backend
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -121,6 +121,16 @@ app.get('/', sendAppHtml);
 // EvenHub reads app.json (entrypoint: index.html) and requests /index.html
 // next to it. Missing this route makes a hard-reload in the local sim blank.
 app.get('/index.html', sendAppHtml);
+
+const UZBEK_CYR_JSON = join(rootDir, 'app', 'uzbek-cyrillic.json');
+function sendUzbekCyrillic(req, res) {
+  if (!existsSync(UZBEK_CYR_JSON)) return res.sendStatus(404);
+  res.type('application/json');
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.sendFile(UZBEK_CYR_JSON);
+}
+app.get('/uzbek-cyrillic.json', sendUzbekCyrillic);
+app.get('/app/uzbek-cyrillic.json', sendUzbekCyrillic);
 
 // Bundled EvenHub SDK — index.html imports /sdk/even_hub_sdk.js. CDN fallback
 // loads a different module realm than the simulator bridge and the app looks blank.
@@ -435,6 +445,12 @@ wss.on('connection', (ws, req) => {
     if (requestedTranslation && requestedTranslation !== translationLang) {
       console.warn(`[Init] Unsupported translation "${requestedTranslation}" requested; falling back to built-in local English`);
     }
+    send({
+      type: 'translation_lang',
+      requested: requestedTranslation,
+      active: translationLang,
+      fallback: !!(requestedTranslation && requestedTranslation !== translationLang),
+    });
 
     console.log(`[Init] Creating pipeline ${pipelineVersion.toUpperCase()} translationLang=${translationLang || '(built-in)'} audioSource=${audioSource}`);
     pipeline = new Ctor({

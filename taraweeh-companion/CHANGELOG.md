@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.8 - 2026-10-03
+
+- **Uzbek is applied on the device.** The 3.4.7 pack talked to Railway 3.4.0,
+  which has no `uz`/`uzc` and showed built-in English for An-Nas and Fatiha.
+  The Mansour Cyrillic mushaf now ships in the `.ehpk`; Latin is converted
+  on the phone/glasses even when the hosted backend is older.
+
 ## 3.4.7 - 2026-10-02
 
 - **Uzbek translations (Alauddin Mansour).** Both scripts are selectable:
@@ -7,7 +14,10 @@
   The G2 font has Russian Cyrillic and Ў but is missing Ғ, Қ and Ҳ, so
   Cyrillic Uzbek is shown as the same translator's Latin on the glasses
   rather than dropping those letters. Latin was completed from the full
-  Cyrillic text; the 22-ayah Latin sample matches that conversion.
+  Cyrillic text; the 22-ayah Latin sample matches that conversion. The
+  verse text comes from the backend, so a 3.4.7 pack against a 3.4.0
+  server still shows English; Settings and the verse card now say so
+  instead of failing silently.
 
 ## 3.4.6 - 2026-09-20
 

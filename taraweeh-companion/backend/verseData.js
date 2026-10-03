@@ -182,6 +182,7 @@ export function getVerseData(surah, ayah, lang = '') {
     transliteration,
     translation,
     translationGlasses,
+    translationLang: lang || '',
   };
 }
 

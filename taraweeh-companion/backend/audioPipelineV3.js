@@ -1668,6 +1668,7 @@ export class AudioPipeline {
         transliteration: lockedVerse?.transliteration,
         translation:     lockedVerse?.translation,
         translationGlasses: lockedVerse?.translationGlasses ?? lockedVerse?.translation,
+        translationLang: lockedVerse?.translationLang ?? this.translationLang ?? '',
         confidence: this.state.confidence <= 1
           ? this.state.confidence
           : (this.state.confidence || 0) / 100,
