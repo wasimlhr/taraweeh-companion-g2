@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.4.9 - 2026-10-03
+
+- **Optional on-device language packs.** English stays built in. Other
+  translations (Urdu, French, Spanish, Indonesian, Turkish, Bengali,
+  Chinese, Russian, Swedish, Uzbek) download once when selected,
+  about 250–420 KB gzip each, and stay in the Cache API. They are not
+  bundled in the `.ehpk` and do not need a matching Railway deploy —
+  the phone can fetch a pack from the hosted backend or from the
+  public quran-json files. Listening still uses the server; only the
+  translation text is local. Urdu and Bengali still show English on
+  the glasses. Cyrillic Uzbek still shows Latin on the glasses.
+- **Railway usage analytics.** With `DIAG_TOKEN` set, `GET /api/analytics`
+  shows how many installs are connected, what translation / engine /
+  mic / mode / app version they use, and scrubbed errors. A browser
+  gets an HTML dashboard; curl gets JSON. `/api/status` only adds the
+  live connection count. No recitation text, audio, or API keys.
+
 ## 3.4.8 - 2026-10-03
 
 - **Uzbek is applied on the device.** The 3.4.7 pack talked to Railway 3.4.0,

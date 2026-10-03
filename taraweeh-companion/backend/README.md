@@ -22,6 +22,7 @@ Transcription uses **Groq** or **OpenAI** independently. Pick one engine; it mus
 | `MAX_MIN_PER_SESSION` | No | Cap shared-key sessions (default `90` min) |
 | `MOBILE_ONLY_MODE` | No | `true` enforces phone mic in UI |
 | `PORT` | No | Default 3001 |
+| `DIAG_TOKEN` | No | Gates `GET /api/traces` and `GET /api/analytics`. Without it those read routes 404. Analytics is in-memory (cleared on redeploy) and never stores recitation text, audio, or API keys. |
 
 ```bash
 # With shared keys (PowerShell)

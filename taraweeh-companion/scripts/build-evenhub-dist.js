@@ -36,12 +36,6 @@ mkdirSync(outDir, { recursive: true });
 copyFileSync(src, dest);
 console.log('[build-evenhub-dist] Wrote', dest);
 
-const uzbekSrc = join(root, 'app', 'uzbek-cyrillic.json');
-if (existsSync(uzbekSrc)) {
-  copyFileSync(uzbekSrc, join(outDir, 'uzbek-cyrillic.json'));
-  console.log('[build-evenhub-dist] Bundled Uzbek translations');
-}
-
 if (existsSync(sdkSrc)) {
   mkdirSync(sdkDestDir, { recursive: true });
   copyFileSync(sdkSrc, sdkDest);
