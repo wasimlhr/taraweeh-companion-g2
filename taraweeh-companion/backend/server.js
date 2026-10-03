@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.8 — Uzbek on-device so a pack works against an older hosted backend
+ * v3.4.9 — on-device language packs + DIAG_TOKEN usage analytics
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -20,6 +20,7 @@ import { AudioPipeline as AudioPipelineV3 } from './audioPipelineV3.js';
 import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
 import { SessionTrace } from './sessionTrace.js';
 import { TraceStore } from './traceStore.js';
+import { UsageStats, renderAnalyticsHtml } from './usageStats.js';
 
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
@@ -68,6 +69,8 @@ const APP_VERSION = (() => {
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
+const usageStats = new UsageStats();
+let liveConnections = 0;
 
 // A packed .ehpk runs from the Even Hub's own origin, so every /api call is
 // cross-origin. WebSockets ignore CORS, which is why transcription worked while
@@ -76,7 +79,7 @@ app.use(express.json({ limit: '4mb' }));
 app.use('/api', (req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, x-diag-token');
   res.set('Access-Control-Max-Age', '86400');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
@@ -118,19 +121,38 @@ function sendAppHtml(req, res) {
 }
 
 app.get('/', sendAppHtml);
-// EvenHub reads app.json (entrypoint: index.html) and requests /index.html
-// next to it. Missing this route makes a hard-reload in the local sim blank.
 app.get('/index.html', sendAppHtml);
 
-const UZBEK_CYR_JSON = join(rootDir, 'app', 'uzbek-cyrillic.json');
-function sendUzbekCyrillic(req, res) {
-  if (!existsSync(UZBEK_CYR_JSON)) return res.sendStatus(404);
+const PACK_LANGS = new Set(['en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uzc']);
+const translationPackCache = new Map();
+function compactTranslationPack(lang) {
+  const key = lang === 'uz' ? 'uzc' : lang;
+  if (!PACK_LANGS.has(key)) return null;
+  if (translationPackCache.has(key)) return translationPackCache.get(key);
+  const compactPath = join(rootDir, 'app', 'translations', `${key}.json`);
+  if (existsSync(compactPath)) {
+    const payload = JSON.parse(readFileSync(compactPath, 'utf8'));
+    translationPackCache.set(key, payload);
+    return payload;
+  }
+  const srcPath = join(__dirname, 'data', 'quran-json', `quran_${key}.json`);
+  if (!existsSync(srcPath)) return null;
+  const chapters = JSON.parse(readFileSync(srcPath, 'utf8'));
+  const verses = chapters.map((ch) => (ch.verses || []).map((v) => String(v.translation || '')));
+  const payload = { v: 1, lang: key, ayahs: verses.reduce((n, s) => n + s.length, 0), verses };
+  translationPackCache.set(key, payload);
+  return payload;
+}
+function sendTranslationPack(req, res) {
+  res.set('Access-Control-Allow-Origin', '*');
+  const payload = compactTranslationPack(String(req.params.lang || '').trim());
+  if (!payload) return res.status(404).json({ error: 'unknown language pack' });
   res.type('application/json');
   res.set('Cache-Control', 'public, max-age=86400');
-  res.sendFile(UZBEK_CYR_JSON);
+  res.json(payload);
 }
-app.get('/uzbek-cyrillic.json', sendUzbekCyrillic);
-app.get('/app/uzbek-cyrillic.json', sendUzbekCyrillic);
+app.get('/translations/:lang.json', sendTranslationPack);
+app.get('/app/translations/:lang.json', sendTranslationPack);
 
 // Bundled EvenHub SDK — index.html imports /sdk/even_hub_sdk.js. CDN fallback
 // loads a different module realm than the simulator bridge and the app looks blank.
@@ -194,8 +216,9 @@ app.get('/api/status', (req, res) => {
     allowedPipelines: ['v3', 'v4'],
     allowedProviders: [...STT_ENGINES, 'auto'],
     allowedModels: Object.fromEntries(Object.entries(ALLOWED_MODELS).map(([k, v]) => [k, [...v]])),
-    translationSource: 'local-bundled',
+    translationSource: 'on-device-packs',
     allowedTranslationLangs: ['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc'],
+    liveConnections,
     endpointLifecycle: lastEndpointLifecycle,
   });
 });
@@ -228,7 +251,15 @@ if (DIAG_TOKEN) {
     if (!hit) return res.status(404).json({ error: 'no such report' });
     res.json(hit);
   });
-  console.log('[Diag] DIAG_TOKEN set — /api/traces is readable');
+  app.get('/api/analytics', requireToken, (req, res) => {
+    const snap = usageStats.snapshot({ concurrent: liveConnections });
+    const format = String(req.query.format || '').toLowerCase();
+    const accept = String(req.get('accept') || '');
+    const wantHtml = format === 'html' || (!format && accept.includes('text/html'));
+    if (wantHtml) return res.type('html').send(renderAnalyticsHtml(snap));
+    res.json(snap);
+  });
+  console.log('[Diag] DIAG_TOKEN set — /api/traces and /api/analytics are readable');
 }
 
 app.post('/api/transcription/test-key', async (req, res) => {
@@ -373,7 +404,9 @@ const _activeSessions = new Map(); // sessionId → ws
 
 wss.on('connection', (ws, req) => {
   const clientIp = req.socket.remoteAddress;
-  console.log(`[WS] Client connected from ${clientIp}`);
+  liveConnections += 1;
+  usageStats.connected({ concurrent: liveConnections });
+  console.log(`[WS] Client connected from ${clientIp} (${liveConnections} live)`);
   let pipeline = null;
   let sessionId = null;
 
@@ -431,6 +464,7 @@ wss.on('connection', (ws, req) => {
       // engine had no key. Search then threw on every chunk with no pill
       // change, so the panel sat at 0.0s / Window 1/5.
       console.log(`[Init] No ${selected} key (byok=${hasByok} shared=${useSharedMode}) — transcribe will fail`);
+      usageStats.error(`${selected} API key required`, 'key_missing');
       send({
         type: 'sys_status',
         component: 'model',
@@ -476,7 +510,10 @@ wss.on('connection', (ws, req) => {
         // envelope instead, and keep sending it as `type` for older clients.
         send({ ...s, type: 'sys_status', statusType: s.type || '' });
       },
-      onError: (err) => send({ type: 'error', error: err }),
+      onError: (err) => {
+        usageStats.error(typeof err === 'string' ? err : (err && err.message) || 'pipeline', 'pipeline');
+        send({ type: 'error', error: err });
+      },
     });
     // Practice may pin the search to one surah. Validated the same way as
     // preferredSurah so a bad value cannot reach the matcher.
@@ -593,14 +630,27 @@ wss.on('connection', (ws, req) => {
               prayerConfig: msg.prayerConfig || {}, userAgent: msg.userAgent || '',
             });
             createPipeline(surah, msg, ver);
+            usageStats.init({
+              sessionId,
+              lang: sanitizeTranslationLang(msg.lang),
+              provider: msg.transcriptionProvider || 'groq',
+              audioSource: sanitizeAudioSource(msg.audioSource),
+              practiceMode: !!msg.practiceMode,
+              pipeline: ver,
+              appVersion: msg.appVersion || '',
+            });
             _binaryLogged = false;
             break;
           }
           case 'start':
             console.log(`[WS] Start → pipeline.active was ${pipeline?.active}`);
+            usageStats.start();
             pipeline?.start();
             break;
-          case 'stop':  pipeline?.stop();  break;
+          case 'stop':
+            usageStats.stop();
+            pipeline?.stop();
+            break;
           case 'reset': pipeline?.reset(); break;
           case 'pause': pipeline?.pause(); break;
           case 'audio_return': pipeline?.audioReturn(); break;
@@ -632,13 +682,18 @@ wss.on('connection', (ws, req) => {
             send({ type: 'trace_report', report: trace.report({ backendVersion: APP_VERSION, pipeline: pipelineVersion }) });
             break;
           case 'clear_trace': trace.clear(); break;
+          case 'usage':
+            usageStats.event(msg);
+            break;
         }
       } catch {}
     }
   });
 
   ws.on('close', () => {
-    console.log(`[WS] Client disconnected from ${clientIp}`);
+    liveConnections = Math.max(0, liveConnections - 1);
+    usageStats.disconnected();
+    console.log(`[WS] Client disconnected from ${clientIp} (${liveConnections} live)`);
     if (pipeline) { pipeline.destroy(); pipeline = null; }
     // Sweep every entry this socket owns, not just the latest sessionId —
     // earlier IDs sent on the same socket must not outlive it.
