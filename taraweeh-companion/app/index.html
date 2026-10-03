@@ -891,7 +891,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.7</span>
+      <span class="version" id="versionEl">v3.4.8</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1132,13 +1132,13 @@ body {
           <option value="ru" title="Shown in Russian on both phone and glasses.">Russian</option>
           <option value="sv" title="Shown in Swedish on both phone and glasses.">Swedish</option>
           <option value="tr" title="Shown in Turkish on both phone and glasses.">Turkish</option>
-          <option value="uz" title="Alauddin Mansour. Latin Uzbek on both phone and glasses.">Uzbek (Latin)</option>
-          <option value="uzc" title="Alauddin Mansour. Cyrillic on the phone; Latin on the glasses because Ғ Қ Ҳ are missing from the G2 font.">Uzbek (Cyrillic)</option>
+          <option value="uz" title="Alauddin Mansour. Latin Uzbek on both phone and glasses, even if the hosted backend is older.">Uzbek (Latin)</option>
+          <option value="uzc" title="Alauddin Mansour. Cyrillic on the phone; Latin on the glasses because Ғ Қ Ҳ are missing from the G2 font. Shipped in the pack.">Uzbek (Cyrillic)</option>
           <option value="ur" title="Urdu on phone; English fallback on glasses because Urdu glyph shaping is unavailable.">Urdu</option>
         </optgroup>
       </select>
       <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;min-height:1.4em"></span>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Bundled locally. Urdu, Bengali and Arabic show English on the glasses. Cyrillic Uzbek shows Latin on the glasses (Ғ Қ Ҳ are not in the G2 font).</span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:2px">Uzbek is bundled in the app pack. Urdu, Bengali and Arabic show English on the glasses. Cyrillic Uzbek shows Latin on the glasses (Ғ Қ Ҳ are not in the G2 font).</span>
     </div>
     <div class="s-row">
       <span class="s-label">Quranic marks (tashkeel)</span>
@@ -1260,7 +1260,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.7';
+  const APP_VERSION = 'v3.4.8';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1832,6 +1832,92 @@ body {
   var _backendAllowedLangs = null;
   var _backendVersion = '';
   var _activeTranslationLang = null;
+  var _uzbekCyr = null;
+  var _lastPhoneState = null;
+  var _lastPhoneWhisper = null;
+
+  // Same map as backend/uzbekLatin.js — G2-safe o‘ / g‘ (U+2018).
+  var UZ_CYR_LAT = {
+    'А':'A','а':'a','Б':'B','б':'b','В':'V','в':'v','Г':'G','г':'g',
+    'Ғ':'G\u2018','ғ':'g\u2018','Д':'D','д':'d','Ё':'Yo','ё':'yo',
+    'Ж':'J','ж':'j','З':'Z','з':'z','И':'I','и':'i','Й':'Y','й':'y',
+    'К':'K','к':'k','Қ':'Q','қ':'q','Л':'L','л':'l','М':'M','м':'m',
+    'Н':'N','н':'n','О':'O','о':'o','П':'P','п':'p','Р':'R','р':'r',
+    'С':'S','с':'s','Т':'T','т':'t','У':'U','у':'u','Ў':'O\u2018','ў':'o\u2018',
+    'Ф':'F','ф':'f','Х':'X','х':'x','Ҳ':'H','ҳ':'h','Ц':'Ts','ц':'ts',
+    'Ч':'Ch','ч':'ch','Ш':'Sh','ш':'sh','Щ':'Sh','щ':'sh','Ъ':'\u2019','ъ':'\u2019',
+    'Ь':'','ь':'','Э':'E','э':'e','Ю':'Yu','ю':'yu','Я':'Ya','я':'ya'
+  };
+  var UZ_VOWELS = /[аеиоуўэюяАЕИОУЎЭЮЯaeiouAEIOU]/;
+  var UZ_YE_BEFORE = /[\s(\-«"“]/;
+  function cyrillicToUzbekLatinClient(text) {
+    var s = String(text || '');
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === 'Е' || ch === 'е') {
+        var prev = i === 0 ? ' ' : s.charAt(i - 1);
+        var ye = i === 0 || UZ_YE_BEFORE.test(prev) || UZ_VOWELS.test(prev);
+        out += ch === 'Е' ? (ye ? 'Ye' : 'E') : (ye ? 'ye' : 'e');
+      } else if (Object.prototype.hasOwnProperty.call(UZ_CYR_LAT, ch)) {
+        out += UZ_CYR_LAT[ch];
+      } else {
+        out += ch;
+      }
+    }
+    return out;
+  }
+  function hasLocalUzbek() {
+    return Array.isArray(_uzbekCyr) && _uzbekCyr.length === 114;
+  }
+  function lookupUzbekCyr(surah, ayah) {
+    if (!hasLocalUzbek()) return '';
+    var row = _uzbekCyr[surah - 1];
+    return (row && row[ayah - 1]) || '';
+  }
+  function applyLocalUzbek(state) {
+    if (!state) return state;
+    var lang = (S.settings && S.settings.lang) || '';
+    if (lang !== 'uz' && lang !== 'uzc') return state;
+    var cyr = lookupUzbekCyr(state.surah, state.ayah);
+    if (!cyr) return state;
+    var latin = cyrillicToUzbekLatinClient(cyr);
+    state.translation = lang === 'uzc' ? cyr : latin;
+    state.translationGlasses = latin;
+    state.translationLang = lang;
+    return state;
+  }
+  function langDisplayable(lang) {
+    var n = String(lang || '').trim();
+    if (!n) return true;
+    if ((n === 'uz' || n === 'uzc') && hasLocalUzbek()) return true;
+    return langOnBackend(n);
+  }
+  function loadUzbekCyrillic() {
+    var urls = [];
+    try { urls.push(new URL('uzbek-cyrillic.json', location.href).href); } catch (_) {}
+    urls.push('/uzbek-cyrillic.json', '/app/uzbek-cyrillic.json');
+    var i = 0;
+    function next() {
+      if (i >= urls.length) {
+        log('Uzbek pack text missing — translations need backend 3.4.7+', 'warn');
+        return;
+      }
+      var url = urls[i++];
+      fetch(url, { cache: 'force-cache' }).then(function (r) {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      }).then(function (data) {
+        var cyr = data && data.cyr;
+        if (!Array.isArray(cyr) || cyr.length !== 114) throw new Error('bad uzbek pack');
+        _uzbekCyr = cyr;
+        log('Uzbek translations loaded on-device (' + cyr.reduce(function (n, s) { return n + (s ? s.length : 0); }, 0) + ' ayahs)', 'ok');
+        if (_lastPhoneState) updatePhoneUI(_lastPhoneState, _lastPhoneWhisper);
+        if (typeof updateTranslationDesc === 'function') updateTranslationDesc();
+      }).catch(function () { next(); });
+    }
+    next();
+  }
 
   // ─── Persistent storage ───────────────────────────────────────────────────
   // Browser localStorage is wiped on Even Hub / glasses restart inside the
@@ -2204,7 +2290,7 @@ body {
       }));
     }
     var requested = S.settings.lang || '';
-    if (requested && !langOnBackend(requested)) {
+    if (requested && !langDisplayable(requested)) {
       _activeTranslationLang = '';
       log(translationLabel(requested) + ' is not on backend v' + (_backendVersion || '?')
         + ' — verse text stays English until you deploy 3.4.7+', 'warn');
@@ -2221,9 +2307,9 @@ body {
     var served = (state && state.translationLang != null)
       ? state.translationLang
       : (_activeTranslationLang != null ? _activeTranslationLang : requested);
-    if (requested && !langOnBackend(requested)) served = '';
+    if (requested && !langDisplayable(requested)) served = '';
     var label = translationLabel(served);
-    if (requested && !langOnBackend(requested)) {
+    if (requested && !langDisplayable(requested)) {
       el.textContent = 'Showing ' + label + ' — ' + translationLabel(requested)
         + ' needs backend 3.4.7 (this server is v' + (_backendVersion || '?') + ')';
       el.style.color = 'var(--tc-orange, #d97706)';
@@ -2234,6 +2320,7 @@ body {
   }
   window.syncTranslationAvailability = syncTranslationAvailability;
   window.updateVerseLangLabel = updateVerseLangLabel;
+  window.applyLocalUzbek = applyLocalUzbek;
 
   function loadSettings() {
     try {
@@ -3127,6 +3214,7 @@ body {
   // transliteration goes on the last page.
   // Header: surah/ayah left, with room for the countdown on the right.
   function buildGlassesText(state) {
+    state = applyLocalUzbek(state);
     if (_glassesPreamble && state.mode === 'SEARCHING' && !state.isCandidate && !state.userSearching) {
       return preambleDisplay(_glassesPreamble);
     }
@@ -3373,6 +3461,9 @@ body {
 
   // ─── Phone UI updater ─────────────────────────────────────────────────────
   function updatePhoneUI(state, whisper) {
+    state = applyLocalUzbek(state);
+    _lastPhoneState = state;
+    _lastPhoneWhisper = whisper;
     S.mode = state.mode;
 
     var searching = document.getElementById('searchingContent');
@@ -4969,7 +5060,7 @@ body {
     var opt = sel.options[sel.selectedIndex];
     var title = opt ? opt.getAttribute('title') : '';
     var lang = sel.value;
-    if (lang && !langOnBackend(lang)) {
+    if (lang && !langDisplayable(lang)) {
       descEl.textContent = (title ? title + ' ' : '')
         + 'This backend (v' + (_backendVersion || '?')
         + ') does not include it — the verse line will stay English until you deploy 3.4.7.';
@@ -5094,7 +5185,7 @@ body {
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');
     saveSettings();
-    if ((S.settings.lang || '') && !langOnBackend(S.settings.lang)) {
+    if ((S.settings.lang || '') && !langDisplayable(S.settings.lang)) {
       log(translationLabel(S.settings.lang) + ' is not on backend v' + (_backendVersion || '?')
         + ' — verse text stays English until you deploy 3.4.7+', 'warn');
     }
@@ -5194,6 +5285,7 @@ body {
     }
 
     S.settings = loadSettings();
+    loadUzbekCyrillic();
     _originIsBackend = await detectOriginBackend();
     log('Backend: ' + backendBase() + (_originIsBackend ? ' (serving origin)' : ' (hosted)'), 'ok');
     if (S.settings.reciteMode === 'practice' || S.settings.reciteMode === 'taraweeh') {

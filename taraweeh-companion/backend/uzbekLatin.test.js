@@ -63,3 +63,18 @@ test('An-Nas 114:1 Uzbek is not the built-in English line from the 3.4.7 field r
   assert.equal(uzc.translationLang, 'uzc');
   assert.equal(uz.transliteration, 'Qul aAAoothu birabbi alnnasi');
 });
+
+test('on-device uzbek-cyrillic.json matches Mansour 114:1 and the mushaf', () => {
+  const packed = JSON.parse(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../app/uzbek-cyrillic.json'),
+    'utf8',
+  ));
+  assert.equal(packed.cyr.length, 114);
+  assert.equal(packed.cyr.reduce((n, s) => n + s.length, 0), 6236);
+  loadQuran();
+  const packedNas = packed.cyr[113][0];
+  const uzc = getVerseData(114, 1, 'uzc');
+  assert.equal(packedNas, uzc.translation);
+  assert.match(cyrillicToUzbekLatin(packedNas), /insonlarning Parvardigoridan/);
+  assert.doesNotMatch(packedNas, /seek refuge in the Lord of mankind/i);
+});
