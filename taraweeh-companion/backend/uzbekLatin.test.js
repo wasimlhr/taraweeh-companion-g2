@@ -47,3 +47,19 @@ test('uzbek Latin and Cyrillic cover the mushaf and glasses get Latin', () => {
   assert.match(qaf.translationGlasses, /q/i);
   assert.doesNotMatch(qaf.translationGlasses, /[ҒғҚқҲҳ]/);
 });
+
+test('An-Nas 114:1 Uzbek is not the built-in English line from the 3.4.7 field report', () => {
+  loadQuran();
+  const builtIn = getVerseData(114, 1, '');
+  const uz = getVerseData(114, 1, 'uz');
+  const uzc = getVerseData(114, 1, 'uzc');
+  assert.match(builtIn.translation, /seek refuge in the Lord of mankind/i);
+  assert.equal(builtIn.transliteration, 'Qul aAAoothu birabbi annas');
+  assert.doesNotMatch(uz.translation, /seek refuge in the Lord of mankind/i);
+  assert.doesNotMatch(uzc.translation, /seek refuge in the Lord of mankind/i);
+  assert.match(uz.translation, /insonlarning Parvardigoridan/);
+  assert.match(uzc.translation, /инсонларнинг Парвардигоридан/);
+  assert.equal(uz.translationLang, 'uz');
+  assert.equal(uzc.translationLang, 'uzc');
+  assert.equal(uz.transliteration, 'Qul aAAoothu birabbi alnnasi');
+});

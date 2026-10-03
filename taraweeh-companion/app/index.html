@@ -247,6 +247,12 @@ body {
   color: var(--tc-2);
   line-height: 1.55;
 }
+.verse-lang-label {
+  font-size: 11px;
+  color: var(--tc-3, #888);
+  margin-top: 4px;
+  line-height: 1.4;
+}
 /* ── Matching Panel (SEARCHING state) ──────────────────────────────────── */
 .verse-searching {
   display: flex; flex-direction: column; gap: 10px; padding: 4px 0;
@@ -996,6 +1002,7 @@ body {
       <div class="verse-translit" id="verseTranslit"></div>
       <div class="verse-divider"></div>
       <div class="verse-translation" id="verseTrans"></div>
+      <div class="verse-lang-label" id="verseLangLabel"></div>
     </div>
     <div id="verseNavRow" class="verse-nav-row" style="display:none">
       <button type="button" class="nav-arrow-btn" onclick="manualPrevAyah()" title="Previous ayah">← Prev</button>
@@ -1807,6 +1814,24 @@ body {
   const MAX_UPGRADE_CHARS = 2000;  // textContainerUpgrade limit
   const ALLOWED_PIPELINES = new Set(['v3', 'v4']);
   const ALLOWED_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc']);
+  const TRANSLATION_LABELS = {
+    '': 'English (built-in)',
+    en: 'English',
+    ur: 'Urdu',
+    fr: 'French',
+    es: 'Spanish',
+    id: 'Indonesian',
+    tr: 'Turkish',
+    bn: 'Bengali',
+    zh: 'Chinese',
+    ru: 'Russian',
+    sv: 'Swedish',
+    uz: 'Uzbek (Latin)',
+    uzc: 'Uzbek (Cyrillic)',
+  };
+  var _backendAllowedLangs = null;
+  var _backendVersion = '';
+  var _activeTranslationLang = null;
 
   // ─── Persistent storage ───────────────────────────────────────────────────
   // Browser localStorage is wiped on Even Hub / glasses restart inside the
@@ -2156,6 +2181,54 @@ body {
   function sanitizeTranslationLang(lang) {
     var normalized = String(lang || '').trim();
     return ALLOWED_TRANSLATION_LANGS.has(normalized) ? normalized : '';
+  }
+
+  function langOnBackend(lang) {
+    var n = String(lang || '').trim();
+    if (!n) return true;
+    if (!_backendAllowedLangs) return true;
+    return _backendAllowedLangs.has(n);
+  }
+
+  function translationLabel(lang) {
+    var n = String(lang || '').trim();
+    return TRANSLATION_LABELS[n] || n || TRANSLATION_LABELS[''];
+  }
+
+  function syncTranslationAvailability(status) {
+    if (!status) return;
+    _backendVersion = String(status.version || status.appVersion || _backendVersion || '');
+    if (Array.isArray(status.allowedTranslationLangs)) {
+      _backendAllowedLangs = new Set(status.allowedTranslationLangs.map(function (x) {
+        return String(x || '').trim();
+      }));
+    }
+    var requested = S.settings.lang || '';
+    if (requested && !langOnBackend(requested)) {
+      log(translationLabel(requested) + ' is not on backend v' + (_backendVersion || '?')
+        + ' — verse text stays English until you deploy 3.4.7+', 'warn');
+    }
+    if (typeof updateTranslationDesc === 'function') updateTranslationDesc();
+    var langEl = document.getElementById('verseLangLabel');
+    if (langEl && langEl.textContent) updateVerseLangLabel({ translationLang: _activeTranslationLang });
+  }
+
+  function updateVerseLangLabel(state) {
+    var el = document.getElementById('verseLangLabel');
+    if (!el) return;
+    var requested = (S.settings && S.settings.lang) || '';
+    var shown = (state && state.translationLang != null && state.translationLang !== '')
+      ? state.translationLang
+      : (_activeTranslationLang != null ? _activeTranslationLang : (langOnBackend(requested) ? requested : ''));
+    var label = translationLabel(shown);
+    if (requested && !langOnBackend(requested)) {
+      el.textContent = 'Showing ' + label + ' — ' + translationLabel(requested)
+        + ' needs backend 3.4.7 (this server is v' + (_backendVersion || '?') + ')';
+      el.style.color = 'var(--tc-orange, #d97706)';
+    } else {
+      el.textContent = label;
+      el.style.color = '';
+    }
   }
 
   function loadSettings() {
@@ -3346,6 +3419,7 @@ body {
       renderVerseArabic(state);
       document.getElementById('verseTranslit').textContent = state.transliteration || '';
       document.getElementById('verseTrans').textContent = state.translation || '';
+      updateVerseLangLabel(state);
 
       // Dim the verse slightly while it's a candidate or user searching (still confirming)
       var verseCard = locked.querySelector ? locked.querySelector('.verse-card') : null;
@@ -3530,6 +3604,7 @@ body {
       // A reconnect gets a fresh trace on the backend; resume streaming it if
       // the panel is open, otherwise the feed silently stops filling.
       if (_traceStreaming) S.ws.send(JSON.stringify({ type: 'set_trace', enabled: true }));
+      checkBackend();
       // If recording was already active (reconnect mid-session), re-send start
       if (S.isRecording) {
         sendStartForCurrentAudioSource();
@@ -3797,6 +3872,16 @@ body {
           log('Backend v' + beVer + ' (app ' + APP_VERSION + ') — server-side fixes apply', 'ok');
         }
       }
+    } else if (msg.type === 'translation_lang') {
+      _activeTranslationLang = (msg.active == null) ? null : String(msg.active);
+      if (msg.fallback) {
+        var want = TRANSLATION_LABELS[msg.requested] || msg.requested || 'translation';
+        log(want + ' is not on this backend — verse text stays English until you deploy 3.4.7+', 'warn');
+      } else if (msg.active) {
+        log('Translation: ' + (TRANSLATION_LABELS[msg.active] || msg.active), 'ok');
+      }
+      var langEl = document.getElementById('verseLangLabel');
+      if (langEl && langEl.textContent) updateVerseLangLabel({ translationLang: _activeTranslationLang });
     } else if (msg.type === 'pipeline_version') {
       var pv = (msg.version || 'v3').toUpperCase();
       document.getElementById('versionEl').textContent = APP_VERSION + ' ' + pv;
@@ -4879,7 +4964,14 @@ body {
     if (!sel || !descEl) return;
     var opt = sel.options[sel.selectedIndex];
     var title = opt ? opt.getAttribute('title') : '';
-    descEl.textContent = title || '';
+    var lang = sel.value;
+    if (lang && !langOnBackend(lang)) {
+      descEl.textContent = (title ? title + ' ' : '')
+        + 'This backend (v' + (_backendVersion || '?')
+        + ') does not include it — the verse line will stay English until you deploy 3.4.7.';
+    } else {
+      descEl.textContent = title || '';
+    }
   };
 
   window.showHelp = function () {
@@ -4998,6 +5090,10 @@ body {
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');
     saveSettings();
+    if ((S.settings.lang || '') && !langOnBackend(S.settings.lang)) {
+      log(translationLabel(S.settings.lang) + ' is not on backend v' + (_backendVersion || '?')
+        + ' — verse text stays English until you deploy 3.4.7+', 'warn');
+    }
     scheduleReinit();
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('mainView').style.display = 'block';
@@ -5010,6 +5106,7 @@ body {
       el.textContent = '✓ Service online (live)';
       el.style.color = 'var(--tc-green)';
       applyBackendModeSettings(s || {});
+      syncTranslationAvailability(s || {});
       updateEndpointLifecycleUI(s.endpointLifecycle || { component: 'model', status: 'unknown' });
     }).catch(function () {
       // If realtime socket is already connected, keep status as online despite REST check hiccups.

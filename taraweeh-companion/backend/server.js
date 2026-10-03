@@ -435,6 +435,12 @@ wss.on('connection', (ws, req) => {
     if (requestedTranslation && requestedTranslation !== translationLang) {
       console.warn(`[Init] Unsupported translation "${requestedTranslation}" requested; falling back to built-in local English`);
     }
+    send({
+      type: 'translation_lang',
+      requested: requestedTranslation,
+      active: translationLang,
+      fallback: !!(requestedTranslation && requestedTranslation !== translationLang),
+    });
 
     console.log(`[Init] Creating pipeline ${pipelineVersion.toUpperCase()} translationLang=${translationLang || '(built-in)'} audioSource=${audioSource}`);
     pipeline = new Ctor({

@@ -7,7 +7,10 @@
   The G2 font has Russian Cyrillic and Ў but is missing Ғ, Қ and Ҳ, so
   Cyrillic Uzbek is shown as the same translator's Latin on the glasses
   rather than dropping those letters. Latin was completed from the full
-  Cyrillic text; the 22-ayah Latin sample matches that conversion.
+  Cyrillic text; the 22-ayah Latin sample matches that conversion. The
+  verse text comes from the backend, so a 3.4.7 pack against a 3.4.0
+  server still shows English; Settings and the verse card now say so
+  instead of failing silently.
 
 ## 3.4.6 - 2026-09-20
 
