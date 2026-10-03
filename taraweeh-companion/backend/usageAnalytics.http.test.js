@@ -57,7 +57,7 @@ test('analytics is token-gated and records connect/init/start/lang_pack', { time
 
     const status = await fetch(`${BASE}/api/status`).then((r) => r.json());
     assert.equal(status.liveConnections, 0);
-    assert.equal(status.version, '3.4.9');
+    assert.equal(status.version, '3.4.8');
     assert.equal(status.translationSource, 'on-device-packs');
 
     const pack = await fetch(`${BASE}/translations/uzc.json`);
@@ -91,7 +91,7 @@ test('analytics is token-gated and records connect/init/start/lang_pack', { time
     ws.send(JSON.stringify({
       type: 'init',
       sessionId: 'sid-http-test',
-      appVersion: 'v3.4.9',
+      appVersion: 'v3.4.8',
       lang: 'uz',
       transcriptionProvider: 'groq',
       audioSource: 'browser',

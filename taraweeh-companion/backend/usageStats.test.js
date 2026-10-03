@@ -7,7 +7,7 @@ test('usage stats count connections, inits, and unique installs', () => {
   stats.connected({ concurrent: 1, sessionId: 'sid-a' });
   stats.connected({ concurrent: 2, sessionId: 'sid-b' });
   stats.connected({ concurrent: 1, sessionId: 'sid-a' });
-  stats.init({ sessionId: 'sid-a', lang: 'uz', provider: 'groq', audioSource: 'g2', practiceMode: true, pipeline: 'v4', appVersion: 'v3.4.9' });
+  stats.init({ sessionId: 'sid-a', lang: 'uz', provider: 'groq', audioSource: 'g2', practiceMode: true, pipeline: 'v4', appVersion: 'v3.4.8' });
   stats.init({ sessionId: 'sid-b', lang: '', provider: 'openai', audioSource: 'browser', practiceMode: false, pipeline: 'v3', appVersion: 'v3.4.8' });
   stats.start();
   stats.error('gsk_SECRETvalue missing', 'key');
