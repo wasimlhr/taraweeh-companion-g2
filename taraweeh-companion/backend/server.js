@@ -1,7 +1,7 @@
 /**
  * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.8 — on-device language packs + DIAG_TOKEN usage analytics
+ * v3.4.9 — on-device language packs + DIAG_TOKEN usage analytics
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';

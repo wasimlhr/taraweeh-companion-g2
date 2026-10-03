@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.4.8 - 2026-10-03
+## 3.4.9 - 2026-10-03
 
 - **Optional on-device language packs.** English stays built in. Other
   translations (Urdu, French, Spanish, Indonesian, Turkish, Bengali,
@@ -16,6 +16,13 @@
   mic / mode / app version they use, and scrubbed errors. A browser
   gets an HTML dashboard; curl gets JSON. `/api/status` only adds the
   live connection count. No recitation text, audio, or API keys.
+
+## 3.4.8 - 2026-10-03
+
+- **Uzbek is applied on the device.** The 3.4.7 pack talked to Railway 3.4.0,
+  which has no `uz`/`uzc` and showed built-in English for An-Nas and Fatiha.
+  The Mansour Cyrillic mushaf now ships in the `.ehpk`; Latin is converted
+  on the phone/glasses even when the hosted backend is older.
 
 ## 3.4.7 - 2026-10-02
 
