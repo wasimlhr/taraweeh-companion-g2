@@ -2205,6 +2205,7 @@ body {
     }
     var requested = S.settings.lang || '';
     if (requested && !langOnBackend(requested)) {
+      _activeTranslationLang = '';
       log(translationLabel(requested) + ' is not on backend v' + (_backendVersion || '?')
         + ' — verse text stays English until you deploy 3.4.7+', 'warn');
     }
@@ -2217,10 +2218,11 @@ body {
     var el = document.getElementById('verseLangLabel');
     if (!el) return;
     var requested = (S.settings && S.settings.lang) || '';
-    var shown = (state && state.translationLang != null && state.translationLang !== '')
+    var served = (state && state.translationLang != null)
       ? state.translationLang
-      : (_activeTranslationLang != null ? _activeTranslationLang : (langOnBackend(requested) ? requested : ''));
-    var label = translationLabel(shown);
+      : (_activeTranslationLang != null ? _activeTranslationLang : requested);
+    if (requested && !langOnBackend(requested)) served = '';
+    var label = translationLabel(served);
     if (requested && !langOnBackend(requested)) {
       el.textContent = 'Showing ' + label + ' — ' + translationLabel(requested)
         + ' needs backend 3.4.7 (this server is v' + (_backendVersion || '?') + ')';
@@ -2230,6 +2232,8 @@ body {
       el.style.color = '';
     }
   }
+  window.syncTranslationAvailability = syncTranslationAvailability;
+  window.updateVerseLangLabel = updateVerseLangLabel;
 
   function loadSettings() {
     try {
