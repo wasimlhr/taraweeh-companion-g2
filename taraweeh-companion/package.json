@@ -1,7 +1,7 @@
 {
-  "name": "taraweeh-companion",
+  "name": "quran-verse-translator",
   "version": "3.4.6",
-  "description": "Taraweeh Companion — real-time Quran recitation on Even G2 smart glasses",
+  "description": "Quran Verse Translator \u2014 real-time Quran recitation recognition and translation for phone and Even G2",
   "type": "module",
   "scripts": {
     "postinstall": "cd backend && npm install",

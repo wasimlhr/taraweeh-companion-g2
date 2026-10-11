@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.4.6 - 2026-10-01
+
+- **Listen mode, now the default.** A general Quran follow-along translator:
+  it locks onto any recitation (live, a recording, a video) and follows it
+  verse by verse with the translation in the chosen language, without the
+  prayer machinery. The modes are now Listen, Practice and Taraweeh; Taraweeh
+  is Listen plus posture and rak'ah tracking. The client sends
+  `taraweehMode: false` for Listen; clients that predate it send neither flag
+  and still get Taraweeh.
+- **Standalone phone app (iOS + Android).** A Capacitor wrapper around the
+  same `app/index.html` that uses the phone microphone and screen. In the
+  phone app the translation language is on the main screen.
+
 ## 3.4.6 - 2026-09-20
 
 - Include PR #15 through a072c0e: mosque Whisper cue variants, seated-only tasleem handling, and safeguards against false rak'ah counts and tashahhud resets.

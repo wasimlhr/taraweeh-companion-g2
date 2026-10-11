@@ -1,13 +1,25 @@
-# Quran Companion — standalone phone app (iOS + Android)
+# Quran Verse Translator — standalone phone app (iOS + Android)
 
-The same Taraweeh / Quran follow-along app, without the G2 glasses: the phone
-microphone is the input and the phone screen is the display.
+A live Quran verse translator: it listens to a recitation through the phone
+microphone, finds the verse and shows it with its translation in the chosen
+language. Same app and backend as the G2 glasses build, without the glasses.
 
 ## Spec
 
 **Goal.** Ship the existing recitation tracker (ASR → Quran matcher → anchor
-state machine → rak'ah tracker) as an installable iOS and Android app. The
-translator core does not change.
+state machine → translation) as an installable iOS and Android app that works
+as a general Quran translator, not only for Taraweeh. The translator core does
+not change.
+
+**Modes** (same in both builds; Translate is the default):
+
+| Mode | What it does | Backend flags |
+|---|---|---|
+| 🌐 Translate | Follows Quran recitation (live, recording, video) verse by verse with auto-advance | `taraweehMode: false`, `practiceMode: false` |
+| 📖 Practice | Matches the ayah you recite and stays there; no auto-advance | `practiceMode: true` |
+| 🌙 Taraweeh | Listen plus posture tracking and the rak'ah counter | `taraweehMode: true` |
+
+A client that sends neither flag (older glasses builds) still gets its legacy behavior; the standalone app explicitly starts in Translate mode.
 
 **Architecture.** Capacitor 8 wraps the one shared frontend,
 `../app/index.html`. Nothing is forked:
@@ -15,7 +27,7 @@ translator core does not change.
 | Piece | G2 build (.ehpk) | Standalone app |
 |---|---|---|
 | Frontend | `app/index.html` | same file, copied into `www/` by `scripts/build-web.js` |
-| Mode switch | Even Hub bridge detected | `window.__TARAWEEH_STANDALONE__` (injected) or native Capacitor runtime → `<html class="standalone">` |
+| Mode switch | Even Hub bridge detected | `window.__QURAN_TRANSLATOR_STANDALONE__` (injected; legacy `__TARAWEEH_STANDALONE__` still accepted) or native Capacitor runtime → `<html class="standalone">` |
 | Audio in | G2 mic via bridge (phone mic optional) | phone mic via `getUserMedia`, 16 kHz PCM16 over the WebSocket (`audioSource: browser`) |
 | Display | glasses HUD + phone | phone only; verse card enlarged |
 | Backend | hosted Railway (`/ws`, `/api/*`) | same hosted backend, unchanged |
@@ -27,7 +39,8 @@ translator core does not change.
 glasses-only controls are hidden (G2/phone mic toggle, "second line on
 glasses", glasses gestures help, "for Even Realities G2" splash line); the verse
 Arabic, transliteration and translation are larger; the bridge probe is skipped
-so Start is ready immediately.
+so Start is ready immediately; the translation language picker sits on the
+main screen.
 
 **Permissions.** Android: `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `INTERNET`.
 iOS: `NSMicrophoneUsageDescription`.

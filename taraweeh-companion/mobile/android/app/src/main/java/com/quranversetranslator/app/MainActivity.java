@@ -1,4 +1,4 @@
-package com.taraweehcompanion.app;
+package com.quranversetranslator.app;
 
 import com.getcapacitor.BridgeActivity;
 

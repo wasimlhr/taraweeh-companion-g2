@@ -1,6 +1,6 @@
 {
-  "appId": "com.taraweehcompanion.app",
-  "appName": "Quran Companion",
+  "appId": "com.quranversetranslator.app",
+  "appName": "Quran Verse Translator",
   "webDir": "www",
   "ios": {
     "contentInset": "never"

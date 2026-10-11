@@ -1,8 +1,8 @@
-# Taraweeh Companion
+# Quran Verse Translator
 
-**Real-time Quran recitation recognition on Even Realities G2 smart glasses.**
+**Real-time Quran recitation recognition and translation on phones and Even Realities G2 smart glasses.**
 
-Taraweeh Companion listens to a reciter, identifies which ayah is being recited in real time, and displays the Arabic text, transliteration, and English translation — directly on the G2 glasses lens or on a phone screen. Built for Taraweeh, daily prayers, and Quran study sessions.
+Quran Verse Translator listens to Quran recitation, identifies the ayah in real time, and displays the Arabic text, transliteration, and translation on a phone screen or Even Realities G2 glasses. The default phone experience is general verse translation; Taraweeh/rak'ah tracking remains as an optional mode.
 
 ---
 

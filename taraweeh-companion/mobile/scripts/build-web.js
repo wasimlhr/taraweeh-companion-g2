@@ -2,7 +2,7 @@
 /**
  * Build www/ for the standalone phone app from the one shared frontend,
  * app/index.html. Nothing is forked: the page switches itself into
- * standalone mode (phone mic in, phone screen out) when it sees the flag
+ * standalone translator mode (phone mic in, phone screen out) when it sees the flag
  * injected here, or a native Capacitor runtime.
  */
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -16,8 +16,20 @@ const outDir = join(mobileDir, 'www');
 
 const VIEWPORT_OLD = '<meta name="viewport" content="width=device-width, initial-scale=1.0" />';
 const VIEWPORT_NEW = '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />';
+// Ad units for the bottom banner. Without real IDs in the environment the
+// build uses Google's public test units, which only ever serve test ads.
+const TEST_BANNER_ANDROID = 'ca-app-pub-3940256099942544/9214589741';
+const TEST_BANNER_IOS = 'ca-app-pub-3940256099942544/2435281174';
+export const ADS_CONFIG = {
+  enabled: process.env.ADS_ENABLED !== '0',
+  bannerAndroid: process.env.ADMOB_BANNER_ANDROID || TEST_BANNER_ANDROID,
+  bannerIos: process.env.ADMOB_BANNER_IOS || TEST_BANNER_IOS,
+  testing: !(process.env.ADMOB_BANNER_ANDROID || process.env.ADMOB_BANNER_IOS),
+};
+
 export const HEAD_INJECT = [
-  '<script>window.__TARAWEEH_STANDALONE__ = true;</script>',
+  '<script>window.__QURAN_TRANSLATOR_STANDALONE__ = true; window.__TARAWEEH_STANDALONE__ = true;'
+    + ' window.__QVT_ADS__ = ' + JSON.stringify(ADS_CONFIG) + ';</script>',
   '<script src="capacitor.js"></script>',
 ].join('\n  ');
 
@@ -33,6 +45,9 @@ export function build() {
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, 'index.html'), transformHtml(readFileSync(srcHtml, 'utf8')));
+  // Settings links to the privacy policy, so it ships inside the app too.
+  copyFileSync(join(dirname(srcHtml), 'privacy.html'), join(outDir, 'privacy.html'));
+  copyFileSync(join(dirname(srcHtml), 'privacy.html'), join(outDir, 'privacy.html'));
   // IIFE build of @capacitor/core: gives the plain <script> page registerPlugin.
   const require = createRequire(import.meta.url);
   const coreDist = dirname(require.resolve('@capacitor/core/dist/capacitor.js'));

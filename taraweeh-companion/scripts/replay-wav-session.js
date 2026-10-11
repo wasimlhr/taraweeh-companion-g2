@@ -20,6 +20,8 @@
  *   --speed 2                 faster than realtime (the posture machine is
  *                             wall-clock based, so anything but 1 distorts it)
  *   --json                    full trace as JSON instead of a table
+ *   --mode listen|practice|taraweeh   recitation mode (default taraweeh)
+ *   --lang ur                 translation language (default built-in English)
  */
 import { readFileSync } from 'fs';
 import { createRequire } from 'module';
@@ -38,9 +40,11 @@ const WAV = args.find((a) => !a.startsWith('--') && /\.(wav|pcm)$/i.test(a));
 const WS_URL = argOf('url', 'ws://127.0.0.1:3001/ws');
 const SPEED = Math.max(0.25, parseFloat(argOf('speed', '1')) || 1);
 const JSON_OUT = args.includes('--json');
+const MODE = argOf('mode', 'taraweeh');
+const LANG = argOf('lang', '');
 
 if (!WAV) {
-  console.error('usage: replay-wav-session.js <16kHz-mono-s16le.wav> [--url …] [--speed 1] [--json]');
+  console.error('usage: replay-wav-session.js <16kHz-mono-s16le.wav> [--url …] [--speed 1] [--mode listen] [--lang ur] [--json]');
   process.exit(2);
 }
 
@@ -83,6 +87,8 @@ async function main() {
   });
 
   const transitions = [];
+  const verses = [];
+  let lastRef = '';
   let report = null;
   let startedAt = Date.now();
   ws.on('message', (raw) => {
@@ -94,6 +100,18 @@ async function main() {
       if (!JSON_OUT) {
         console.log(`  ${(Date.now() - startedAt) / 1000 | 0}s  rak'ah ${p.rakat}  `
           + `${String(p.positionLabel).padEnd(15)} ${p.reason}`);
+      }
+    }
+    if (msg.type === 'state' && msg.state && msg.state.surah && msg.state.ayah) {
+      const st = msg.state;
+      const ref = `${st.surah}:${st.ayah}`;
+      if (ref !== lastRef) {
+        lastRef = ref;
+        verses.push(ref);
+        if (!JSON_OUT) {
+          console.log(`  ${(Date.now() - startedAt) / 1000 | 0}s  ${ref.padEnd(7)} ${st.mode}  `
+            + String(st.translation || '').slice(0, 70));
+        }
       }
     }
     if (msg.type === 'trace_report') report = msg.report;
@@ -108,13 +126,16 @@ async function main() {
     pipelineVersion: 'v4',
     appVersion: 'replay-wav',
     prayerConfig: { targetRakat: 20, rakatPerSet: 2 },
+    lang: LANG,
+    practiceMode: MODE === 'practice',
+    taraweehMode: MODE === 'taraweeh',
   }));
   await sleep(400);
   ws.send(JSON.stringify({ type: 'start' }));
   startedAt = Date.now();
 
   if (!JSON_OUT) {
-    console.log(`[wav] ${WAV} — ${Math.round(durationMs / 1000)}s at ${SPEED}x\n`);
+    console.log(`[wav] ${WAV} — ${Math.round(durationMs / 1000)}s at ${SPEED}x, ${MODE} mode\n`);
   }
   for (let off = 0; off < pcm.length; off += FRAME_BYTES) {
     if (ws.readyState !== WebSocket.OPEN) break;
@@ -137,7 +158,8 @@ async function main() {
     console.log(`[trace] ignored because: ${JSON.stringify(s.cues.rejectedBecause)}`);
   }
   console.log(`[trace] transitions: ${JSON.stringify(s.prayer.byReason)}`);
-  console.log(`[trace] rak'ah reached: ${s.prayer.rakatReached}\n`);
+  console.log(`[trace] rak'ah reached: ${s.prayer.rakatReached}`);
+  console.log(`[trace] verses shown: ${verses.length}  ${verses.join(' ')}\n`);
 
   console.log('what it heard and what it did:');
   for (const e of report.events) {
