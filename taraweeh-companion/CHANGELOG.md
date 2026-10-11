@@ -6,6 +6,16 @@
 - Refresh glasses as soon as a language installs and preserve source verse state when switching languages.
 - Substitute unsupported scholarly Latin characters on the glasses while preserving phone text. Uzbek Cyrillic uses Latin on glasses; Urdu and Bengali use English.
 - Add simulator verification with actual phone and glasses captures for all 12 translation options, plus a full 6,236-ayah font scan for each option.
+- **Listen mode, now the default.** A general Quran follow-along translator:
+  it locks onto any recitation (live, a recording, a video) and follows it
+  verse by verse with the translation in the chosen language, without the
+  prayer machinery. The modes are now Listen, Practice and Taraweeh; Taraweeh
+  is Listen plus posture and rak'ah tracking. The client sends
+  `taraweehMode: false` for Listen; clients that predate it send neither flag
+  and still get Taraweeh.
+- **Standalone phone app (iOS + Android).** A Capacitor wrapper around the
+  same `app/index.html` that uses the phone microphone and screen. In the
+  phone app the translation language is on the main screen.
 
 ## 3.4.9 - 2026-10-03
 

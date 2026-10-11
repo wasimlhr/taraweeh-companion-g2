@@ -1,4 +1,4 @@
-# Taraweeh Companion Backend
+# Quran Verse Translator Backend
 
 WebSocket server for prayer-aware tracking. Receives PCM audio, runs Whisper ASR via **Groq** or **OpenAI**, fuzzy match, state machine.
 

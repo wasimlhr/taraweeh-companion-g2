@@ -47,9 +47,13 @@ function harness() {
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       clearGlassesPreamble, startSearchingDots, PREAMBLE_GLASSES,
       startPageFlip, _buildTraceReport,
+      setMode: function (mode) {
+        _reciteMode = mode; _practiceMode = mode === 'practice'; _taraweehMode = mode === 'taraweeh';
+      },
+      rakatHdr, setReciteMode: window.setReciteMode,
       applyLocalTranslation, fetchLangPack,
       setPack: function (lang, verses) { _langPacks[lang] = verses; },
-      setPractice: function (value) { _practiceMode = value; _taraweehMode = !value; },
+      setPractice: function (value) { _practiceMode = value; _taraweehMode = !value; _reciteMode = value ? 'practice' : 'taraweeh'; },
       setMetrics: function (metrics) { _pretext = metrics; }
     };
   `;
@@ -125,6 +129,7 @@ test('glasses menu is valid and preserved by startup, recovery, and verse rebuil
 
 test('menu selection changes the count without pausing or restarting capture', async () => {
   const h = harness();
+  h.ui.setMode('taraweeh');
   h.ui.onG2Event({ sysEvent: { eventType: 4 } });
   h.ui.onG2Event({ menuItemClickEvent: { itemID: 2 } });
   h.ui.onG2Event({ sysEvent: { eventType: 5 } });
@@ -135,14 +140,33 @@ test('menu selection changes the count without pausing or restarting capture', a
   h.ui.onG2Event({ menuItemClickEvent: { itemID: 999 } });
   assert.deepEqual(h.messages.at(-1), { type: 'adjust_rakat', delta: -1 });
   assert.equal(h.messages.length, 2);
-  h.ui.setPractice(true);
-  h.ui.onG2Event({ menuItemClickEvent: { itemID: 2 } });
-  assert.equal(h.messages.length, 2);
+  for (const mode of ['practice', 'listen']) {
+    h.ui.setMode(mode);
+    h.ui.onG2Event({ menuItemClickEvent: { itemID: 2 } });
+    assert.equal(h.messages.length, 2);
+  }
+});
+
+test('Listen is the default: no rak\'ah header, and it tells the backend Taraweeh is off', async () => {
+  const h = harness();
+  assert.equal(h.ui.rakatHdr(), 'Listen');
+  h.ui.setReciteMode('listen');
+  assert.deepEqual(h.messages, [
+    { type: 'set_practice_mode', enabled: false },
+    { type: 'set_taraweeh_mode', enabled: false },
+  ]);
+  h.ui.setReciteMode('taraweeh');
+  assert.deepEqual(h.messages.slice(2), [
+    { type: 'set_practice_mode', enabled: false },
+    { type: 'set_taraweeh_mode', enabled: true },
+  ]);
+  assert.match(h.ui.rakatHdr(), /^R1/);
 });
 
 test('combined status envelope updates the compact count and diagnostics export preserves SDK metrics', async () => {
   const h = harness();
   h.ui.setMetrics({ getTextWidth, pxTruncate });
+  h.ui.setMode('taraweeh');
   h.ui.handleServerMsg({ type: 'sys_status', statusType: 'taraweeh_mode',
     prayer: { rakat: 4, position: 'QIYAM' } });
   assert.equal(h.nodes.get('rakatCount').textContent, "Rak'ah 4");
@@ -180,7 +204,7 @@ for (const [kind, raw, title] of [
     h.ui.handleServerMsg({ type: 'state', state: { mode: 'SEARCHING' } });
     for (const timer of h.intervals.values()) timer.fn();
     assert.equal(h.ui.buildGlassesText({ mode: 'SEARCHING' }).hdr, title);
-    h.ui.setPractice(true);
+    h.ui.setMode('practice');
     h.ui.handleServerMsg({ type: 'state', state: {
       mode: 'LOCKED', surah: 112, ayah: 1, confidence: 0.9,
       arabic: 'قل هو الله أحد', translation: 'Say, He is Allah, One.',

@@ -1,7 +1,8 @@
 /**
- * Taraweeh Companion Backend — WebSocket server with AudioPipeline per client.
+ * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
  * v3.4.10 — on-device language packs + DIAG_TOKEN usage analytics
+ *   Translate mode: general Quran follow-along translator; Taraweeh adds rak'ah tracking
  */
 import 'dotenv/config';
 import { createServer as createHttpServer } from 'http';
@@ -326,6 +327,8 @@ app.get('/app.json', (req, res) => {
   res.sendFile(join(rootDir, 'app.json'));
 });
 app.get('/app/index.html', sendAppHtml);
+// Stable public URL for the store listings' privacy policy.
+app.get(['/privacy', '/privacy.html'], (req, res) => res.sendFile(join(rootDir, 'app', 'privacy.html')));
 app.use('/app', express.static(join(rootDir, 'app')));
 
 const httpServer = createHttpServer(app);
@@ -529,9 +532,16 @@ wss.on('connection', (ws, req) => {
     // instead of advancing at the naive measured rate.
     if (pipeline.setFastMode) pipeline.setFastMode(!!opts.fastMode);
     if (pipeline.setSlowMode) pipeline.setSlowMode(!!opts.slowMode);
-    // Recitation mode: Practice wins if the client sent it. Default Taraweeh.
-    if (opts.practiceMode && pipeline.setPracticeMode) {
+    // Recitation mode: Practice wins if the client sent it. Listen is an
+    // explicit taraweehMode:false — follow with auto-advance, no prayer
+    // tracking. Clients that predate Listen send neither, so stay Taraweeh.
+    const reciteMode = opts.practiceMode ? 'practice'
+      : opts.taraweehMode === false ? 'listen' : 'taraweeh';
+    if (reciteMode === 'practice' && pipeline.setPracticeMode) {
       pipeline.setPracticeMode(true);
+    } else if (reciteMode === 'listen') {
+      if (pipeline.setPracticeMode) pipeline.setPracticeMode(false);
+      if (pipeline.setTaraweehMode) pipeline.setTaraweehMode(false);
     } else if (pipeline.setTaraweehMode) {
       pipeline.setTaraweehMode(true);
       if (pipeline.setPracticeMode) pipeline.setPracticeMode(false);
@@ -541,7 +551,7 @@ wss.on('connection', (ws, req) => {
         pipeline.restorePrayerState(opts.prayerState);
       }
     }
-    console.log(`[Init] Pace: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'} (client), mode: ${opts.practiceMode ? 'practice' : 'taraweeh'}`);
+    console.log(`[Init] Pace: ${opts.fastMode ? 'FAST' : opts.slowMode ? 'SLOW' : 'normal'} (client), mode: ${reciteMode}`);
     send({ type: 'pipeline_version', version: pipelineVersion });
     if (APP_VERSION) send({ type: 'backend_version', version: APP_VERSION });
   }
