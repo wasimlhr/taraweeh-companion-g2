@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.10 - 2026-10-11
+
+- Download translations from a verified immutable release, including Uzbek, when the production backend lacks pack endpoints. Bound stalled requests so fallback sources can run.
+- Refresh glasses as soon as a language installs and preserve source verse state when switching languages.
+- Substitute unsupported scholarly Latin characters on the glasses while preserving phone text. Uzbek Cyrillic uses Latin on glasses; Urdu and Bengali use English.
+- Add simulator verification with actual phone and glasses captures for all 12 translation options, plus a full 6,236-ayah font scan for each option.
+
 ## 3.4.9 - 2026-10-03
 
 - **Optional on-device language packs.** English stays built in. Other

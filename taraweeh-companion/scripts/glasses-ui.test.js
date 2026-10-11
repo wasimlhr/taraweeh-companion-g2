@@ -47,6 +47,8 @@ function harness() {
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       clearGlassesPreamble, startSearchingDots, PREAMBLE_GLASSES,
       startPageFlip, _buildTraceReport,
+      applyLocalTranslation, fetchLangPack,
+      setPack: function (lang, verses) { _langPacks[lang] = verses; },
       setPractice: function (value) { _practiceMode = value; _taraweehMode = !value; },
       setMetrics: function (metrics) { _pretext = metrics; }
     };
@@ -63,10 +65,45 @@ function harness() {
       audioControl: async () => { throw new Error('Unexpected capture lifecycle change'); },
     },
   });
-  return { ui, writes, messages, nodes, timeouts, intervals,
+  return { ui, writes, messages, nodes, timeouts, intervals, context,
     async flush() { for (let i = 0; i < 12; i++) await ui.S.bridgeCallQueue; },
   };
 }
+
+test('switching local languages preserves the source state and English glasses fallback', () => {
+  const h = harness();
+  const pack = text => Array.from({ length: 114 }, () => [text]);
+  h.ui.setPack('fr', pack('French'));
+  h.ui.setPack('ur', pack('Urdu'));
+  h.ui.setPack('en', pack('English'));
+  const state = { surah: 1, ayah: 1, translation: 'English', translationGlasses: 'English' };
+  h.ui.S.settings.lang = 'fr';
+  const french = h.ui.applyLocalTranslation(state);
+  assert.equal(french.translationGlasses, 'French');
+  assert.equal(state.translation, 'English');
+  h.ui.S.settings.lang = 'ur';
+  const urdu = h.ui.applyLocalTranslation(state);
+  assert.equal(urdu.translation, 'Urdu');
+  assert.equal(urdu.translationGlasses, 'English');
+});
+
+test('a stalled pack source times out and falls through to the next source', async () => {
+  const h = harness();
+  const urls = [];
+  h.context.fetch = url => {
+    urls.push(url);
+    if (urls.length === 1) return new Promise(() => {});
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ verses: Array.from({length:114}, () => ['translation']) }) });
+  };
+  const result = h.ui.fetchLangPack('fr');
+  const timeout = [...h.timeouts.values()].find(timer => timer.ms === 15000);
+  assert.ok(timeout);
+  timeout.fn();
+  const verses = await result;
+  assert.equal(verses.length, 114);
+  assert.equal(urls.length, 2);
+  assert.match(urls[0], /077c80932fa617dd56a1473476ad7a4d90a041de/);
+});
 
 test('glasses menu is valid and preserved by startup, recovery, and verse rebuilds', async () => {
   const h = harness();

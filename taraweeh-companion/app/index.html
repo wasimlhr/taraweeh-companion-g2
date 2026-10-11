@@ -891,7 +891,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.9</span>
+      <span class="version" id="versionEl">v3.4.10</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1262,7 +1262,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.9';
+  const APP_VERSION = 'v3.4.10';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1835,7 +1835,7 @@ body {
   var _backendVersion = '';
   var _activeTranslationLang = null;
   var _langPacks = {};
-  var _langPackLoading = null;
+  var _langPackLoading = {};
   var _lastPhoneState = null;
   var _lastPhoneWhisper = null;
   var LANG_PACK_KEYS = {
@@ -1911,18 +1911,26 @@ body {
     if (!lang) return state;
     var text = lookupPackVerse(lang, state.surah, state.ayah);
     if (!text) return state;
+    state = Object.assign({}, state);
     var incoming = state.translation || '';
     var latin = (lang === 'uz' || lang === 'uzc') ? cyrillicToUzbekLatinClient(text) : text;
     if (lang === 'uz') state.translation = latin;
     else if (lang === 'uzc') state.translation = text;
     else state.translation = text;
-    if (GLASSES_ENGLISH_LANGS[lang]) state.translationGlasses = incoming;
+    if (GLASSES_ENGLISH_LANGS[lang]) state.translationGlasses = lookupPackVerse('en', state.surah, state.ayah) || state.translationGlasses || incoming;
     else if (lang === 'uzc' || lang === 'uz') state.translationGlasses = latin;
-    else state.translationGlasses = state.translation;
+    else state.translationGlasses = glassesTranslationText(state.translation);
     state.translationLang = lang;
     return state;
   }
   function applyLocalUzbek(state) { return applyLocalTranslation(state); }
+  function glassesTranslationText(text) {
+    // Preserve the phone's spelling; these scholarly Latin glyphs are absent
+    // from the firmware font used for Indonesian, French and Swedish packs.
+    return String(text || '').replace(/`/g, "'").replace(/[ṣẓṢṡṭḥḤṬ]/g, function (ch) {
+      return { 'ṣ':'s', 'ẓ':'z', 'Ṣ':'S', 'ṡ':'s', 'ṭ':'t', 'ḥ':'h', 'Ḥ':'H', 'Ṭ':'T' }[ch];
+    });
+  }
   function langDisplayable(lang) {
     var n = String(lang || '').trim();
     if (!n) return true;
@@ -1943,20 +1951,18 @@ body {
   function langPackUrls(key) {
     var compact = 'translations/' + key + '.json';
     var full = 'backend/data/quran-json/quran_' + key + '.json';
-    var urls = [];
-    try { urls.push(new URL(compact, location.href).href); } catch (_) {}
-    try { urls.push(new URL('/' + compact, location.href).href); } catch (_) {}
+    // This immutable release has all 11 source tables. The production v3.4.0
+    // backend has no pack routes, and packaged WebView URLs are not a server.
+    var gh = 'https://cdn.jsdelivr.net/gh/wasimlhr/taraweeh-companion-g2';
+    var urls = [gh + '@077c80932fa617dd56a1473476ad7a4d90a041de/taraweeh-companion/' + full];
     var base = '';
     try { base = backendBase(); } catch (_) {}
     if (base) {
       urls.push(base + '/translations/' + key + '.json');
       urls.push(base + '/app/translations/' + key + '.json');
     }
-    var gh = 'https://cdn.jsdelivr.net/gh/wasimlhr/taraweeh-companion-g2';
-    var refs = ['cursor/uzbek-translations-3a5e', 'master'];
-    for (var i = 0; i < refs.length; i++) {
-      urls.push(gh + '@' + refs[i] + '/taraweeh-companion/app/' + compact);
-      urls.push(gh + '@' + refs[i] + '/taraweeh-companion/' + full);
+    if (_originIsBackend) {
+      try { urls.push(new URL(compact, location.href).href); } catch (_) {}
     }
     return urls;
   }
@@ -1998,13 +2004,24 @@ body {
     function next() {
       if (i >= urls.length) return Promise.reject(new Error('no pack source'));
       var url = urls[i++];
-      return fetch(url, { cache: 'force-cache' }).then(function (r) {
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer;
+      var timeout = new Promise(function (_, reject) {
+        timer = setTimeout(function () {
+          if (controller) controller.abort();
+          reject(new Error('language pack download timed out'));
+        }, 15000);
+      });
+      var request = fetch(url, { cache: 'force-cache', signal: controller ? controller.signal : undefined }).then(function (r) {
         if (!r.ok) throw new Error(String(r.status));
         return r.json();
       }).then(function (data) {
         var verses = normalizeLangPack(data);
         if (!verses) throw new Error('bad pack');
         return verses;
+      });
+      return Promise.race([request, timeout]).finally(function () {
+        clearTimeout(timer);
       }).catch(function () { return next(); });
     }
     return next();
@@ -2020,11 +2037,10 @@ body {
       setLangPackStatus('Installed on this device · ' + (LANG_PACK_KB[key] || '?') + ' KB');
       return Promise.resolve(true);
     }
-    if (_langPackLoading === key) return Promise.resolve(false);
-    _langPackLoading = key;
+    if (_langPackLoading[key]) return _langPackLoading[key];
     var label = translationLabel(lang);
     setLangPackStatus('Downloading ' + label + ' · ~' + (LANG_PACK_KB[key] || '?') + ' KB…', true);
-    return cachePackGet(key).then(function (cached) {
+    _langPackLoading[key] = cachePackGet(key).then(function (cached) {
       var verses = normalizeLangPack(cached);
       if (verses) return verses;
       return fetchLangPack(key).then(function (v) {
@@ -2038,6 +2054,9 @@ body {
       setLangPackStatus('Installed on this device · ' + (LANG_PACK_KB[key] || '?') + ' KB');
       log(label + ' language pack ready (' + verses.reduce(function (n, s) { return n + (s ? s.length : 0); }, 0) + ' ayahs)', 'ok');
       if (_lastPhoneState) updatePhoneUI(_lastPhoneState, _lastPhoneWhisper);
+      if (S.isG2 && S.isRecording && S._lastGlassesState) {
+        showGlassesPage(buildGlassesText(S._lastGlassesState), 0);
+      }
       if (typeof updateTranslationDesc === 'function') updateTranslationDesc();
       return true;
     }).catch(function () {
@@ -2046,8 +2065,9 @@ body {
       if (opts.warn !== false) log('Could not download ' + label + ' language pack', 'warn');
       return false;
     }).finally(function () {
-      if (_langPackLoading === key) _langPackLoading = null;
+      delete _langPackLoading[key];
     });
+    return _langPackLoading[key];
   }
   window.downloadSelectedLangPack = function () {
     var sel = document.getElementById('settingLang');
@@ -2444,7 +2464,7 @@ body {
       : (_activeTranslationLang != null ? _activeTranslationLang : requested);
     if (requested && !langDisplayable(requested)) served = '';
     var label = translationLabel(served);
-    if (requested && packKeyFor(requested) && !hasLangPack(requested)) {
+    if (requested && packKeyFor(requested) && !hasLangPack(requested) && !langOnBackend(requested)) {
       el.textContent = 'Download ' + translationLabel(requested) + ' in Settings (~'
         + (LANG_PACK_KB[packKeyFor(requested)] || '?') + ' KB) — English until then';
       el.style.color = 'var(--tc-orange, #d97706)';
@@ -3357,7 +3377,7 @@ body {
     if (_glassesPreamble && state.mode === 'SEARCHING' && !state.isCandidate && !state.userSearching) {
       return preambleDisplay(_glassesPreamble);
     }
-    var transForGlasses = state.translationGlasses ?? state.translation;
+    var transForGlasses = glassesTranslationText(state.translationGlasses ?? state.translation);
     switch (state.mode) {
       case 'SEARCHING':
         if (state.isCandidate && (state.translation || state.translationGlasses)) {
@@ -3394,7 +3414,7 @@ body {
         var pRef  = state.surah ? glassesRef(state)
           : (state.surahName ? clip(state.surahName, 14) : 'Quran');
         var pHdr  = 'PAUSED  ' + pRef;
-        var transForPaused = state.translationGlasses ?? state.translation;
+        var transForPaused = glassesTranslationText(state.translationGlasses ?? state.translation);
         var pBody = transForPaused || 'Single-tap to resume';
         var pPages = buildPages(pBody, state.transliteration, 2);
         pPages[pPages.length - 1] += '\n' + g2Divider() + '\nSingle-tap resume \u00B7 Double-tap exit';
@@ -3600,8 +3620,8 @@ body {
 
   // ─── Phone UI updater ─────────────────────────────────────────────────────
   function updatePhoneUI(state, whisper) {
-    state = applyLocalTranslation(state);
     _lastPhoneState = state;
+    state = applyLocalTranslation(state);
     _lastPhoneWhisper = whisper;
     S.mode = state.mode;
 
