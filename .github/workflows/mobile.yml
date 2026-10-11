@@ -1,0 +1,63 @@
+# Standalone phone app (taraweeh-companion/mobile): unsigned debug builds for
+# both platforms. iOS needs macOS, so this is the only place it gets built.
+name: Mobile app
+
+on:
+  push:
+    paths:
+      - 'taraweeh-companion/app/**'
+      - 'taraweeh-companion/mobile/**'
+      - '.github/workflows/mobile.yml'
+  pull_request:
+    paths:
+      - 'taraweeh-companion/app/**'
+      - 'taraweeh-companion/mobile/**'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: taraweeh-companion/mobile
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: taraweeh-companion/mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm test
+      - run: npx cap sync android
+      - run: ./gradlew assembleDebug --no-daemon
+        working-directory: taraweeh-companion/mobile/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quran-companion-debug-apk
+          path: taraweeh-companion/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: taraweeh-companion/mobile/package-lock.json
+      - run: npm ci
+      - run: npm run build:web
+      - run: npx cap sync ios
+      - name: Build for the iOS simulator (unsigned)
+        working-directory: taraweeh-companion/mobile/ios/App
+        run: >
+          xcodebuild -project App.xcodeproj -scheme App
+          -configuration Debug -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build CODE_SIGNING_ALLOWED=NO build

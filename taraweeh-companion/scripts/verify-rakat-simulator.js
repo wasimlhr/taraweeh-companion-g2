@@ -55,7 +55,7 @@ await evaluate('(async () => { window.__languageTest.glassesStartup(); await win
 await new Promise(resolve => setTimeout(resolve, 500));
 await evaluate('window.__languageTest.S._lastGlassesState = null');
 
-await evaluate('(async()=>{const t=window.__languageTest;t.S.settings.lang="uz";await t.ensureLangPack("uz");document.getElementById("recordBtn").click();})()');
+await evaluate('(async()=>{const t=window.__languageTest;window.setReciteMode("taraweeh");t.S.settings.lang="uz";await t.ensureLangPack("uz");document.getElementById("recordBtn").click();})()');
 await new Promise(r=>setTimeout(r,1000));
 const start=await evaluate('({recording:window.__languageTest.S.isRecording,button:document.getElementById("recordBtn").textContent})');
 if(!start.recording || !start.button.includes('Stop Listening'))throw new Error('Start failed '+JSON.stringify(start));

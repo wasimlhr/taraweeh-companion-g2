@@ -1,0 +1,31 @@
+{
+  "name": "quran-verse-translator-mobile",
+  "version": "3.4.10",
+  "private": true,
+  "description": "Quran Verse Translator standalone phone app (iOS + Android) \u2014 phone mic in, phone screen out",
+  "type": "module",
+  "scripts": {
+    "build:web": "node scripts/build-web.js",
+    "test": "node --test scripts/build-web.test.js",
+    "sync": "npm run build:web && cap sync",
+    "android:debug": "npm run sync && cd android && ./gradlew assembleDebug",
+    "android:open": "cap open android",
+    "ios:open": "cap open ios",
+    "assets": "npx -y @capacitor/assets@3 generate --iconBackgroundColor '#111111' --iconBackgroundColorDark '#111111' --splashBackgroundColor '#111111' --splashBackgroundColorDark '#111111'",
+    "android:release": "npm run sync && cd android && ./gradlew bundleRelease assembleRelease"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@capacitor-community/admob": "^8.1.0",
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2"
+  }
+}

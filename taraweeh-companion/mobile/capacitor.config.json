@@ -1,0 +1,11 @@
+{
+  "appId": "com.quranversetranslator.app",
+  "appName": "Quran Verse Translator",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
