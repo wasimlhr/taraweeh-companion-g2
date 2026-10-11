@@ -8,6 +8,7 @@ import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { getAyah, loadQuran } from './keywordMatcher.js';
+import { cyrillicToUzbekLatin } from './uzbekLatin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const QURAN_JSON_DIR = join(__dirname, 'data', 'quran-json');
@@ -37,7 +38,7 @@ const SURAH_NAMES = [
   'Al-Masad', 'Al-Ikhlas', 'Al-Falaq', 'An-Nas',
 ];
 
-const QURAN_JSON_LANGS = new Set(['en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv']);
+const QURAN_JSON_LANGS = new Set(['en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc']);
 /** Languages that don't render on G2 glasses (Arabic script, etc.) — glasses fallback to English */
 const GLASSES_UNSUPPORTED_LANGS = new Set(['ur', 'ar', 'fa', 'bn', 'hi']);
 
@@ -76,6 +77,22 @@ function loadVersesDisplay() {
 
 function loadQuranJson(lang) {
   if (quranJsonCache.has(lang)) return quranJsonCache.get(lang);
+  // Latin Uzbek is the same Alauddin Mansour text as uzc, converted. The
+  // published Latin JSON we were given only covered 22 ayahs.
+  if (lang === 'uz') {
+    const cyr = loadQuranJson('uzc');
+    if (!cyr) return null;
+    const translation = cyr.translation.map((ch) => ({
+      ...ch,
+      verses: (ch.verses || []).map((v) => ({
+        ...v,
+        translation: cyrillicToUzbekLatin(v.translation || ''),
+      })),
+    }));
+    const data = { translation, transliteration: cyr.transliteration };
+    quranJsonCache.set('uz', data);
+    return data;
+  }
   const transPath = join(QURAN_JSON_DIR, `quran_${lang}.json`);
   const translitPath = join(QURAN_JSON_DIR, 'quran_transliteration.json');
   if (!existsSync(transPath)) return null;
@@ -147,7 +164,11 @@ export function getVerseData(surah, ayah, lang = '') {
   }
 
   let translationGlasses = translation;
-  if (lang && GLASSES_UNSUPPORTED_LANGS.has(lang)) {
+  if (lang === 'uzc') {
+    // G2 has Russian Cyrillic and Ў, but not Ғ/Қ/Ҳ — those letters would
+    // vanish. Same-translator Latin still reads as Uzbek on the glasses.
+    translationGlasses = cyrillicToUzbekLatin(translation);
+  } else if (lang && GLASSES_UNSUPPORTED_LANGS.has(lang)) {
     const enVerse = getVerseData(surah, ayah, '');
     translationGlasses = enVerse?.translation || translation;
   }
@@ -161,6 +182,7 @@ export function getVerseData(surah, ayah, lang = '') {
     transliteration,
     translation,
     translationGlasses,
+    translationLang: lang || '',
   };
 }
 

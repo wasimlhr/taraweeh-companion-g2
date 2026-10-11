@@ -1,7 +1,11 @@
 # Changelog
 
-## 3.4.6 - 2026-10-01
+## 3.4.10 - 2026-10-11
 
+- Download translations from a verified immutable release, including Uzbek, when the production backend lacks pack endpoints. Bound stalled requests so fallback sources can run.
+- Refresh glasses as soon as a language installs and preserve source verse state when switching languages.
+- Substitute unsupported scholarly Latin characters on the glasses while preserving phone text. Uzbek Cyrillic uses Latin on glasses; Urdu and Bengali use English.
+- Add simulator verification with actual phone and glasses captures for all 12 translation options, plus a full 6,236-ayah font scan for each option.
 - **Listen mode, now the default.** A general Quran follow-along translator:
   it locks onto any recitation (live, a recording, a video) and follows it
   verse by verse with the translation in the chosen language, without the
@@ -12,6 +16,42 @@
 - **Standalone phone app (iOS + Android).** A Capacitor wrapper around the
   same `app/index.html` that uses the phone microphone and screen. In the
   phone app the translation language is on the main screen.
+
+## 3.4.9 - 2026-10-03
+
+- **Optional on-device language packs.** English stays built in. Other
+  translations (Urdu, French, Spanish, Indonesian, Turkish, Bengali,
+  Chinese, Russian, Swedish, Uzbek) download once when selected,
+  about 250–420 KB gzip each, and stay in the Cache API. They are not
+  bundled in the `.ehpk` and do not need a matching Railway deploy —
+  the phone can fetch a pack from the hosted backend or from the
+  public quran-json files. Listening still uses the server; only the
+  translation text is local. Urdu and Bengali still show English on
+  the glasses. Cyrillic Uzbek still shows Latin on the glasses.
+- **Railway usage analytics.** With `DIAG_TOKEN` set, `GET /api/analytics`
+  shows how many installs are connected, what translation / engine /
+  mic / mode / app version they use, and scrubbed errors. A browser
+  gets an HTML dashboard; curl gets JSON. `/api/status` only adds the
+  live connection count. No recitation text, audio, or API keys.
+
+## 3.4.8 - 2026-10-03
+
+- **Uzbek is applied on the device.** The 3.4.7 pack talked to Railway 3.4.0,
+  which has no `uz`/`uzc` and showed built-in English for An-Nas and Fatiha.
+  The Mansour Cyrillic mushaf now ships in the `.ehpk`; Latin is converted
+  on the phone/glasses even when the hosted backend is older.
+
+## 3.4.7 - 2026-10-02
+
+- **Uzbek translations (Alauddin Mansour).** Both scripts are selectable:
+  Latin (`uz`) on phone and glasses, and Cyrillic (`uzc`) on the phone.
+  The G2 font has Russian Cyrillic and Ў but is missing Ғ, Қ and Ҳ, so
+  Cyrillic Uzbek is shown as the same translator's Latin on the glasses
+  rather than dropping those letters. Latin was completed from the full
+  Cyrillic text; the 22-ayah Latin sample matches that conversion. The
+  verse text comes from the backend, so a 3.4.7 pack against a 3.4.0
+  server still shows English; Settings and the verse card now say so
+  instead of failing silently.
 
 ## 3.4.6 - 2026-09-20
 

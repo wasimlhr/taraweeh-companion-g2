@@ -6,7 +6,7 @@
  *
  * @see https://hub.evenrealities.com/docs/reference/packaging
  */
-import { mkdirSync, copyFileSync, existsSync } from 'fs';
+import { mkdirSync, copyFileSync, existsSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -32,6 +32,9 @@ function resolvePretext() {
   return null;
 }
 
+// `dist` is generated output. Clear it first so a file removed from the app
+// (such as a language pack) cannot silently remain in the next EHPK.
+rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 copyFileSync(src, dest);
 console.log('[build-evenhub-dist] Wrote', dest);

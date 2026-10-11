@@ -59,6 +59,8 @@ const RUNTIME_SAMPLES = [
   'R20/20 TSHD', 'R1/8 SJD1', 'Practice',   // rakatHdr()
   "Rak'ah 20 of 20", 'Set 10 \u00B7 2/2',   // posture body
   'Al-Fatihah 1:2 8s', '3/4',              // verse/countdown header, page indicator
+  'Mehribon va rahmli Alloh',              // Uzbek Latin (Mansour)
+  'To\u2018g\u2018ri yo\u2018l',            // o‘ / g‘ (U+2018) used in Uzbek Latin
 ];
 
 const chars = new Map();   // char → sample context

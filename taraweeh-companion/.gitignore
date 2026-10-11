@@ -1,4 +1,5 @@
-node_modules/
+# Optional on-device language packs (generated, not shipped in the base .ehpk)
+app/translations/*.json
 dist/
 .env
 *.log
