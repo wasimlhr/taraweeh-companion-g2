@@ -1294,7 +1294,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <ul class="help-list">
         <li><strong>Translate</strong> — follows Quran recitation (live, a recording, a video) and shows each verse in your selected language. Use the pace button for fast or slow reciters.</li>
         <li><strong>Practice</strong> — shows what you recite; jump to any surah. Pause 2–3s between surahs for a fresh match.</li>
-        <li><strong>Taraweeh</strong> — Listen plus the prayer: tracks ruku, sujud and the rak'ah count while following the imam.</li>
+        <li><strong>Taraweeh</strong> — Follows the imam and counts each new Al-Fatihah. Use Rakat +/− to correct the count.</li>
       </ul>
       <p class="s-hint" style="margin:12px 0 0">On phone: <strong>Start Listening</strong> begins capture; <strong>Prev / Next</strong> browse ayahs while practicing.</p>
     </div>
@@ -1483,13 +1483,13 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   // ── Recitation mode ─────────────────────────────────────────────────────────
   // Translate: follow any Quran recitation with auto-advance; no prayer tracking.
   // Practice: match what you recite and stay there — no auto-forward.
-  // Taraweeh: Listen plus posture and rak'ah tracking for the prayer.
+  // Taraweeh: Listen plus counting new Al-Fatihah openings.
   var RECITE_MODES = { listen: 1, practice: 1, taraweeh: 1 };
   var _reciteMode = 'listen';
   var _taraweehMode = false;
   var _practiceMode = false;
-  // Latest posture snapshot from the backend tracker. Shape mirrors
-  // PrayerTracker.snapshot() so the app and the glasses read the same fields.
+  // Latest count snapshot from the backend counter. Shape mirrors
+  // RakatCounter.snapshot() so the app and the glasses read the same fields.
   var _prayer = {
     position: 'QIYAM', positionShort: 'QIY', positionLabel: 'Standing',
     positionArabic: '\u0642\u064A\u0627\u0645',
