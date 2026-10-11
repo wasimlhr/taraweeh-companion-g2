@@ -43,7 +43,7 @@ const stopped = new Promise(resolve => { paused = resolve; });
 const call = send('Runtime.evaluate', { expression: 'window.applyLocalTranslation(null)' });
 const frame = (await stopped).callFrames[0];
 const injected = await send('Debugger.evaluateOnCallFrame', { callFrameId: frame.callFrameId,
-  expression: 'window.__languageTest = { S, ensureLangPack, hasLangPack, lookupPackVerse, handleServerMsg, buildGlassesText, cyrillicToUzbekLatinClient, glassesTranslationText, stopPageFlip, stopCountdown, glassesStartup };' });
+  expression: 'window.__languageTest = { S, ensureLangPack, hasLangPack, lookupPackVerse, handleServerMsg, buildGlassesText, cyrillicToUzbekLatinClient, glassesTranslationText, stopPageFlip, stopCountdown, glassesStartup, stopListening, startListening };' });
 if (injected.exceptionDetails) throw new Error(JSON.stringify(injected.exceptionDetails));
 await send('Debugger.removeBreakpoint', { breakpointId: bp.breakpointId });
 await send('Debugger.resume');
@@ -123,7 +123,8 @@ await evaluate(`(async () => {
   t.handleServerMsg({type:'state', state:t.S._lastGlassesState});
   t.stopPageFlip(); t.stopCountdown();
   await t.S.bridgeCallQueue;
-  t.S.isRecording = false;
+  t.stopListening();
+  await t.S.bridgeCallQueue;
   delete window.__languageTest;
 })()`);
 socket.close();

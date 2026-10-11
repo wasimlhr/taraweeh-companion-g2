@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.11 - 2026-10-11
+
+- Count a new confirmed Al-Fatihah once per rakat, with +/− corrections; remove posture and timeout coupling from the live V4 pipeline.
+- Show Rakat 1 on phone and glasses. Preserve recitation during corrections.
+- Repaint the current verse when switching an already-installed language.
+- Clear glasses when stopping or microphone permission fails; rebuild rejected text updates.
+
+
 ## 3.4.10 - 2026-10-11
 
 - Download translations from a verified immutable release, including Uzbek, when the production backend lacks pack endpoints. Bound stalled requests so fallback sources can run.

@@ -559,7 +559,7 @@ body {
 .tr-rej  { opacity: 0.6; }
 .tr-ar   { direction: rtl; unicode-bidi: isolate; }
 
-/* Compact count correction; posture tracking stays in the background. */
+/* Compact count correction; Al-Fatihah counting with manual corrections. */
 #rakatBar {
   display: none;
   align-items: center;
@@ -891,7 +891,7 @@ body {
   <div class="header">
     <h1>☽ Quran Companion</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.10</span>
+      <span class="version" id="versionEl">v3.4.11</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -931,12 +931,12 @@ body {
     </div>
   </div>
 
-  <!-- Only count corrections are exposed; postures are tracked automatically. -->
+  <!-- Count Al-Fatihah openings, with +/− corrections. -->
   <div id="rakatBar" role="group" aria-label="Rak'ah adjustment">
-    <span class="rk-count" id="rakatCount" aria-live="polite" aria-atomic="true">Rak'ah 1</span>
+    <span class="rk-count" id="rakatCount" aria-live="polite" aria-atomic="true">Rakat 1</span>
     <div class="rk-controls">
-      <button type="button" class="rk-btn" onclick="adjustRakat(-1)" aria-label="Decrease rak'ah count">Rak'ah −</button>
-      <button type="button" class="rk-btn" onclick="adjustRakat(1)" aria-label="Increase rak'ah count">Rak'ah +</button>
+      <button type="button" class="rk-btn" onclick="adjustRakat(-1)" aria-label="Decrease rak'ah count">Rakat −</button>
+      <button type="button" class="rk-btn" onclick="adjustRakat(1)" aria-label="Increase rak'ah count">Rakat +</button>
     </div>
   </div>
 
@@ -1262,7 +1262,7 @@ body {
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.10';
+  const APP_VERSION = 'v3.4.11';
 
   // ─── State ────────────────────────────────────────────────────────────────
   const S = {
@@ -1452,7 +1452,7 @@ body {
     if (hint) {
       hint.textContent = _reciteMode === 'practice'
         ? 'Practice: lock the ayah you recite (including repeats). Stays there — no auto-forward, no multi-ayah wait.'
-        : 'Taraweeh: lock the recitation, then follow with auto-advance (ruku / sajda / next ayah).';
+        : 'Taraweeh: lock the recitation, then follow with verse following. Counts a new Al-Fatihah; use +/− to correct.';
     }
   }
 
@@ -1497,55 +1497,21 @@ body {
   // The backend echoes the authoritative count after a manual correction.
   window.adjustRakat = function (delta) {
     _sendWs({ type: 'adjust_rakat', delta: delta });
-    _applyPrayerSnapshot({ ..._prayer, rakat: Math.max(1, (_prayer.rakat || 1) + delta) });
+    var n = Math.max(1, Math.min(200, (_prayer.rakat || 1) + delta));
+    _applyPrayerSnapshot({ ..._prayer, rakat: n, completedRakat: n - 1 });
+    savePrayerState(_prayer);
   };
 
-  /** Single entry point for a posture change, whatever raised it. */
+  /** Count changes never replace the recitation body. */
   function _applyPrayerSnapshot(snap) {
     if (!snap) return;
-    var prevPos = _taraweehPos;
     _prayer = { ..._prayer, ...snap };
-    _taraweehPos = _prayer.position || 'QIYAM';
+    _prayer.position = 'QIYAM';
+    _taraweehPos = 'QIYAM';
     _rakatCount  = _prayer.rakat || 1;
     _renderRakatBar();
     glassesTopBarUpdate();
-    if (_taraweehPos !== prevPos) _mirrorPrayerOnGlasses(prevPos);
-  }
 
-  /**
-   * While the imam is bowing or prostrating there is no verse to show, and the
-   * last one is actively misleading — the wearer would read it as the current
-   * position in the recitation. Replace the body with the posture, and restore
-   * the verse when he stands again.
-   */
-  function _mirrorPrayerOnGlasses(prevPos) {
-    if (!S.isG2 || !S.bridge || !_taraweehMode) return;
-    if (_taraweehPos !== 'QIYAM') {
-      clearGlassesPreamble();
-      stopPageFlip();
-      stopCountdown();
-      stopSearchingDots();
-      var disp = TW_DISPLAY[_taraweehPos] || TW_DISPLAY.QIYAM;
-      glassesUpdate({
-        hdr: disp.latin,
-        body: '\n' + centerPx(disp.chip, G2_BODY_PX)
-            + '\n' + centerPx(disp.latin, G2_BODY_PX)
-            + '\n\n' + centerPx(_rakatLabel(true), G2_BODY_PX)
-            + '\n' + centerPx('Set ' + (_prayer.setNumber || 1) + ' ' + G2_MARK_DOT + ' '
-                + (_prayer.rakatInSet || 1) + '/' + (_prayer.rakatPerSet || 2), G2_BODY_PX),
-      });
-    } else if (prevPos && prevPos !== 'QIYAM') {
-      // Back to standing. Recitation will repaint this within a chunk or two,
-      // but the posture must come down now — leaving "Rising" on screen while
-      // the imam is reading is worse than showing nothing.
-      S.displayRebuilt = false;
-      if (S.isRecording) {
-        showGlassesPage(buildGlassesText({ mode: 'SEARCHING' }), 0);
-        startSearchingDots();
-      } else {
-        glassesUpdate({ hdr: appTitleHdr(), body: _startupBodyText() });
-      }
-    }
   }
 
   /** @param {boolean} [ascii] true for the glasses, whose font has no U+02BB. */
@@ -1555,14 +1521,14 @@ body {
     return 'Rak' + (ascii ? "'" : '\u02bb') + 'ah ' + n + (target ? ' of ' + target : '');
   }
 
-  /** Only the count belongs in the phone UI; postures remain automatic. */
+  /** Only the count belongs in the phone UI. */
   function _renderRakatBar() {
     var bar = document.getElementById('rakatBar');
     if (!bar) return;
     bar.style.display = _taraweehMode ? 'flex' : 'none';
     if (!_taraweehMode) return;
     var countEl = document.getElementById('rakatCount');
-    if (countEl) countEl.textContent = "Rak'ah " + (_prayer.rakat || 1);
+    if (countEl) countEl.textContent = "Rakat " + (_prayer.rakat || 1);
   }
 
   // ─── Listening trace ──────────────────────────────────────────────────────
@@ -2053,10 +2019,7 @@ body {
       cachePackPut(key, verses);
       setLangPackStatus('Installed on this device · ' + (LANG_PACK_KB[key] || '?') + ' KB');
       log(label + ' language pack ready (' + verses.reduce(function (n, s) { return n + (s ? s.length : 0); }, 0) + ' ayahs)', 'ok');
-      if (_lastPhoneState) updatePhoneUI(_lastPhoneState, _lastPhoneWhisper);
-      if (S.isG2 && S.isRecording && S._lastGlassesState) {
-        showGlassesPage(buildGlassesText(S._lastGlassesState), 0);
-      }
+      repaintSelectedLanguage();
       if (typeof updateTranslationDesc === 'function') updateTranslationDesc();
       return true;
     }).catch(function () {
@@ -2259,6 +2222,9 @@ body {
     try {
       Storage.setItem('taraweeh_prayer_state', JSON.stringify({
         v: 1,
+        lastOpeningAt: Number(snapshot.lastOpeningAt) || Date.now(),
+        seenFatiha: !!snapshot.seenFatiha,
+        fatihaFinished: !!snapshot.fatihaFinished,
         position: String(snapshot.position || 'QIYAM'),
         completedRakat: snapshot.completedRakat,
         sajdaCount: Number(snapshot.sajdaCount) || 0,
@@ -3155,7 +3121,8 @@ body {
           containerTotalNum: 4,
           textObject: _g2TextContainers(hdrContent, bodyContent),
           menuObject: glassesMenu(),
-        }).then(function () {
+        }).then(function (ok) {
+          if (ok === false) throw new Error("Glasses rejected display rebuild");
           S.displayRebuilt = true;
           // The rebuild just painted both pills from the current snapshot, so
           // record what is on screen or the next diff will skip a real change.
@@ -3165,8 +3132,11 @@ body {
       }
       var hdrContent2  = (display.hdr  || '').slice(0, 500);
       var bodyContent2 = (display.body || '').slice(0, MAX_UPGRADE_CHARS - 500);
-      return S.bridge.textContainerUpgrade({ containerID: 1, containerName: 'hdr', content: hdrContent2 }).then(function () {
-        return S.bridge.textContainerUpgrade({ containerID: 3, containerName: 'body', content: bodyContent2 });
+      return S.bridge.textContainerUpgrade({ containerID: 1, containerName: 'hdr', content: hdrContent2 }).then(function (ok) {
+        if (ok === false) { S.displayRebuilt = false; return _writeGlasses(display); }
+        return S.bridge.textContainerUpgrade({ containerID: 3, containerName: 'body', content: bodyContent2 }).then(function (bodyOk) {
+          if (bodyOk === false) { S.displayRebuilt = false; return _writeGlasses(display); }
+        });
       });
     });
   }
@@ -3190,20 +3160,10 @@ body {
 
   function appTitleHdr() { return 'Quran Companion'; }
 
-  /**
-   * The top-right of the glasses used to show the app version, which tells the
-   * wearer nothing during a prayer. It now shows the rak'ah — with the posture
-   * appended whenever the imam is not standing, since that is exactly when the
-   * body has no verse to display.
-   */
+  // Plain count alongside the verse and clock.
   function rakatHdr() {
     if (!_taraweehMode) return 'Practice';
-    var n = _prayer.rakat || 1;
-    var target = _prayer.targetRakat || 0;
-    var label = target ? 'R' + n + '/' + target : 'R' + n;
-    var pos = _prayer.position && _prayer.position !== 'QIYAM'
-      ? (_prayer.positionShort || '') : '';
-    return pxClip(pos ? label + ' ' + pos : label, G2_RAK_PX);
+    return pxClip('Rakat ' + (_prayer.rakat || 1), G2_RAK_PX);
   }
 
   /**
@@ -4228,7 +4188,7 @@ body {
         } else if (shownPill) { shownPill.style.display = 'none'; }
 
         if (msg.state.mode === 'LOCKED') {
-          var ayahChanged = sessionStart || msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
+          var ayahChanged = sessionStart || msg.state.translationGlasses !== prev.translationGlasses || msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
           if (!_practiceMode) {
             if (ayahChanged) {
               // Force full rebuild so glasses reliably receive the new verse
@@ -4276,6 +4236,7 @@ body {
         }
       }
     } else if (msg.type === 'ameen') {
+      if (!S.isRecording) return;
       clearGlassesPreamble();
       log('Ameen', 'ok');
       if (S.isG2) {
@@ -4647,6 +4608,7 @@ body {
     }
     S.isRecording = true;
     _glassesSessionId++;
+    var startSessionId = _glassesSessionId;
     S._lastGlassesState = null;
     S.displayRebuilt = false;
     S.pcmAccum = [];
@@ -4681,6 +4643,7 @@ body {
     var btn = document.getElementById('recordBtn');
     btn.disabled = true;
     ensureMicPermissionForCurrentSource().then(function () {
+      if (!S.isRecording || startSessionId !== _glassesSessionId) return;
       acquireWakeLock();
       var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
       if (useBrowserMic) startBrowserMic();
@@ -4694,8 +4657,7 @@ body {
       btn.textContent = '\u2192 Stop Listening';
       btn.classList.add('recording');
     }).catch(function (err) {
-      S.isRecording = false;
-      releaseWakeLock();
+      stopListening();
       var msg = err && err.message ? err.message : 'Microphone permission failed';
       setStatus('Mic permission required', 'error');
       log('Mic permission failed: ' + msg, 'err');
@@ -4710,7 +4672,9 @@ body {
   }
 
   function stopListening() {
+    _glassesSessionId++;
     clearGlassesPreamble();
+    stopPageFlip(); stopCountdown(); stopSearchingDots(); stopLockingDots();
     S.isRecording = false;
     releaseWakeLock();
     _cancelReconnect();
@@ -5228,12 +5192,22 @@ body {
     else setLangPackStatus('Not on this device yet · ~' + (LANG_PACK_KB[packKeyFor(lang)] || '?') + ' KB gzip. Download once; listening still uses the server.');
   };
 
+  function repaintSelectedLanguage() {
+    if (_lastPhoneState) updatePhoneUI(_lastPhoneState, _lastPhoneWhisper);
+    if (S.isG2 && S.isRecording && S._lastGlassesState) {
+      var state = applyLocalTranslation(S._lastGlassesState);
+      S._lastGlassesState = null;
+      handleServerMsg({ type: 'state', state: state });
+    }
+  }
+
   window.onTranslationLangChange = function () {
     var sel = document.getElementById('settingLang');
     var lang = sel ? sel.value : '';
     if (S.settings) S.settings.lang = sanitizeTranslationLang(lang);
     updateTranslationDesc();
     if (packKeyFor(lang) && !hasLangPack(lang)) ensureLangPack(lang);
+    repaintSelectedLanguage();
   };
 
   window.showHelp = function () {

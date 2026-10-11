@@ -14,7 +14,7 @@ function harness() {
   const nodes = new Map();
   function node(id) {
     if (!nodes.has(id)) nodes.set(id, {
-      style: {}, dataset: {}, textContent: '', innerHTML: '', value: '',
+      style: {}, dataset: {}, options: [], selectedIndex: 0, textContent: '', innerHTML: '', value: '',
       classList: { add() {}, remove() {}, toggle() {} },
       addEventListener() {}, setAttribute() {}, appendChild() {},
       querySelector(selector) { return node(id + selector); },
@@ -46,7 +46,7 @@ function harness() {
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       clearGlassesPreamble, startSearchingDots, PREAMBLE_GLASSES,
-      startPageFlip, _buildTraceReport,
+      startPageFlip, _buildTraceReport, stopListening, rakatHdr, _applyPrayerSnapshot,
       applyLocalTranslation, fetchLangPack,
       setPack: function (lang, verses) { _langPacks[lang] = verses; },
       setPractice: function (value) { _practiceMode = value; _taraweehMode = !value; },
@@ -145,7 +145,7 @@ test('combined status envelope updates the compact count and diagnostics export 
   h.ui.setMetrics({ getTextWidth, pxTruncate });
   h.ui.handleServerMsg({ type: 'sys_status', statusType: 'taraweeh_mode',
     prayer: { rakat: 4, position: 'QIYAM' } });
-  assert.equal(h.nodes.get('rakatCount').textContent, "Rak'ah 4");
+  assert.equal(h.nodes.get('rakatCount').textContent, "Rakat 4");
   h.ui.S.settings = { groqApiKey: 'test-secret-credential', keyMode: 'byok' };
   const pending = h.ui._buildTraceReport();
   assert.deepEqual(h.messages.at(-1), { type: 'get_trace' });
@@ -260,4 +260,38 @@ test('glasses show the verse and timer from the first frame with no match percen
   assert.match(firstHeader, /Al-Fatihah 1:2\s+8s$/);
   assert.ok(getTextWidth(firstHeader) <= 356);
   assert.doesNotMatch(firstHeader, /Match|%/);
+});
+
+test('old posture messages update only the counter and preserve the verse',async()=>{
+ const h=harness();h.ui.S.displayRebuilt=true;
+ h.ui._applyPrayerSnapshot({position:'RUKU',rakat:3});await h.flush();
+ assert.equal(h.ui.rakatHdr(),'Rakat 3');
+ assert.ok(h.writes.every(w=>!w.data || w.data.containerName!=='body'));
+});
+test('stop clears timers and stale verse; late state cannot repaint glasses',async()=>{
+ const h=harness();h.ui.S.bridge.audioControl=async()=>{};
+ h.ui.startPageFlip({hdr:'An-Nas 114:1',pages:['Old verse']},60000);await h.flush();
+ h.ui.stopListening();await h.flush();
+ const stop=h.writes.filter(w=>w.page).at(-1);
+ assert.match(stop.page.textObject.find(c=>c.containerName==='body').content,/Stopped/);
+ const count=h.writes.length;
+ h.ui.handleServerMsg({type:'state',state:{mode:'LOCKED',surah:114,ayah:1,translation:'late verse'}});await h.flush();
+ assert.equal(h.writes.length,count);assert.equal(h.ui.S.isRecording,false);
+});
+test('rejected text upgrade rebuilds a visible complete frame',async()=>{
+ const h=harness();h.ui.S.displayRebuilt=true;
+ h.ui.S.bridge.textContainerUpgrade=async()=>false;
+ await h.ui._writeGlasses({hdr:'An-Nas',body:'Visible translation'});
+ assert.equal(h.writes.at(-1).type,'rebuild');
+ assert.equal(h.writes.at(-1).page.textObject.find(c=>c.containerName==='body').content,'Visible translation');
+});
+
+test('switching an installed language repaints the same verse on glasses',async()=>{
+ const h=harness();const pack=text=>Array.from({length:114},()=>[text]);
+ h.ui.setPack('fr',pack('French text'));h.ui.setPack('uzc',pack('Мен инсонларнинг Парвардигоридан'));
+ h.ui.S.settings.lang='fr';
+ h.ui.handleServerMsg({type:'state',state:{mode:'LOCKED',surah:114,ayah:1,translation:'English',translationLang:'en',timerMs:60000}});await h.flush();
+ h.context.document.getElementById('settingLang').value='uz';h.context.onTranslationLangChange();await h.flush();
+ const frame=h.writes.filter(w=>w.page).at(-1).page;
+ assert.match(frame.textObject.find(c=>c.containerName==='body').content,/Men insonlarning/);
 });

@@ -22,8 +22,9 @@ import {
   isAmeen,
   isNoise,
 } from './whisperClean.js';
-import { PrayerTracker, POSITIONS } from './prayerTracker.js';
-import { detectPrayerCue, isFatihaEnd, normalizeCue } from './prayerKeywords.js';
+import { POSITIONS } from './prayerTracker.js';
+import { RakatCounter as PrayerTracker } from './rakatCounter.js';
+import { detectPrayerCue } from './prayerKeywords.js';
 import { SessionTrace } from './sessionTrace.js';
 
 // ── Word-level corpus data (morphology + tajweed weights) ───────────────────
@@ -276,7 +277,7 @@ const CUE_FLUSH_MIN_BUF_MS = 900;
 // How often the prayer tracker is given a chance to time out of a position.
 // A silent sujood produces no transcripts at all, so the machine cannot rely on
 // audio arriving to notice that it is stuck.
-const PRAYER_TICK_MS = 2000;
+
 
 // ── AudioPipeline class ───────────────────────────────────────────────────────
 
@@ -3086,134 +3087,19 @@ export class AudioPipeline {
    * broke off; returning to it means a new rak'ah is opening with Al-Fatiha.
    */
   _onPrayerChange(snap) {
-    const prev = this._taraweehPos;
-    this._taraweehPos = snap.position;
-    this.trace.record('prayer', {
-      from: prev, to: snap.position, reason: snap.reason,
-      rakat: snap.rakat, rakatInSet: snap.rakatInSet, setNumber: snap.setNumber,
-      completedRakat: snap.completedRakat, score: snap.confidence,
-      holding: this._preRukuSurah ? `${this._preRukuSurah}:${this._preRukuAyah}` : null,
-    });
-    if (!this.taraweehMode) { this._emitTaraweeh(snap); return; }
-
-    const wasStanding = prev === POSITIONS.QIYAM;
-    const isStanding = snap.position === POSITIONS.QIYAM;
-
-    if (wasStanding && !isStanding) {
-      this._suspendVerseTracking();
-    } else if (!isStanding) {
-      // Mid-cycle move. The audio behind the cue we just acted on is spent;
-      // keeping it would re-transcribe the same takbeer into the next window.
-      this._resetSearchBuf();
-    } else {
-      this._resetSearchBuf();
-      // A prostration of recitation and a corrected false start both drop the
-      // imam back into the middle of the surah he was already reciting.
-      const resumesMidSurah = snap.reason === 'sajdah-tilawah-end'
-        || snap.reason === 'verse-anchor'
-        || snap.reason === 'imam-recovery';
-      if (!resumesMidSurah) {
-        this._expectFatiha = true;
-        if (this._preRukuSurah > 1) {
-          this.state = { ...this.state,
-            lastLockedSurah: this._preRukuSurah, lastLockedAyah: this._preRukuAyah };
-          console.log(`[Pipeline] New rak'ah — will resume from ${this._preRukuSurah}:${this._preRukuAyah} after Fatiha`);
-        }
-      }
-    }
+    this._taraweehPos = POSITIONS.QIYAM;
+    this.trace.record('prayer', {rakat:snap.rakat, reason:snap.reason});
     this._emitTaraweeh(snap);
   }
 
-  /**
-   * The imam has left qiyam, so nothing is being recited. Stop advancing the
-   * display, remember where he stopped, and reset the anchor while keeping that
-   * position as the search bias so the next rak'ah resumes rather than
-   * cold-searching the whole mushaf.
-   */
-  _suspendVerseTracking() {
-    const locked = this.state.mode === 'LOCKED';
-    const surah = locked ? this.state.surah : this.state.lastLockedSurah;
-    const ayah  = locked ? this.state.ayah  : this.state.lastLockedAyah;
-    if (surah > 1) {
-      this._preRukuSurah = surah;
-      this._preRukuAyah  = ayah;
-      console.log(`[Pipeline] Holding position ${surah}:${ayah} across the rak'ah`);
-    }
-    this._cancelReadAdvance();
-    this._displaySurah = 0;
-    this._displayAyah  = 0;
-    this._whisperSurah = 0;
-    this._whisperAyah  = 0;
-    this._driftMult    = 1.0;
-    this.state = { ...createState(),
-      lastLockedSurah: this._preRukuSurah || this.state.lastLockedSurah || 0,
-      lastLockedAyah:  this._preRukuAyah  || this.state.lastLockedAyah  || 0 };
-    this._resetSearchBuf();
-    // Drop the locked tail too. It holds the takbeer we just consumed, and
-    // re-sending it after the next lock would replay a transition.
-    this._lockedBuf = Buffer.alloc(0);
-    this._lockedVoicedMs = 0;
-    this._lockedLastVoiceAt = 0;
-  }
-
-  _startPrayerTick() {
-    this._stopPrayerTick();
-    this._prayerTickTimer = setInterval(() => {
-      if (this.active && this.taraweehMode) this.prayer.tick();
-    }, PRAYER_TICK_MS);
-    if (this._prayerTickTimer.unref) this._prayerTickTimer.unref();
-  }
+  _startPrayerTick() { this._stopPrayerTick(); }
 
   _stopPrayerTick() {
     if (this._prayerTickTimer) { clearInterval(this._prayerTickTimer); this._prayerTickTimer = null; }
   }
 
-  /**
-   * P_verse for the voting formula. A handful of ayat contain a cue phrase
-   * word for word — 29:45 ends "وَلَذِكْرُ اللَّهِ أَكْبَرُ", and several
-   * verses open with "سلام عليكم". The precise test is not how Quranic the
-   * chunk looks overall but whether the ayah we already expect to hear
-   * literally contains this phrase.
-   */
-  _cueLooksLikeRecitation(cue) {
-    const phrase = cue && cue.match;
-    if (!phrase) return 0;
-    const positions = [
-      [this._displaySurah, this._displayAyah],
-      [this.state.surah, this.state.ayah],
-      [this._whisperSurah, this._whisperAyah],
-    ];
-    for (const [s, a] of positions) {
-      if (!s || !a) continue;
-      for (const delta of [0, 1]) {
-        const ay = getAyah(s, a + delta);
-        if (ay?.text && normalizeCue(ay.text).includes(phrase)) return 1;
-      }
-    }
-    return 0;
-  }
-
-  /** Hand a transcript to the posture machine. Returns true when it moved. */
-  _feedPrayerCue(cleaned, { locked = false, audioWindow = null } = {}) {
-    if (!this.taraweehMode) return false;
-    // The last words of Al-Fatiha are certain proof of qiyam and cost nothing
-    // to check, so they resynchronise the machine even when no cue is present.
-    if (isFatihaEnd(cleaned)) {
-      this.prayer.feedVerse({ surah: 1, ayah: 7, fatihaEnd: true, locked: true, confidence: 1 });
-    }
-    const cue = detectPrayerCue(cleaned);
-    if (!cue) return false;
-    const w = audioWindow || {};
-    const moved = this.prayer.feedCue(cue, {
-      verseActive: this._cueLooksLikeRecitation(cue),
-      windowStartMs: w.startMs || 0,
-      windowEndMs: w.endMs || 0,
-    });
-    if (!moved) {
-      console.log(`[Pipeline] ${cue.kind} heard but not acted on (pos=${this._taraweehPos})`);
-    }
-    return !!moved;
-  }
+  // Prayer utterances never change the counter or suspend verse matching.
+  _feedPrayerCue() { return false; }
 
   _restorePreRukuIfNeeded(completedSurah) {
     if (this.taraweehMode && completedSurah === 1

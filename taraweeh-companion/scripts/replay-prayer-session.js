@@ -263,14 +263,15 @@ async function main() {
     }
   }
 
-  const wanted = ['QIYAM', 'RUKU', 'ITIDAL', 'SAJDA1', 'JALSAH', 'SAJDA2', 'TASHAHHUD'];
+  const wanted = ['QIYAM'];
   const missing = wanted.filter((p) => !report.postures.includes(p));
   let failed = false;
+  if (report.postures.some(p => p !== "QIYAM")) { console.error("[replay] FAIL — posture tracking changed recitation"); failed = true; }
   if (missing.length) {
     console.error(`[replay] FAIL — never entered: ${missing.join(', ')}`);
     failed = true;
   }
-  if (lastRakat < TARGET_RAKAT) {
+  if (lastRakat !== TARGET_RAKAT) {
     console.error(`[replay] FAIL — expected to reach rak'ah ${TARGET_RAKAT}, got ${lastRakat}`);
     failed = true;
   }
@@ -278,7 +279,7 @@ async function main() {
     console.error('\n--- server log tail ---\n' + serverLog.join('').split('\n').slice(-60).join('\n'));
     process.exit(1);
   }
-  if (!JSON_OUT) console.log('[replay] PASS — full posture cycle and rak\'ah count reached');
+  if (!JSON_OUT) console.log('[replay] PASS — Al-Fatihah count reached without posture tracking');
   process.exit(0);
 }
 
