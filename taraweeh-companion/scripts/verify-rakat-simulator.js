@@ -62,9 +62,11 @@ if(!start.recording || !start.button.includes('Stop Listening'))throw new Error(
 await evaluate('window.adjustRakat(1)');await new Promise(r=>setTimeout(r,500));
 const count=await evaluate('document.getElementById("rakatCount").textContent');
 if(count!=='Rakat 2')throw new Error('Correction failed '+count);
-await evaluate('(async()=>{const t=window.__languageTest;t.handleServerMsg({type:"state",state:{mode:"LOCKED",surah:114,ayah:1,surahName:"An-Nas",arabic:"قُلْ أَعُوذُ بِرَبِّ النَّاسِ",translation:"Say, I seek refuge in the Lord of mankind.",translationLang:"en",timerMs:60000,totalAyahs:6}});t.stopPageFlip();t.stopCountdown();await t.S.bridgeCallQueue;})()');
+await evaluate('(async()=>{const t=window.__languageTest;t.handleServerMsg({type:"state",state:{mode:"LOCKED",surah:114,ayah:1,surahName:"An-Nas",arabic:"قُلْ أَعُوذُ بِرَبِّ النَّاسِ",translation:"Say, I seek refuge in the Lord of mankind.",translationLang:"en",transliteration:"Qul audhu birabbin nas",timerMs:60000,totalAyahs:6}});t.stopPageFlip();t.stopCountdown();await t.S.bridgeCallQueue;})()');
 await new Promise(r=>setTimeout(r,500));
 async function capture(name){const phone=await send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL(name+'-phone.png',out),Buffer.from(phone.data,'base64'));const gs=new WebSocket(targets.find(t=>t.url.includes('glasses.html')).webSocketDebuggerUrl);await new Promise(r=>gs.once('open',r));const g=await new Promise(r=>{gs.once('message',d=>r(JSON.parse(d).result));gs.send(JSON.stringify({id:1,method:'Page.captureScreenshot',params:{format:'png'}}));});writeFileSync(new URL(name+'-glasses.png',out),Buffer.from(g.data,'base64'));gs.close();}
+await evaluate('window.setGlassesBottom("translation-only")');await new Promise(r=>setTimeout(r,300));await capture('translation-only');
+await evaluate('window.setGlassesBottom("transliteration")');await new Promise(r=>setTimeout(r,300));await capture('translation-pronunciation');
 await capture('rakat2-uz');
 await evaluate('window.adjustRakat(-1)');await new Promise(r=>setTimeout(r,500));
 const corrected=await evaluate('document.getElementById("rakatCount").textContent');if(corrected!=='Rakat 1')throw new Error('Minus failed');

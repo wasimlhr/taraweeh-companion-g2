@@ -46,7 +46,7 @@ function harness() {
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       clearGlassesPreamble, startSearchingDots, PREAMBLE_GLASSES,
-      startPageFlip, _buildTraceReport, stopListening, rakatHdr, _applyPrayerSnapshot,
+      buildPages, G2_BODY_LINES, startPageFlip, _buildTraceReport, stopListening, rakatHdr, _applyPrayerSnapshot,
       setMode: function (mode) {
         _reciteMode = mode; _practiceMode = mode === 'practice'; _taraweehMode = mode === 'taraweeh';
       },
@@ -318,4 +318,23 @@ test('switching an installed language repaints the same verse on glasses',async(
  h.context.document.getElementById('settingLang').value='uz';h.context.onTranslationLangChange();await h.flush();
  const frame=h.writes.filter(w=>w.page).at(-1).page;
  assert.match(frame.textObject.find(c=>c.containerName==='body').content,/Men insonlarning/);
+});
+
+test('glasses content option includes or hides pronunciation and repaints immediately',async()=>{
+ const h=harness();h.ui.handleServerMsg({type:'state',state:{mode:'LOCKED',surah:114,ayah:1,translation:'Selected translation',transliteration:'Qul audhu birabbin nas',timerMs:60000}});await h.flush();
+ h.context.setGlassesBottom('translation-only');await h.flush();
+ let frame=h.writes.filter(w=>w.page).at(-1).page;
+ assert.doesNotMatch(frame.textObject.find(c=>c.containerName==='body').content,/Qul audhu/);
+ h.context.setGlassesBottom('transliteration');await h.flush();
+ frame=h.writes.filter(w=>w.page).at(-1).page;
+ assert.match(frame.textObject.find(c=>c.containerName==='body').content,/Qul audhu/);
+});
+test('long translation and pronunciation retain all text across bounded glasses pages',()=>{
+ const h=harness();h.ui.setMetrics({getTextWidth,pxTruncate});h.ui.S.settings.glassesBottom='transliteration';
+ const translation=Array.from({length:120},()=> 'translation').join(' ');
+ const pronunciation=Array.from({length:160},()=> 'pronunciation').join(' ');
+ const pages=h.ui.buildPages(translation,pronunciation);
+ assert.ok(pages.length>2);assert.ok(pages.every(p=>p.split('\n').length<=h.ui.G2_BODY_LINES));
+ assert.equal((pages.join(' ').match(/pronunciation/g)||[]).length,160);
+ h.ui.S.settings.glassesBottom='translation-only';assert.doesNotMatch(h.ui.buildPages(translation,pronunciation).join(' '),/pronunciation/);
 });

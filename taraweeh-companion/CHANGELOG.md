@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.12 - 2026-10-11
+
+- Configure glasses for selected translation only or translation plus Arabic pronunciation in Latin letters.
+- Persist the choice, repaint immediately, and preserve long transliterations across pages.
+
 ## 3.4.11 - 2026-10-11
 
 - Count a new confirmed Al-Fatihah once per rakat, with +/− corrections; remove posture and timeout coupling from the live V4 pipeline.

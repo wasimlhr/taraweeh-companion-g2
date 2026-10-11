@@ -917,7 +917,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.11</span>
+      <span class="version" id="versionEl">v3.4.12</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1050,7 +1050,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <!-- Glasses second-line selector (Arabic / Transliteration / English only) -->
   <div class="g2-only" style="margin-top:12px">
     <div class="mv-toggle-group" role="group">
-      <button type="button" class="mv-toggle-btn active" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
+      <button type="button" class="mv-toggle-btn active" id="btnGlassesTranslit" onclick="setGlassesBottom('transliteration')">Translation + pronunciation</button>
       <button type="button" class="mv-toggle-btn" id="btnGlassesEnOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
     </div>
   </div>
@@ -1192,11 +1192,12 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Madd, zabar, zer and the other marks on the verse text — and on the live hearing preview for recognized words.</span>
     </div>
     <div class="s-row g2-only">
-      <span class="s-label">Second line on glasses</span>
+      <span class="s-label">Glasses content</span>
       <div class="toggle-group" role="group">
-        <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Transliteration</button>
+        <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Translation + pronunciation</button>
+        <button type="button" class="toggle-btn" id="btnBottomTranslationOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
       </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Translation is always on the top line.</span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Your selected translation, with optional Arabic pronunciation in Latin letters underneath. Long verses continue on additional pages.</span>
     </div>
   </div>
 
@@ -1305,7 +1306,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.11';
+  const APP_VERSION = 'v3.4.12';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -3318,13 +3319,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     var maxLines = G2_BODY_LINES - (reserveLines || 0);
     var transLines = wrapText(translation || '', G2_BODY_PX);
     var bottomMode = (S.settings && S.settings.glassesBottom) || 'transliteration';
-    // 'transliteration' mode shows Latin text. 'translation-only' shows English translation alone.
-    // Long-ayah exception: when the ENGLISH translation alone already spans
-    // more than half the screen, suppress transliteration even if the user
-    // picked that mode — translation is more useful than scrolling past it
-    // to see Latin letters you won't finish reading during recitation.
-    var longAyah = transLines.length > Math.floor(maxLines / 2);
-    var effectiveTransliteration = (bottomMode === 'transliteration' && !longAyah) ? transliteration : '';
+    var effectiveTransliteration = bottomMode === 'transliteration' ? transliteration : '';
     var tlitLines  = effectiveTransliteration ? wrapText(effectiveTransliteration, G2_BODY_PX) : [];
     var tlitBlock  = tlitLines.length > 0 ? [g2Divider()].concat(tlitLines) : [];
     var tlitCost   = tlitBlock.length;
@@ -3338,11 +3333,16 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       pages.push(transLines.slice(i, i + maxLines).join('\n'));
     }
 
-    var last = pages[pages.length - 1].split('\n');
-    if (last.length + tlitCost <= maxLines) {
-      pages[pages.length - 1] = pages[pages.length - 1] + '\n' + tlitBlock.join('\n');
-    } else if (tlitCost > 0) {
-      pages.push(tlitBlock.join('\n'));
+    if (tlitCost > 0) {
+      var last = pages[pages.length - 1].split('\n');
+      if (last.length + tlitCost <= maxLines) {
+        pages[pages.length - 1] += '\n' + tlitBlock.join('\n');
+      } else {
+        // Keep every pronunciation line within the glasses page height.
+        for (var j = 0; j < tlitBlock.length; j += maxLines) {
+          pages.push(tlitBlock.slice(j, j + maxLines).join('\n'));
+        }
+      }
     }
     return pages;
   }
@@ -5304,12 +5304,13 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       var btn = document.getElementById(mainBtns[k]);
       if (btn) btn.classList.toggle('active', mode === k);
     });
-    var settingsBtns = { transliteration: 'btnBottomTranslit' };
+    var settingsBtns = { transliteration: 'btnBottomTranslit', 'translation-only': 'btnBottomTranslationOnly' };
     Object.keys(settingsBtns).forEach(function (k) {
       var btn = document.getElementById(settingsBtns[k]);
       if (btn) btn.classList.toggle('active', mode === k);
     });
     S.displayRebuilt = false;
+    repaintSelectedLanguage();
   };
 
   function updateEndpointLifecycleUI(lifecycle) {
@@ -5507,7 +5508,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       rememberModel(S.settings.transcriptionProvider, S.settings.transcriptionModel);
     }
     S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')
-      ? 'transliteration' : 'transliteration';
+      ? 'transliteration' : 'translation-only';
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');
