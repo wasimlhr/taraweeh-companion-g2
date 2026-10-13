@@ -79,10 +79,10 @@ console.log(await evaluate('document.getElementById("studyContent").textContent.
 await evaluate('document.getElementById("studyPanel").scrollIntoView({block:"start"})');
 shot=await phone.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('../language-evidence/ui-improvements/tafsir-phone.png',import.meta.url),Buffer.from(shot.data,'base64'));
 await evaluate('loadStudy("hadith")');await new Promise(r=>setTimeout(r,400));
-await evaluate('document.getElementById("hadithEdition").value="eng-bukhari";document.getElementById("hadithNumber").value="1";Array.from(document.querySelectorAll("#studyContent button")).find(b=>b.textContent==="Read Hadith").click()');await new Promise(r=>setTimeout(r,800));
-assert.match(await evaluate('document.getElementById("hadithResult").textContent'),/intentions/);
+assert.ok(await evaluate('document.querySelectorAll(".hadith-narration").length>=3'));
+assert.match(await evaluate('document.getElementById("studyContent").textContent'),/4474/);
+assert.equal(await evaluate('Array.from(document.querySelectorAll("#studyPanel button")).some(b=>b.textContent==="Read Hadith")'),false);
 assert.equal(await evaluate('document.getElementById("studyTafsir").value'),'266');
-assert.equal(await evaluate('document.getElementById("hadithEdition").value'),'eng-bukhari');
 shot=await phone.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('../language-evidence/ui-improvements/hadith-access-phone.png',import.meta.url),Buffer.from(shot.data,'base64'));
 await evaluate('closeStudy();setReadingPreset("translation-pronunciation")');
 assert.equal(await evaluate('document.getElementById("verseArabic").style.display'),'none');

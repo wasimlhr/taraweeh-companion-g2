@@ -151,8 +151,7 @@ Use `node scripts/import-study-data.mjs` to reproduce the pinned download.
 `backend/data/study/catalog.json` records source revisions and file hashes;
 source licence notices are retained alongside it. These are the available
 editions, not every tafsir or Hadith ever written. English Al-Mukhtasar is published by Tafsir Center for Quranic Studies under CC BY 4.0; publisher attribution is retained. Other modern copyrighted tafsir
-translations and AI translations are excluded. Hadith browsing preserves the
-source grades; no unverified ayah associations are generated.
+translations and AI translations are excluded. Hadith opens all indexed related narrations immediately, preserving source grades. The locally generated index covers 558 ayahs through explicit source citations and reviewed quoted references; it does not claim exhaustive thematic coverage. Rebuild it with `node scripts/index-related-hadith.mjs`.
 Study Settings save a default tafsir, Hadith language and collection; fresh installations default to English Al-Mukhtasar and English Sahih al-Bukhari. Word taps open an anchored popover; its arrow opens the study dialog. Reading shortcuts select Arabic + translation, translation + transliteration, or the saved Custom layout.
 The bundled Amiri Quran font serves phone and glasses Arabic (OFL).
 Tapping a word shows local morphology; English word translations are not

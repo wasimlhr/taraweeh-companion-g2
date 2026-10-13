@@ -232,6 +232,9 @@ body {
 .study-actions { border-bottom:1px solid var(--bc-4);padding-bottom:8px; }
 .study-actions button[aria-pressed="true"] { color:var(--tc-highlight);background:var(--bc-2,#262626); }
 #studyContent { padding:8px 0;font-size:var(--phone-text-size,16px); }
+.hadith-narration + .hadith-narration { border-top:1px solid var(--bc-4);padding-top:16px;margin-top:20px; }
+.hadith-narration h3 { font-size:14px;font-weight:600;color:var(--tc-highlight); }
+.hadith-grade { font-size:12px;color:var(--tc-2); }
 #btnGlassesTranslit,#btnGlassesEnOnly,#btnReadingCustom { white-space:normal;overflow:visible;text-overflow:clip;min-height:44px;font-size:12px;line-height:1.3;padding:6px; }
 #btnGlassesTranslit { flex:1.25; }
 #btnGlassesEnOnly { flex:1.5; }
@@ -980,7 +983,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.19</span>
+      <span class="version" id="versionEl">v3.4.20</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1101,7 +1104,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
         <div class="study-actions"><button type="button" onclick="studyWord(-1)" aria-label="Previous word">←</button><button type="button" onclick="studyWord(1)" aria-label="Next word">→</button><button type="button" onclick="loadStudy('word')">Word</button><button type="button" onclick="loadStudy('tafsir')">Tafsir</button><button type="button" onclick="loadStudy('hadith')">Hadith</button></div>
         <label id="tafsirSelectRow" hidden>Tafsir <select id="studyTafsir" onchange="setStudyPreference('studyTafsir',Number(this.value));loadStudy('tafsir')"><option value="266">Al-Mukhtasar · English</option><option value="22">Ibn Kathir · Arabic</option><option value="23">Al-Qurtubi</option><option value="37">Al-Tabari</option><option value="27">Al-Baghawi</option><option value="523">Al-Jalalayn</option><option value="518">Al-Baydawi</option><option value="488">Al-Razi</option><option value="491">Ibn Juzay</option><option value="489">Al-Wahidi</option><option value="494">Al-Shawkani</option><option value="496">Ibn Al-Jawzi</option><option value="500">Ibn Al-Qayyim</option><option value="493">Al-Suyuti</option><option value="513">Al-Samarqandi</option><option value="501">Al-Alusi</option><option value="512">Al-Mawardi</option><option value="510">Al-Zamakhshari</option></select></label>
         <div id="studyContent" aria-live="polite" translate="no"></div>
-        <p class="study-credit">Tafsir: Tafsir Center for Quranic Studies · CC BY 4.0. Hadith editions are hosted on our backend. English word meanings are not installed.</p>
+
       </section>
     </div>
     <div id="verseNavRow" class="verse-nav-row" style="display:none">
@@ -1357,7 +1360,8 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <select id="settingHadithLanguage" onchange="setStudyPreference('studyHadithLanguage',this.value);populateStudySettings()"><option>English</option></select>
       <label class="s-label" for="settingHadithEdition">Default Hadith collection</label>
       <select id="settingHadithEdition" onchange="setStudyPreference('studyHadithEdition',this.value)"><option value="eng-bukhari">Sahih al-Bukhari · English</option></select>
-      <span class="s-hint">These defaults are saved. Tafsir and Hadith are served by our backend.</span>
+      <span class="s-hint">These defaults are saved.</span>
+      <details><summary>Content credits</summary><p>Tafsir: <a href="https://tafsir.net" target="_blank" rel="noopener">Tafsir Center for Quranic Studies</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. Hadith editions: hadith-api. Arabic font: Amiri Quran, OFL.</p></details>
       <label class="s-label" for="settingPhoneTextSize">Phone reading text size</label>
       <div class="reading-tools">
         <button type="button" class="toggle-btn" aria-label="Decrease reading text size" onclick="setPhoneTextSize(Number(document.getElementById('settingPhoneTextSize').value)-2)">A−</button>
@@ -1489,7 +1493,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.19';
+  const APP_VERSION = 'v3.4.20';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -3894,6 +3898,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   async function studyFetch(state,kind) {
     var url=backendBase()+'/api/study/'+state.surah+'/'+state.ayah+'/'+kind;
     if(kind==='tafsir')url+='?id='+document.getElementById('studyTafsir').value;
+    if(kind==='hadith')url+='?language='+encodeURIComponent(S.settings.studyHadithLanguage||'English')+'&preferred='+encodeURIComponent(S.settings.studyHadithEdition||'eng-bukhari');
     var controller=new AbortController(), timer=setTimeout(function(){controller.abort();},15000);
     try {var response=await fetch(url,{signal:controller.signal});if(!response.ok)throw Error('Content unavailable');return await response.json();}
     finally {clearTimeout(timer);}
@@ -3958,15 +3963,14 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       } else if(kind==='tafsir') {
         if(!data.text)host.textContent='No tafsir is available for this ayah.';else {var commentary=document.createElement('div');commentary.dir=data.language==='en'?'ltr':'rtl';commentary.lang=data.language;commentary.style.whiteSpace='pre-wrap';appendStudyHtml(commentary,data.text);host.appendChild(commentary);}
       } else {
-        if(!data.available){host.textContent=data.message;if(data.editions&&data.editions.length){var select=document.createElement('select');select.id='hadithEdition';select.setAttribute('aria-label','Hadith edition');data.editions.filter(function(e){return e.language===(S.settings.studyHadithLanguage||'English');}).forEach(function(e){var option=document.createElement('option');option.value=e.name;option.textContent=e.collection+' · '+e.language+' ('+e.count+')';select.appendChild(option);});var number=document.createElement('input');number.id='hadithNumber';number.type='number';number.min='1';number.value='1';number.setAttribute('aria-label','Hadith number');var read=document.createElement('button');read.textContent='Read Hadith';read.onclick=readLocalHadith;select.value=S.settings.studyHadithEdition||'eng-bukhari';if(!select.value)select.selectedIndex=0;host.appendChild(select);host.appendChild(number);host.appendChild(read);var result=document.createElement('div');result.id='hadithResult';host.appendChild(result);readLocalHadith();}}
-        else if(!data.references.length)host.textContent='No related Hadith references are listed for this ayah.';
-        else data.references.forEach(function(ref){var p=document.createElement('p');var link=document.createElement('a');link.textContent=ref.collection+' · '+ref.hadith_number;link.href='https://sunnah.com/'+encodeURIComponent(ref.collection)+':'+encodeURIComponent(ref.hadith_number);link.target='_blank';link.rel='noopener';p.appendChild(link);host.appendChild(p);});
+        if(!data.references.length)host.textContent='No related Hadith is listed for this ayah in your selected language.';
+        else data.references.forEach(function(ref){var section=document.createElement('section');section.className='hadith-narration';var title=document.createElement('h3');title.textContent=ref.collection+' · '+ref.hadithnumber;var text=document.createElement('p');text.dir=ref.language==='Arabic'?'rtl':'ltr';text.style.whiteSpace='pre-wrap';text.textContent=ref.text;section.appendChild(title);section.appendChild(text);if(ref.grades&&ref.grades.length){var grade=document.createElement('p');grade.className='hadith-grade';grade.textContent=ref.grades.map(function(g){return g.name+': '+g.grade;}).join(' · ');section.appendChild(grade);}host.appendChild(section);});
       }
-      var source=document.createElement('p');source.className='study-credit';source.textContent=data.source||'Served from our backend';host.appendChild(source);
+
     }catch{if(seq===_studyRequest)host.textContent='Content unavailable. Select the tab again to retry.';}
   };
 
-  async function readLocalHadith(){var host=document.getElementById('hadithResult');if(!host||!_study)return;host.textContent='Loading…';try{var url=backendBase()+'/api/study/'+_study.surah+'/'+_study.ayah+'/hadith-text?edition='+encodeURIComponent(document.getElementById('hadithEdition').value)+'&number='+encodeURIComponent(document.getElementById('hadithNumber').value);var response=await fetch(url,{signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error();var data=await response.json();if(!host.isConnected)return;host.dir=data.language==='Arabic'?'rtl':'ltr';host.style.whiteSpace='pre-wrap';host.textContent=data.collection+' · '+data.hadithnumber+'\n\n'+data.text+'\n\n'+(data.grades||[]).map(function(g){return g.name+': '+g.grade;}).join('\n');}catch{host.textContent='Hadith unavailable. Check the collection and number.';}}
+
 
   function renderVerseArabic(state) {
     var el = document.getElementById('verseArabic');
