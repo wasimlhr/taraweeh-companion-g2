@@ -931,7 +931,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.16</span>
+      <span class="version" id="versionEl">v3.4.17</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1409,7 +1409,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.16';
+  const APP_VERSION = 'v3.4.17';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -3696,7 +3696,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     _searchingDotsTimer = setInterval(function () {
       if (!S.isRecording || !S.isG2 || !S.bridge) return;
       if (_glassesPreamble) return;
-      if (S._lastGlassesState && (S._lastGlassesState.isCandidate || S._lastGlassesState.mode === 'LOCKED')) {
+      if (S._lastGlassesState && (S._lastGlassesState.isCandidate || S._lastGlassesState.mode === 'LOCKED' || (S._lastGlassesState.userSearching && S._lastGlassesState.arabic))) {
         // Stale searching animation must not block verse display (common after stop→start).
         stopSearchingDots();
         S.displayRebuilt = false;
@@ -4391,7 +4391,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
         var sessionStart = prev._glassesSession !== _glassesSessionId;
         S._lastGlassesState = Object.assign({}, msg.state, { _glassesSession: _glassesSessionId });
         if (msg.state.isCandidate || msg.state.mode === 'LOCKED') stopSearchingDots();
-        if (_practiceMode && msg.state.userSearching && msg.state.arabic) stopSearchingDots();
+        if (msg.state.userSearching && msg.state.arabic) stopSearchingDots();
         if (msg.state.isCandidate && !_practiceMode) startLockingDots();
         else stopLockingDots();
         // Force full rebuild when leaving LOCKED or when candidate verse changes so G2 reliably gets updates (textContainerUpgrade can fail over BLE)
@@ -4448,7 +4448,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
           }
         } else {
           stopPageFlip(); stopCountdown();
-          var practiceHolding = _practiceMode && msg.state.userSearching && msg.state.arabic;
+          var practiceHolding = msg.state.userSearching && msg.state.arabic;
           if (practiceHolding || msg.state.mode === 'LOCKED' || msg.state.isCandidate) {
             stopSearchingDots();
           } else if (msg.state.mode === 'SEARCHING' && S.isRecording) {

@@ -467,3 +467,23 @@ test('combined layout sends Arabic tiles above a native translation container', 
  assert.equal(translation.content,'Native Uzbek translation');assert.equal(translation.yPosition,152);
  assert.ok(page.imageObject.every(c=>c.yPosition+c.height<=translation.yPosition));
 });
+
+
+test('manual Next and Back preserve the selected verse on both screens in every mode', async () => {
+ for(const mode of ['listen','practice','taraweeh']) {
+  const h=harness();h.ui.setMode(mode);
+  h.ui.handleServerMsg({type:'state',state:{mode:'SEARCHING'}});await h.flush();
+  const staleTicks=Array.from(h.intervals.values()).filter(t=>t.ms===400);
+  for(const [action,ayah] of [['manualNextAyah',2],['manualPrevAyah',1]]) {
+   h.context[action]();
+   const translation='Selected '+mode+' verse '+ayah;
+   h.ui.handleServerMsg({type:'state',state:{mode:'SEARCHING',userSearching:true,surah:114,ayah,arabic:'Quran verse',translation}});
+   await h.flush();
+   for(let tick=0;tick<3;tick++) {for(const timer of staleTicks)timer.fn();await h.flush();}
+   const frame=h.writes.filter(w=>w.page).at(-1).page;
+   assert.match(frame.textObject.find(c=>c.containerName==='body').content,new RegExp(translation));
+   assert.equal(h.nodes.get('verseTrans').textContent,translation);
+   assert.equal(Array.from(h.intervals.values()).filter(t=>t.ms===400).length,0);
+  }
+ }
+});
