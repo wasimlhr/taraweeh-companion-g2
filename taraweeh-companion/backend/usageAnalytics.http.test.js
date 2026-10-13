@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { dirname } from 'path';
+import { dirname, join } from 'path';
+import { tmpdir } from 'node:os';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'url';
 import { WebSocket } from 'ws';
 
@@ -9,6 +11,7 @@ const dir = dirname(fileURLToPath(import.meta.url));
 const PORT = 18000 + (process.pid % 1000);
 const TOKEN = 'test-diag-token';
 const BASE = `http://127.0.0.1:${PORT}`;
+const statsDir = mkdtempSync(join(tmpdir(),'quran-http-'));
 
 async function startServer() {
   const child = spawn(process.execPath, ['server.js'], {
@@ -18,6 +21,7 @@ async function startServer() {
       PORT: String(PORT),
       HTTPS_PORT: String(PORT + 1),
       DIAG_TOKEN: TOKEN,
+      USAGE_STATS_PATH: join(statsDir,'sessions.json'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -57,8 +61,11 @@ test('analytics is token-gated and records connect/init/start/lang_pack', { time
 
     const status = await fetch(`${BASE}/api/status`).then((r) => r.json());
     assert.equal(status.liveConnections, 0);
-    assert.equal(status.version, '3.4.17');
+    assert.equal(status.version, '3.4.18');
     assert.equal(status.translationSource, 'on-device-packs');
+    const invalidStudy = await fetch(`${BASE}/api/study/999/1/words`);
+    assert.equal(invalidStudy.status,400);
+    assert.equal(invalidStudy.headers.get('access-control-allow-origin'),'*');
 
     const pack = await fetch(`${BASE}/translations/uzc.json`);
     assert.equal(pack.status, 200);
@@ -116,6 +123,11 @@ test('analytics is token-gated and records connect/init/start/lang_pack', { time
     assert.equal(snap.using.translation[0].name, 'uz');
     assert.equal(snap.using.mode[0].name, 'practice');
     assert.doesNotMatch(JSON.stringify(snap), /drop_audio_here/);
+    assert.equal(snap.history.sessions[0].mode,'practice');
+    assert.equal(snap.history.sessions[0].microphone,'browser');
+    ws.send(JSON.stringify({type:'stop'}));await new Promise(r=>setTimeout(r,100));
+    const ended = await fetch(`${BASE}/api/analytics`,{headers:{'x-diag-token':TOKEN}}).then(r=>r.json());
+    assert.ok(ended.history.sessions[0].endedAt);
 
     const html = await fetch(`${BASE}/api/analytics?token=${TOKEN}&format=html`).then((r) => r.text());
     assert.match(html, /Installs seen/);
@@ -123,5 +135,6 @@ test('analytics is token-gated and records connect/init/start/lang_pack', { time
   } finally {
     try { if (ws && ws.readyState === WebSocket.OPEN) ws.close(); } catch { /* ignore */ }
     await stopServer(child);
+    rmSync(statsDir,{recursive:true,force:true});
   }
 });

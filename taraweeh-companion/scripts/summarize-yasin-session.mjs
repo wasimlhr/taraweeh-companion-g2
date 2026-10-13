@@ -1,0 +1,5 @@
+import {readFileSync,writeFileSync} from 'node:fs';
+const log=readFileSync(new URL('../language-evidence/local-server-current.log',import.meta.url),'utf8');
+const start=log.lastIndexOf('[Pipeline] Started');const run=log.slice(start);const shown=[...run.matchAll(/\[Emit\] LOCKED (\d+):(\d+)/g)].map(m=>m[1]+':'+m[2]);
+const yasin=[...new Set(shown.filter(k=>k.startsWith('36:')))];const report={source:'local console log, latest listening run',microphone:run.match(/source=(\w+)/)?.[1]||'unknown',provider:run.includes('[OpenAI:')?'openai':'unknown',shownAyahs:yasin,first:yasin[0],last:yasin.at(-1),distinctYaSinAyahs:yasin.length,completeYaSin:yasin.length===83,stopped:run.includes('[Pipeline] Stopped'),transcripts:(run.match(/\[OpenAI:/g)||[]).length,emptyTranscripts:(run.match(/\[OpenAI:[^\n]*text=""/g)||[]).length,globalJumps:[...run.matchAll(/Global verse jump: ([^\r\n]+)/g)].map(m=>m[1])};
+writeFileSync(new URL('../language-evidence/yasin-session-summary.json',import.meta.url),JSON.stringify(report,null,2));console.log(JSON.stringify(report));

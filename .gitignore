@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+taraweeh-companion/backend/data/usage/
 *.log
 .DS_Store
 Thumbs.db

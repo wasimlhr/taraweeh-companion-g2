@@ -1,6 +1,6 @@
 {
   "name": "quran-verse-translator",
-  "version": "3.4.17",
+  "version": "3.4.18",
   "description": "Quran Verse Translator — real-time Quran recitation recognition and translation for phone and Even G2",
   "type": "module",
   "scripts": {
@@ -22,7 +22,7 @@
     "build:evenhub": "node scripts/build-evenhub-dist.js",
     "pack:evenhub": "node scripts/pack-evenhub.js",
     "pack:evenhub:check": "node scripts/pack-evenhub.js --check",
-    "test": "node scripts/check-version-alignment.js && node scripts/sync-language-catalog.js --check && node scripts/check-glasses-glyphs.js && node --test backend/transcriptionRouter.test.js backend/prayerTracker.test.js backend/rakatCounter.test.js backend/prayerPipeline.test.js backend/sessionTrace.test.js backend/uzbekLatin.test.js backend/usageStats.test.js backend/usageAnalytics.http.test.js scripts/translation-packs.test.js scripts/glasses-ui.test.js scripts/replay-wav.test.js",
+    "test": "node scripts/check-version-alignment.js && node scripts/sync-language-catalog.js --check && node scripts/check-glasses-glyphs.js && node --test backend/transcriptionRouter.test.js backend/prayerTracker.test.js backend/rakatCounter.test.js backend/prayerPipeline.test.js backend/sessionTrace.test.js backend/uzbekLatin.test.js backend/usageStats.test.js backend/usageJournal.test.js backend/quranStudy.test.js backend/usageAnalytics.http.test.js scripts/translation-packs.test.js scripts/glasses-ui.test.js scripts/replay-wav.test.js",
     "test:local-whisper": "python scripts/test_local_whisper_server.py",
     "test:version": "node scripts/check-version-alignment.js",
     "test:provider-key": "node scripts/check-provider-key.js",

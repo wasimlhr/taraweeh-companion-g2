@@ -58,9 +58,10 @@ export class SessionTrace {
    * @param {string}   [opts.sessionId]
    * @param {Function} [opts.now]      injectable clock for tests
    */
-  constructor({ maxEvents = DEFAULT_MAX_EVENTS, onEvent = null, sessionId = '', now = Date.now } = {}) {
+  constructor({ maxEvents = DEFAULT_MAX_EVENTS, onEvent = null, onRecord = null, sessionId = '', now = Date.now } = {}) {
     this.maxEvents = Math.max(10, maxEvents);
     this.onEvent = onEvent;
+    this.onRecord = onRecord;
     this.sessionId = sessionId;
     this._now = now;
     this.startedAt = this._now();
@@ -89,6 +90,7 @@ export class SessionTrace {
     this.events.push(event);
     while (this.events.length > this.maxEvents) { this.events.shift(); this.dropped++; }
     this.counts[type] = (this.counts[type] || 0) + 1;
+    if (this.onRecord) { try {this.onRecord(event);} catch (_) {} }
     if (this.streaming && this.onEvent) {
       try { this.onEvent(event); } catch (_) {}
     }

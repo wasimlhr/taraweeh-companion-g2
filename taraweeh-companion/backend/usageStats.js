@@ -95,13 +95,13 @@ export class UsageStats {
     inc(this.byLang, meta.lang || '(english)');
     inc(this.byProvider, meta.provider || 'groq');
     inc(this.byAudio, meta.audioSource || 'g2');
-    inc(this.byMode, meta.practiceMode ? 'practice' : 'taraweeh');
+    inc(this.byMode, meta.practiceMode ? 'practice' : meta.taraweehMode === false ? 'translate' : 'taraweeh');
     inc(this.byPipeline, meta.pipeline || 'v4');
     inc(this.byAppVersion, meta.appVersion || '(unknown)');
     this._recent('init', {
       lang: bucket(meta.lang || '(english)'),
       provider: bucket(meta.provider || 'groq'),
-      mode: meta.practiceMode ? 'practice' : 'taraweeh',
+      mode: meta.practiceMode ? 'practice' : meta.taraweehMode === false ? 'translate' : 'taraweeh',
       pipeline: bucket(meta.pipeline || 'v4'),
       appVersion: bucket(meta.appVersion || '(unknown)'),
     });
@@ -201,6 +201,9 @@ table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ddd;pad
 <table><thead><tr><th>Pipeline</th><th>n</th></tr></thead><tbody>${row((snap.using && snap.using.pipeline) || [])}</tbody></table>
 <table><thead><tr><th>App version</th><th>n</th></tr></thead><tbody>${row((snap.using && snap.using.appVersion) || [])}</tbody></table>
 <h2>Errors</h2>
+<h2>Recorded listening sessions</h2>
+<p class="muted">${snap.history?.persistent ? 'Saved to server storage; mount a Railway volume to retain across redeploys.' : 'Session storage is disabled.'} ${esc(snap.history?.storageError || '')} · Latest ${snap.history?.retentionSessions || 0} sessions. Counts measure matcher output, not independently verified accuracy.</p>
+<table><thead><tr><th>Started</th><th>Mode / mic / engine</th><th>Duration</th><th>Shown verse changes</th><th>Transcripts / empty</th><th>Errors</th></tr></thead><tbody>${(snap.history?.sessions||[]).slice(0,80).map(s=>`<tr><td>${esc(new Date(s.startedAt).toISOString())}</td><td>${esc(s.mode+' / '+s.microphone+' / '+s.provider)}</td><td>${Math.round(s.durationMs/1000)}s</td><td>${s.matches} · ${esc(s.verses.join(', '))}</td><td>${s.transcripts} / ${s.emptyTranscripts}</td><td>${s.errors}</td></tr>`).join('')}</tbody></table>
 <table><thead><tr><th>Kind</th><th>n</th></tr></thead><tbody>${row(snap.errors || [])}</tbody></table>
 <h2>Recent</h2>
 <table><thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead><tbody>${(snap.recent || []).slice(0, 20).map((e) => {

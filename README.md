@@ -129,8 +129,36 @@ curl -H "x-diag-token: $DIAG_TOKEN" $BACKEND/api/traces/r7     # one report
 The last 40 reports are held in memory only — a redeploy drops them, and they
 do not accumulate.
 
+Listening sessions are also summarized automatically in `/api/analytics`
+(JSON, or `?format=html` for the owner dashboard), protected by the same
+`x-diag-token` header. This records mode, engine, microphone, duration,
+displayed verse changes, empty transcripts, errors, manual corrections and
+setting changes. These counts describe system output, not independently
+verified recognition accuracy. No audio, transcript text, API keys, IPs or
+installation identifiers are written into these summaries.
+
+For Railway retention across deployments, mount a volume at `/data`, set
+`USAGE_STATS_PATH=/data/quran-usage/sessions.json`, and configure a random
+`DIAG_TOKEN`. The last 500 sessions are retained; active runs checkpoint every
+30 seconds. Without a volume, the default file survives a process restart on
+the same filesystem but not replacement of the Railway container. A structured
+`[UsageSession]` line is emitted on stop/disconnect for Railway's own log viewer.
+
+Study content is served from checked-in compressed datasets through
+`/api/study/:surah/:ayah/:kind`, without external content APIs or credentials.
+The import contains 17 classical Arabic tafsirs and 74 Hadith editions.
+Use `node scripts/import-study-data.mjs` to reproduce the pinned download.
+`backend/data/study/catalog.json` records source revisions and file hashes;
+source licence notices are retained alongside it. These are the available
+editions, not every tafsir or Hadith ever written. Modern copyrighted tafsir
+translations and AI translations are excluded. Hadith browsing preserves the
+source grades; no unverified ayah associations are generated.
+The bundled Amiri Quran font serves phone and glasses Arabic (OFL).
+Tapping a word shows local morphology; English word translations are not
+installed pending a dataset with clear redistribution rights.
+
 ### Display
-- **Three-line verse card** — Arabic (Amiri font), transliteration, and English translation
+- **Verse card** — Arabic with surah:ayah reference and ayah-end marker, tappable word meanings, transliteration, and selected translation
 - **G2 glasses rendering** — formatted text pushed to the 576×288 micro-LED display via Even Hub SDK
 - **Glasses top bar** — status on the left, the rak'ah (with the posture
   appended when the imam is not standing) in the middle, and a clock on the

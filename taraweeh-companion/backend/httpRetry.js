@@ -24,7 +24,12 @@ export function httpError(provider, res, body, extra = {}) {
   const err = new Error(`${provider} HTTP ${status}: ${String(body).slice(0, 200)}`);
   err.status = status;
   err.retryAfterMs = parseRetryAfterMs(res, body);
-  err.retryable = isRetryableStatus(status);
+  try {
+    var error = JSON.parse(String(body)).error || {};
+    err.code = error.code || error.type || '';
+  } catch { err.code = ''; }
+  err.quotaExhausted = /insufficient_quota|quota_exceeded|billing_hard_limit_reached/.test(err.code);
+  err.retryable = !err.quotaExhausted && isRetryableStatus(status);
   Object.assign(err, extra);
   return err;
 }

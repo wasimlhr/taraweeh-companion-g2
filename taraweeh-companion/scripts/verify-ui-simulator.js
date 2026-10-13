@@ -88,7 +88,7 @@ try {
   await settle();
   await evaluate('__uiAudit.handleServerMsg({type:"state",state:__uiAudit.verse});__uiAudit.stopPageFlip();__uiAudit.stopCountdown();');
   await capture('01-reading');
-  const compact=await evaluate(`({overflow:document.documentElement.scrollWidth>innerWidth,details:document.getElementById('listeningDetails').open,phone:document.getElementById('verseTrans').textContent,summary:document.getElementById('deviceLanguageSummary').textContent})`);
+  const compact=await evaluate(`({overflow:document.documentElement.scrollWidth>innerWidth,details:!!document.getElementById('listeningDetails'),phone:document.getElementById('verseTrans').textContent,summary:document.getElementById('deviceLanguageSummary').textContent})`);
   assert.equal(compact.overflow,false); assert.equal(compact.details,false); assert.match(compact.phone,/inson/); results.push({case:'compact Uzbek reading',...compact});
 
   await evaluate('showSettings(); document.getElementById("languageSearch").value="uzbek"; filterLanguages();');

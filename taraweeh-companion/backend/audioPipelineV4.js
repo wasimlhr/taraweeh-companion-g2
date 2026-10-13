@@ -1,3 +1,4 @@
+import { MicFilter } from './micFilter.js';
 /**
  * AudioPipeline V3 — extends V2 with:
  * - 3s chunks: search starts at 3s, locked uses 3–6s chunks (same logic throughout)
@@ -63,13 +64,8 @@ const VOICE_HANGOVER_MS = parseInt(process.env.VOICE_HANGOVER_MS || '5000', 10);
 // 4s starved the retry ladder; 2s keeps a cold search responsive while holding
 // the worst-case burst near Groq's 20 RPM free tier.
 const GROQ_SEARCH_MIN_INTERVAL_MS = parseInt(process.env.GROQ_SEARCH_MIN_INTERVAL_MS || '2000', 10);
-// Safety valve: the voice gate is an optimisation, never the sole reason we stop
-// transcribing. If audio keeps arriving while SEARCHING but the gate has not
-// opened, search anyway and let the transcriber judge whether it is speech.
-const SEARCH_VOICE_GATE_BYPASS_MS = parseInt(process.env.SEARCH_VOICE_GATE_BYPASS_MS || '6000', 10);
 // "Is the mic producing anything at all", far below any speech level. Deliberately
-// independent of the per-profile voice gate: buffering must keep working even if
-// that gate is mis-tuned, otherwise the safety valve above never gets any audio.
+// independent of the voice gate so speech onset retains its audio preroll.
 const SIGNAL_PRESENT_RMS = parseFloat(process.env.SIGNAL_PRESENT_RMS || '0.0003');
 const SEARCH_SEND_BYTES = Math.floor(BYTES_PER_MS * SEARCH_SEND_MS);
 const SEARCH_PREROLL_BYTES = Math.floor(BYTES_PER_MS * SEARCH_PREROLL_MS);
@@ -85,11 +81,9 @@ const PRACTICE_FRESH_SEARCH_MS = parseInt(process.env.PRACTICE_FRESH_SEARCH_MS |
 // voiceMinActivityRms is a per-85ms-chunk floor, so it sits well under the
 // 0.002–0.015 whole-chunk range a phone or G2 mic produces during recitation:
 // consonants and word gaps dip far below the level of the surrounding ayah.
-// voiceMaxActivityRms caps how far room noise may push the gate up, and stays
-// below the quiet end of that range on purpose. A single RMS threshold cannot
-// both reject loud rooms and still hear the quietest reciter, so the ceiling is
-// tuned to never climb into speech: in a noisy room the gate simply stops
-// filtering (the pre-2.6.7 behaviour) instead of silencing the reciter.
+// PC/phone detection uses the unamplified, conditioned signal and an adaptive
+// noise floor. G2 retains its quiet-microphone ceiling. RMS activity is not a
+// semantic speech classifier; sustained sounds above the floor can still pass.
 const AUDIO_SOURCE_PROFILES = Object.freeze({
   browser: Object.freeze({
     source: 'browser',
@@ -106,12 +100,12 @@ const AUDIO_SOURCE_PROFILES = Object.freeze({
     source: 'simulator',
     removeDcOffset: true,
     voiceMinActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MIN_ACTIVITY_RMS || '0.0008'),
-    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.0015'),
+    voiceMaxActivityRms: parseFloat(process.env.SIMULATOR_VOICE_MAX_ACTIVITY_RMS || '0.01'),
     voiceNoiseMultiplier: parseFloat(process.env.SIMULATOR_VOICE_NOISE_MULTIPLIER || '1.5'),
     lockedVoiceGateFactor: parseFloat(process.env.SIMULATOR_LOCKED_VOICE_GATE_FACTOR || '0.8'),
     quietBoostThreshold: parseFloat(process.env.SIMULATOR_QUIET_BOOST_THRESHOLD || '0.015'),
     quietBoostTarget: parseFloat(process.env.SIMULATOR_QUIET_BOOST_TARGET || '0.08'),
-    maxBoostGain: parseFloat(process.env.SIMULATOR_MAX_BOOST_GAIN || '20'),
+    maxBoostGain: parseFloat(process.env.SIMULATOR_MAX_BOOST_GAIN || '4'),
   }),
   g2: Object.freeze({
     source: 'g2',
@@ -365,6 +359,7 @@ export class AudioPipeline {
     this.audioSource = null;
     this._audioProfile = null;
     this._noiseFloorRms = 0;
+    this._micFilter?.reset();
     this._ayahStartTime     = 0;
 
     this._pauseAnalysisBuf   = Buffer.alloc(0);
@@ -478,7 +473,9 @@ export class AudioPipeline {
     if (normalized === this.audioSource && this._audioProfile) return;
     this.audioSource = normalized;
     this._audioProfile = AUDIO_SOURCE_PROFILES[normalized];
+    this._micFilter = normalized === 'g2' ? null : new MicFilter();
     this._noiseFloorRms = 0;
+    this._micFilter?.reset();
     this._resetSearchBuf();
     this._lockedBuf = Buffer.alloc(0);
     this._lockedVoicedMs = 0;
@@ -496,21 +493,39 @@ export class AudioPipeline {
   }
 
   setFastMode(enabled) {
+    const changed = this.fastMode !== !!enabled || (!!enabled && this.slowMode);
     this.fastMode = !!enabled;
     if (enabled) this.slowMode = false;
     this.setFollowMode(!this.fastMode && !this.slowMode);
+    if (changed) this._refreshPaceMode();
     console.log(`[Pipeline] Pace: ${this.fastMode ? 'FAST' : this.slowMode ? 'SLOW' : 'normal'}`);
     this.onStatus({ type: 'fast_mode', enabled: this.fastMode });
     this.onStatus({ type: 'slow_mode', enabled: this.slowMode });
   }
 
   setSlowMode(enabled) {
+    const changed = this.slowMode !== !!enabled || (!!enabled && this.fastMode);
     this.slowMode = !!enabled;
     if (enabled) this.fastMode = false;
     this.setFollowMode(!this.fastMode && !this.slowMode);
+    if (changed) this._refreshPaceMode();
     console.log(`[Pipeline] Pace: ${this.slowMode ? 'SLOW' : this.fastMode ? 'FAST' : 'normal'}`);
     this.onStatus({ type: 'slow_mode', enabled: this.slowMode });
     this.onStatus({ type: 'fast_mode', enabled: this.fastMode });
+  }
+
+  _refreshPaceMode() {
+    this._cancelReadAdvance();
+    if (!this.active || this.practiceMode || this.state.mode !== 'LOCKED') return;
+    if (this.followMode) {
+      this._wordProgressInterval = setInterval(() => {
+        if (Date.now() - this._lastDetectedVoiceAt <= 1000) this._updateWordProgress();
+        else this._lockTime += 200;
+      }, 200);
+    } else {
+      this._scheduleReadAdvance(Math.max(this.state.confidence || 0, READ_ADVANCE_CONFIDENCE));
+    }
+    this._emitState(null, null);
   }
 
   setTaraweehMode(enabled) {
@@ -579,6 +594,14 @@ export class AudioPipeline {
 
   _handleTranscriptionError(err) {
     if (!err) return;
+    if (err.quotaExhausted) {
+      this._rateLimitedUntilMs = Infinity;
+      this.onStatus({component:'model',status:'error',httpStatus:err.status || 429,
+        provider:this.resolvedProvider || this.whisperOpts?.provider || 'groq',
+        message:'Provider quota exhausted. Check the selected API project quota or change your key/provider. Automatic retries stopped.',
+        quotaExhausted:true});
+      return;
+    }
     const is429 = err.status === 429 || /HTTP 429|rate.?limit/i.test(err.message || '');
     if (!is429) {
       this.onStatus({
@@ -593,7 +616,7 @@ export class AudioPipeline {
     // Short pause only — long 15–60s freezes were a byproduct of failed lock
     // (search kept retrying). Faster lock is the real fix.
     const hintMs = err.retryAfterMs || 0;
-    const waitMs = Math.max(3000, Math.min(hintMs || 8000, 12000));
+    const waitMs = Math.max(3000, Number.isFinite(hintMs) && hintMs > 0 ? hintMs : 8000);
     this._rateLimitedUntilMs = Date.now() + waitMs;
     console.warn(`[Pipeline] 429 — cooldown ${Math.round(waitMs / 1000)}s before next request`);
     this.onStatus({
@@ -682,6 +705,7 @@ export class AudioPipeline {
     this._preRecitSkips = 0;
     this._lastSearchCall = 0;   // a restart must not inherit the previous run's throttle
     this._noiseFloorRms = 0;
+    this._micFilter?.reset();
     this._resetSearchBuf();
     if (this.taraweehMode) this._startPrayerTick();
     console.log(`[Pipeline] Started (last known: ${prevSurah}:${prevAyah || 0})`);
@@ -726,9 +750,11 @@ export class AudioPipeline {
 
     let s = this._displaySurah || this.state.surah || this.state.lastLockedSurah || this.preferredSurah || 1;
     let a = this._displayAyah || this.state.ayah || this.state.lastLockedAyah || 1;
+    if (this.restrictSurah && s !== this.restrictSurah) { s = this.restrictSurah; a = 1; }
 
     if (delta > 0) {
       const next = getNextAyah(s, a);
+      if (this.restrictSurah && next && next.surah !== this.restrictSurah) return;
       if (!next) {
         this.state = { ...createState(), mode: 'SEARCHING', lastLockedSurah: s, lastLockedAyah: a };
         this._resetSearchBuf();
@@ -770,6 +796,7 @@ export class AudioPipeline {
 
   // Instant snap — Practice follows Groq identifications, no timers.
   _snapPracticeVerse(surah, ayah, score, words = []) {
+    if (this.practiceMode && this.restrictSurah && surah !== this.restrictSurah) return false;
     const confPct = this._practiceConfPct(score);
     this._whisperSurah = surah;
     this._whisperAyah  = ayah;
@@ -1178,7 +1205,8 @@ export class AudioPipeline {
 
     const now = Date.now();
     const profile = this._audioProfile || AUDIO_SOURCE_PROFILES.g2;
-    const processedPcm = profile.removeDcOffset ? removeDcOffset(pcmData) : pcmData;
+    const conditioned = this._micFilter ? this._micFilter.process(pcmData) : pcmData;
+    const processedPcm = profile.removeDcOffset ? removeDcOffset(conditioned) : conditioned;
     const rms = computeRms(processedPcm);
     const pcmMs = processedPcm.length / BYTES_PER_MS;
     // Monotonic position in the audio stream. Transcription windows are named
@@ -1190,7 +1218,7 @@ export class AudioPipeline {
     // the floor can then only ever decay away from it.
     if (this._noiseFloorRms <= 0) this._noiseFloorRms = Math.max(1e-6, rms);
     const activityGate = Math.max(profile.voiceMinActivityRms,
-      Math.min(profile.voiceMaxActivityRms, this._noiseFloorRms * profile.voiceNoiseMultiplier));
+      profile.source === 'g2' ? Math.min(profile.voiceMaxActivityRms, this._noiseFloorRms * profile.voiceNoiseMultiplier) : this._noiseFloorRms * profile.voiceNoiseMultiplier);
     const lockedTracking = this.state.mode === 'LOCKED' || this.state.mode === 'PAUSED';
     const detectionGate = lockedTracking
       ? activityGate * profile.lockedVoiceGateFactor
@@ -1286,18 +1314,15 @@ export class AudioPipeline {
     }
   }
 
-  // Search is allowed when speech was recently detected, or — as a safety valve —
-  // when audio has been buffering for a while without the gate ever opening.
-  // A mis-tuned gate must never be able to stop transcription outright.
+  // Require sustained recent activity. Buffer age alone must never spend an API
+  // request on room noise. Explicit flushes preserve already detected recitation.
   _searchGateOpen(now = Date.now()) {
     if (this.isGroqMode && this._lastSearchCall
         && now - this._lastSearchCall < GROQ_SEARCH_MIN_INTERVAL_MS) return false;
     if (this._forceNextSearch) return true;
     const freshVoice = this._searchVoicedMs >= VOICE_MIN_ACTIVE_MS
       && now - this._searchLastVoiceAt <= VOICE_HANGOVER_MS;
-    if (freshVoice) return true;
-    const sinceLastSearch = this._lastSearchCall ? now - this._lastSearchCall : Infinity;
-    return sinceLastSearch >= SEARCH_VOICE_GATE_BYPASS_MS;
+    return freshVoice;
   }
 
   _maybeProcessLockedBufferedChunk() {
@@ -1971,8 +1996,9 @@ export class AudioPipeline {
       }
 
       const prevSurah = this.state.surah;
-      const anchorResult = processWhisperResult(cleaned, this.state, {
+      let anchorResult = processWhisperResult(cleaned, this.state, {
         preferredSurah: this.practiceMode ? 0 : this.preferredSurah,
+        restrictSurah: this.practiceMode ? this.restrictSurah : 0,
         fastMode: this.fastMode,
         missBeforeResuming: MISSED_BEFORE_RESUMING_V3,
         missBeforeLost: MISSED_BEFORE_LOST_V3,
@@ -1980,6 +2006,30 @@ export class AudioPipeline {
         practiceMode: this.practiceMode,
         freshRun: this._practiceFreshRun,
       });
+      // A global jump can release the current anchor even though this very
+      // transcript identifies the new verse. Reuse it instead of throwing away
+      // the recitation and waiting for the user to repeat it.
+      if (!this.practiceMode && !anchorResult._locked) {
+        const reacquired = processWhisperResult(cleaned, createState(), {
+          preferredSurah: 0, restrictSurah: 0,
+          fastMode: this.fastMode, isGroqMode: this.isFastProvider,
+        });
+        if (reacquired.mode === 'LOCKED' && reacquired._locked) anchorResult = reacquired;
+      }
+      if (!this.practiceMode && anchorResult._locked && anchorResult.surah !== prevSurah) {
+        if (!this._confirmGlobalJump(anchorResult)) {
+          this.trace.record('note',{what:'jump-pending'});
+          console.log(`[Pipeline] Pending global jump ${anchorResult.surah}:${anchorResult.ayah} — awaiting another matching result`);
+          this._emitState(text, rms);
+          return;
+        }
+        this._pendingGlobalJump = null;
+        this.trace.record('note',{what:'jump-confirmed'});
+      } else {
+        // Any intervening result breaks the confirmation streak.
+        this._pendingGlobalJump = null;
+      }
+      if (!anchorResult._locked) this.trace.record('note',{what:'match-miss'});
       const dropDecision = this._shouldDropLockedResult(anchorResult, resultAgeMs, seq);
       if (dropDecision.drop) {
         if (dropDecision.reason === 'out-of-order') {
@@ -2007,12 +2057,14 @@ export class AudioPipeline {
         this._lockedSeq = Math.max(this._lockedSeq, seq);
         this._emitState(text, rms);
       } else if (anchorResult.surah !== prevSurah && anchorResult.surah !== 0 && !this.practiceMode) {
-        console.log(`[Pipeline] Surah mismatch: display=${this._displaySurah} whisper=${anchorResult.surah} — releasing lock to re-search`);
+        console.log(`[Pipeline] Global verse jump: ${this._displaySurah}:${this._displayAyah} -> ${anchorResult.surah}:${anchorResult.ayah}`);
         this._cancelReadAdvance();
         this._measuredWps = READ_WORDS_PER_SEC;
         this._resetSearchBuf();
-        this.state = createState();
-        this._emitState(text, rms);
+        this.state = anchorResult;
+        this._lastTexts = [];
+        this._onWhisperConfirm(anchorResult.surah, anchorResult.ayah,
+          anchorResult.confidence, text, rms, !!anchorResult._locked, words);
         return;
       } else {
         if (this.practiceMode) {
@@ -2083,6 +2135,17 @@ export class AudioPipeline {
       const confPct = this._practiceConfPct(score);
       if (realMatch && confPct >= 18) {
         this._snapPracticeVerse(confirmedSurah, confirmedAyah, score, words);
+        if (this.followMode && !this.practiceMode) {
+          this._updateWordProgress();
+          this._wordProgressInterval = setInterval(() => {
+            if (this.active && Date.now() - this._lastDetectedVoiceAt <= 1000) {
+              this._updateWordProgress();
+            } else {
+              // Freeze the word clock through breaths and silence.
+              this._lockTime += 200;
+            }
+          }, 200);
+        }
       }
       this._emitState(text, rms);
       return;
@@ -2537,6 +2600,15 @@ export class AudioPipeline {
       progress: (this._currentWordIndex + 1) / totalWords,
       words: ayah.words,
     });
+  }
+
+  _confirmGlobalJump(candidate) {
+    const previous = this._pendingGlobalJump;
+    const consistent = previous && previous.surah === candidate.surah
+      && Math.abs(previous.ayah - candidate.ayah) <= 2;
+    this._pendingGlobalJump = { surah: candidate.surah, ayah: candidate.ayah,
+      wins: consistent ? previous.wins + 1 : 1 };
+    return this._pendingGlobalJump.wins >= 2;
   }
 
   _updatePace(rawWps, now) {

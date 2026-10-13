@@ -1,6 +1,6 @@
 {
   "name": "quran-live-backend",
-  "version": "3.4.17",
+  "version": "3.4.18",
   "type": "module",
   "scripts": {
     "start": "node server.js",

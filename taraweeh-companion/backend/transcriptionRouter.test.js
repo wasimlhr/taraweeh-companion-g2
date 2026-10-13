@@ -706,3 +706,9 @@ describe('pipeline recovery + cancellation (V4)', () => {
     }
   });
 });
+
+
+it('classifies provider insufficient_quota as permanent rather than retryable 429', () => {
+ const err=httpError('OpenAI',{status:429,headers:{get:()=>null}},JSON.stringify({error:{code:'insufficient_quota'}}));
+ assert.equal(err.quotaExhausted,true);assert.equal(err.retryable,false);
+});

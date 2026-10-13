@@ -48,7 +48,7 @@ function harness() {
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       clearGlassesPreamble, startSearchingDots, PREAMBLE_GLASSES,
-      arabicLayoutPages, arabicImageCanvas, buildPages, G2_BODY_LINES, startPageFlip, _buildTraceReport, stopListening, rakatHdr, _applyPrayerSnapshot,
+      quranArabicDisplay, arabicLayoutPages, arabicImageCanvas, buildPages, G2_BODY_LINES, startPageFlip, _buildTraceReport, stopListening, rakatHdr, _applyPrayerSnapshot,
       setMode: function (mode) {
         _reciteMode = mode; _practiceMode = mode === 'practice'; _taraweehMode = mode === 'taraweeh';
       },
@@ -151,14 +151,16 @@ test('menu selection changes the count without pausing or restarting capture', a
 
 test('Listen is the default: no rak\'ah header, and it tells the backend Taraweeh is off', async () => {
   const h = harness();
-  assert.equal(h.ui.rakatHdr(), 'Listen');
+  assert.equal(h.ui.rakatHdr(), 'Translate mode');
   h.ui.setReciteMode('listen');
   assert.deepEqual(h.messages, [
+    { type: 'set_restrict_surah', surah: 0 },
     { type: 'set_practice_mode', enabled: false },
     { type: 'set_taraweeh_mode', enabled: false },
   ]);
   h.ui.setReciteMode('taraweeh');
-  assert.deepEqual(h.messages.slice(2), [
+  assert.deepEqual(h.messages.slice(3), [
+    { type: 'set_restrict_surah', surah: 0 },
     { type: 'set_practice_mode', enabled: false },
     { type: 'set_taraweeh_mode', enabled: true },
   ]);
@@ -349,7 +351,7 @@ test('hold keeps both displays stable while recognition advances; resume catches
   const count = h.writes.length;
   h.ui.handleServerMsg({type:'state',state:{...verse,ayah:2,translation:'Latest verse'}}); await h.flush();
   assert.equal(h.writes.length, count);
-  assert.equal(h.nodes.get('holdVerseBtn').textContent, 'Resume live verse');
+  assert.equal(h.nodes.get('holdVerseBtn').textContent, 'Resume verse');
   assert.ok(h.messages.every(msg => msg.type !== 'stop'));
   h.context.toggleVerseHold(); await h.flush();
   const frame = h.writes.filter(w => w.page).at(-1).page;
@@ -486,4 +488,46 @@ test('manual Next and Back preserve the selected verse on both screens in every 
    assert.equal(Array.from(h.intervals.values()).filter(t=>t.ms===400).length,0);
   }
  }
+});
+
+
+test('mode header has room for one firmware text line without a scrollbar', async () => {
+ const h=harness();await h.ui._writeGlasses({hdr:'An-Nas',body:'Translation'});
+ const box=h.writes.find(w=>w.page).page.textObject.find(c=>c.containerName==='rak');
+ assert.ok(box.height-2*(box.paddingLength+box.borderWidth)>=27);
+});
+
+
+test('Arabic retains source recitation marks and gains its numbered ayah ending once', () => {
+ const h=harness();const text='قُلْ ۖ أَعُوذُ';
+ const marked=h.ui.quranArabicDisplay({arabic:text,ayah:12});
+ assert.equal(marked,text+' \u06dd\u0661\u0662');
+ assert.equal(h.ui.quranArabicDisplay({arabic:marked,ayah:12}),marked);
+});
+
+test('Arabic above transliteration paginates native pronunciation instead of translation', () => {
+ const h=harness();h.context.document.createElement=()=>({getContext:()=>({measureText:t=>({width:t.length*12})})});
+ h.ui.S.settings.glassesLayout='arabic-pronunciation';
+ const layout=h.ui.arabicLayoutPages({arabic:'Arabic',transliteration:'Qul audhu',translation:'Hidden translation'});
+ assert.equal(layout.combined,true);assert.equal(layout.translation.join(' '),'Qul audhu');
+});
+
+
+test('tashkeel preference reaches Arabic image text while keeping the ayah ending', () => {
+ const h=harness(),state={arabic:'قُلْ أَعُوذُ',ayah:1};
+ h.ui.S.settings.showTashkeel=true;assert.match(h.ui.quranArabicDisplay(state),/\u064f/);
+ h.ui.S.settings.showTashkeel=false;const text=h.ui.quranArabicDisplay(state);
+ assert.doesNotMatch(text,/[\u064b-\u065f]/);assert.match(text,/\u06dd\u0661/);
+});
+
+
+test('phone text sizing applies to all reading text and bounds invalid preferences', () => {
+ const h=harness();h.context.setPhoneTextSize(24);
+ assert.equal(h.ui.S.settings.phoneTextSize,24);
+ assert.equal(h.nodes.get('verseTrans').style.fontSize,'24px');
+ assert.equal(h.nodes.get('verseTranslit').style.fontSize,'24px');
+ assert.equal(h.nodes.get('verseArabic').style.fontSize,'48px');
+ assert.equal(h.nodes.get('phoneTextSizePreview').style.fontSize,'24px');
+ h.context.setPhoneTextSize(1000);assert.equal(h.ui.S.settings.phoneTextSize,28);
+ h.context.setPhoneTextSize('invalid');assert.equal(h.ui.S.settings.phoneTextSize,16);
 });

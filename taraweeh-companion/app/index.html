@@ -188,16 +188,14 @@ body {
   padding: 18px;
   margin-bottom: 10px;
   min-height: 140px;
-  max-height: 70vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
   transition: background 0.2s, border-color 0.2s;
 }
 #lockedContent {
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
+  overflow: visible;
+  flex: none;
 }
 .verse-pos {
   font-size: 12px;
@@ -205,19 +203,40 @@ body {
   font-weight: 500;
 }
 .verse-arabic {
-  font-family: 'Amiri', serif;
-  font-size: 24px;
+  font-family: 'QuranBitmap', 'Amiri', serif;
+  font-size: 32px;
   direction: rtl;
   text-align: right;
   color: var(--tc-1);
-  line-height: 1.7;
+  line-height: 2.1;
+  padding-block: 6px;
+  overflow-wrap: anywhere;
 }
+.verse-arabic [role="button"] { cursor:pointer; border-radius:4px; }
+.verse-arabic [role="button"]:focus-visible { outline:2px solid var(--tc-highlight); outline-offset:3px; }
+.verse-arabic .k-word[data-selected] { color:var(--tc-highlight); }
+.ayah-end { white-space:nowrap; margin-inline-start:8px; }
+.study-tools { display:flex;gap:8px;align-items:center;margin-top:8px; }
+.study-tools button,.study-actions button { min-height:36px; }
+#wordMeaning,#studyPanel { border:1px solid var(--bc-4);border-radius:var(--r);padding:12px;margin-top:12px; }
+#wordMeaning[hidden],#studyPanel[hidden] { display:none; }
+#wordMeaning { display:flex;align-items:center;justify-content:space-between;gap:8px; }
+.study-actions { display:flex;flex-wrap:wrap;gap:8px;margin:10px 0; }
+.study-actions button,#wordMeaning button,#studyPanel .study-tools button {
+  border:1px solid var(--bc-4);border-radius:8px;background:var(--bc-3);color:var(--tc-1);
+  font:inherit;font-size:13px;line-height:1.3;padding:8px 10px;min-width:36px;
+}
+#studyPanel .study-tools { justify-content:space-between; }
+#studyContent { line-height:1.7;overflow-wrap:anywhere; }
+#studyContent h2 { font-size:18px; }
+.study-credit { font-size:11px;color:var(--tc-2);margin-top:12px; }
 .verse-divider {
   height: 1px;
   background: var(--bc-4);
 }
 
 /* V4: Word Progress Bar */
+#wordProgress { display: none !important; }
 .word-progress {
   margin: 12px 0;
   padding: 10px 12px;
@@ -352,10 +371,10 @@ body {
    at full strength, the current word in gold, upcoming words dimmed. Driven by
    the backend's 5 Hz wordProgress stream (pace-interpolated server-side). */
 .verse-arabic .k-word {
-  opacity: 0.45;
+  opacity: 1;
   transition: opacity 0.25s ease, color 0.25s ease;
 }
-.verse-arabic .k-word.done { opacity: 0.9; }
+.verse-arabic .k-word.done { opacity: 1; }
 .verse-arabic .k-word.now {
   opacity: 1;
   color: var(--tc-gold);
@@ -420,9 +439,9 @@ body {
 
 /* ── System Status Bar ─────────────────────────────────────────────────── */
 #statusBar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 6px;
   align-items: center;
   padding: 4px 8px;
   background: var(--bc-3);
@@ -443,7 +462,20 @@ body {
   background: var(--bc-4);
   color: var(--tc-2);
   white-space: nowrap;
+  min-width: 0;
 }
+.s-pill > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+/* Six stable slots: connection/model/match, then heard/shown/pace. */
+#statusBar { grid-template-rows: repeat(2, 20px); }
+#sPillG2 { grid-area: 1 / 1; }
+#sPillModel, #sPillWs { grid-area: 1 / 2; }
+#sPillConf { grid-area: 1 / 3; }
+#sPillHeard { grid-area: 2 / 1; }
+#sPillShown { grid-area: 2 / 2; }
+#sPillPace { grid-area: 2 / 3; }
+#sPillWs.ok { display: none; }
+#statusBar:has(#sPillWs:not(.ok)) #sPillModel { display: none; }
+#statusBar #sPillTimer, #statusBar #sPillEndpoint { display: none !important; }
 .s-pill .s-dot {
   width: 5px; height: 5px;
   border-radius: 50%;
@@ -587,9 +619,9 @@ body {
 .standalone-only { display: none !important; }
 html.standalone .standalone-only { display: revert !important; }
 html.standalone .g2-only { display: none !important; }
-html.standalone #verseCard { min-height: 220px; max-height: 75vh; }
+html.standalone #verseCard { min-height: 220px; }
 html.standalone .verse-pos { font-size: 13px; }
-html.standalone .verse-arabic { font-size: 32px; line-height: 1.85; }
+html.standalone .verse-arabic { font-size: 32px; line-height: 2.1; }
 html.standalone .verse-translit { font-size: 17px; }
 html.standalone .verse-translation { font-size: 16px; }
 html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important; }
@@ -931,7 +963,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.17</span>
+      <span class="version" id="versionEl">v3.4.18</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1026,7 +1058,8 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     </div>
     <div id="lockedContent" style="display:none">
       <div class="verse-pos" id="versePos"></div>
-      <div class="verse-arabic" id="verseArabic"></div>
+      <div class="verse-arabic" id="verseArabic" translate="no"></div>
+      <div id="wordMeaning" hidden aria-live="polite"><span id="wordMeaningText"></span><button type="button" onclick="expandWordMeaning()" aria-label="Expand word details">›</button><button type="button" onclick="document.getElementById('wordMeaning').hidden=true" aria-label="Close word meaning">×</button></div>
       
       <!-- V4: Word Progress Bar -->
       <div id="wordProgress" class="word-progress" style="display:none">
@@ -1044,19 +1077,25 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <div class="verse-divider"></div>
       <div class="verse-translation" id="verseTrans" dir="auto"></div>
       <div class="verse-lang-label" id="verseLangLabel"></div>
+      <div class="study-tools"><button type="button" class="mode-btn" onclick="openStudy('tafsir')">Tafsir</button><button type="button" class="mode-btn" onclick="openStudy('hadith')">Hadith</button></div>
+      <section id="studyPanel" hidden aria-label="Ayah study">
+        <div class="study-tools"><strong id="studyTitle"></strong><button type="button" onclick="closeStudy()" aria-label="Close ayah study">×</button></div>
+        <div class="study-actions"><button type="button" onclick="studyWord(-1)" aria-label="Previous word">←</button><button type="button" onclick="studyWord(1)" aria-label="Next word">→</button><button type="button" onclick="loadStudy('word')">Word</button><button type="button" onclick="loadStudy('tafsir')">Tafsir</button><button type="button" onclick="loadStudy('hadith')">Hadith</button></div>
+        <label id="tafsirSelectRow" hidden>Tafsir <select id="studyTafsir" onchange="loadStudy('tafsir')"><option value="22">Ibn Kathir · Arabic</option><option value="23">Al-Qurtubi</option><option value="37">Al-Tabari</option><option value="27">Al-Baghawi</option><option value="523">Al-Jalalayn</option><option value="518">Al-Baydawi</option><option value="488">Al-Razi</option><option value="491">Ibn Juzay</option><option value="489">Al-Wahidi</option><option value="494">Al-Shawkani</option><option value="496">Ibn Al-Jawzi</option><option value="500">Ibn Al-Qayyim</option><option value="493">Al-Suyuti</option><option value="513">Al-Samarqandi</option><option value="501">Al-Alusi</option><option value="512">Al-Mawardi</option><option value="510">Al-Zamakhshari</option></select></label>
+        <div id="studyContent" aria-live="polite" translate="no"></div>
+        <p class="study-credit">Locally hosted classical Arabic tafsir and Hadith. Font: Amiri Quran (OFL). English word meanings are not installed.</p>
+      </section>
     </div>
     <div id="verseNavRow" class="verse-nav-row" style="display:none">
       <button type="button" class="nav-arrow-btn" onclick="manualPrevAyah()" title="Previous ayah">← Prev</button>
+      <button type="button" class="nav-arrow-btn" id="holdVerseBtn" onclick="toggleVerseHold()" disabled aria-pressed="false">Hold verse</button>
       <button type="button" class="nav-arrow-btn" onclick="manualNextAyah()" title="Next ayah">Next →</button>
     </div>
+    <span id="holdVerseHint" class="s-hint" aria-live="polite"></span>
   </div>
 
   <div id="deviceLanguageSummary" class="device-language" aria-live="polite"></div>
-  <details id="listeningDetails" class="listening-details">
-    <summary>Listening details</summary>
-    <div id="diagnosticPills" class="status-bar"></div>
-    <div id="diagnosticContent"></div>
-  </details>
+
   <div id="confRow" style="display:none">
     <div id="confTrack"><div id="confFill"></div></div>
     <span id="confPct">0%</span>
@@ -1095,9 +1134,13 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <button type="button" class="mv-toggle-btn" id="btnModePractice" onclick="setReciteMode('practice')">📖 Practice</button>
       <button type="button" class="mv-toggle-btn" id="btnModeTaraweeh" onclick="setReciteMode('taraweeh')">🌙 Taraweeh</button>
     </div>
+    <div id="practiceSurahRow" class="s-row" style="display:none;margin-bottom:8px">
+      <label class="s-label" for="practiceSurah">Practice surah</label>
+      <select id="practiceSurah" onchange="setPracticeSurah(this.value)"><option value="0">Choose a surah (or practice any)</option></select>
+    </div>
     <span class="s-hint" id="reciteModeHint" style="display:block;margin:0 0 8px;font-size:11px;line-height:1.45">Translate follows Quran recitation and shows each verse in your selected language.</span>
-    <div class="reading-tools" style="flex-wrap:wrap"><button type="button" class="nav-arrow-btn" id="holdVerseBtn" onclick="toggleVerseHold()" disabled aria-pressed="false">Hold verse</button>
-    <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" title="Tap to cycle: Follow mode → Fast recitor → Slow recitor (Listen and Taraweeh)">👣 Follow mode</button></div><span id="holdVerseHint" class="s-hint" aria-live="polite"></span>
+    <div class="reading-tools" style="flex-wrap:wrap">
+    <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" title="Tap to cycle: Follow mode → Fast recitor → Slow recitor (Listen and Taraweeh)">👣 Follow mode</button></div>
   </div>
 
 </div>
@@ -1288,8 +1331,19 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       </div>
       <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Madd, zabar, zer and the other marks on the verse text — and on the live hearing preview for recognized words.</span>
     </div>
+    <div class="s-row">
+      <label class="s-label" for="settingPhoneTextSize">Phone reading text size</label>
+      <div class="reading-tools">
+        <button type="button" class="toggle-btn" aria-label="Decrease reading text size" onclick="setPhoneTextSize(Number(document.getElementById('settingPhoneTextSize').value)-2)">A−</button>
+        <input type="range" id="settingPhoneTextSize" min="14" max="28" step="2" oninput="setPhoneTextSize(this.value)" style="flex:1;min-width:100px" />
+        <button type="button" class="toggle-btn" aria-label="Increase reading text size" onclick="setPhoneTextSize(Number(document.getElementById('settingPhoneTextSize').value)+2)">A+</button>
+        <output id="phoneTextSizeValue" for="settingPhoneTextSize">16 px</output>
+      </div>
+      <p id="phoneTextSizePreview" style="line-height:1.6;overflow-wrap:anywhere;margin:8px 0">Translation and transliteration preview</p>
+      <span class="s-hint">Changes Arabic, translation and transliteration on your phone. Your choice is saved.</span>
+    </div>
     <div class="s-row g2-only">
-      <label class="s-label" for="settingGlassesLayout">Glasses content</label><select id="settingGlassesLayout" onchange="setGlassesLayout(this.value)"><option value="arabic">Arabic only</option><option value="translation">Translation only</option><option value="pronunciation">Transliteration only (Latin letters)</option><option value="arabic-translation">Arabic above translation</option><option value="translation-pronunciation">Translation + transliteration</option></select>
+      <label class="s-label" for="settingGlassesLayout">Glasses content</label><select id="settingGlassesLayout" onchange="setGlassesLayout(this.value)"><option value="arabic">Arabic only</option><option value="translation">Translation only</option><option value="pronunciation">Transliteration only (Latin letters)</option><option value="arabic-translation">Arabic above translation (default)</option><option value="arabic-pronunciation">Arabic above transliteration</option><option value="translation-pronunciation">Translation + transliteration</option></select>
       <div class="toggle-group" style="display:none">
         <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Translation + pronunciation</button>
         <button type="button" class="toggle-btn" id="btnBottomTranslationOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
@@ -1409,7 +1463,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.17';
+  const APP_VERSION = 'v3.4.18';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -1629,6 +1683,10 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     if (ls) ls.classList.toggle('active', _reciteMode === 'listen');
     if (tw) tw.classList.toggle('active', _reciteMode === 'taraweeh');
     if (pr) pr.classList.toggle('active', _reciteMode === 'practice');
+    var practiceRow = document.getElementById('practiceSurahRow');
+    if (practiceRow) practiceRow.style.display = _practiceMode ? '' : 'none';
+    var practiceSelect = document.getElementById('practiceSurah');
+    if (practiceSelect && S.settings) practiceSelect.value = S.settings.defaultSurah || '0';
     var paceOn = _reciteMode !== 'practice';
     var paceBtn = document.getElementById('paceModeBtn');
     if (paceBtn) paceBtn.style.display = paceOn ? '' : 'none';
@@ -1636,7 +1694,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     try { document.documentElement.setAttribute('data-recitation-mode', _reciteMode); } catch (_) {}
     if (hint) {
       hint.textContent = _reciteMode === 'practice'
-        ? 'Practice: lock the ayah you recite (including repeats). Stays there — no auto-forward, no multi-ayah wait.'
+        ? 'Practice: recite or repeat within your chosen surah. No automatic advance. Use Prev, Hold/Resume and Next yourself.'
         : _reciteMode === 'taraweeh'
           ? 'Taraweeh: follow the imam. Count each new Al-Fatihah; use +/− to correct.'
           : 'Translate: follow confirmed recitation across the Quran. Practice stays within your chosen surah.';
@@ -1659,6 +1717,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       stopCountdown();
     }
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+      S.ws.send(JSON.stringify({type:'set_restrict_surah',surah:restrictSurahValue()}));
       // Practice first so a Taraweeh echo cannot clobber the selection.
       if (_practiceMode) {
         S.ws.send(JSON.stringify({ type: 'set_practice_mode', enabled: true }));
@@ -2468,8 +2527,10 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
     favoriteLanguages: [],
     dimSecondary: false,
-    arabicImage: false,
+    arabicImage: true,
+    glassesLayout: 'arabic-translation',
     reciteMode: 'listen',
+    phoneTextSize: 16,
     showTashkeel: true,   // Quranic marks (madd, harakat) on Arabic text + hearing preview
     targetRakat: 20,      // how many rak'ah the mosque prays — 8 and 20 are both common
   };
@@ -2623,6 +2684,23 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   window.applyLocalUzbek = applyLocalUzbek;
   window.applyLocalTranslation = applyLocalTranslation;
 
+  function normalizePhoneTextSize(value) {
+    var size = Number(value);
+    return Number.isFinite(size) && size > 0 ? Math.max(14, Math.min(28, Math.round(size / 2) * 2)) : 16;
+  }
+  function applyPhoneTextSize() {
+    var size = normalizePhoneTextSize(S.settings.phoneTextSize);
+    ['verseTrans','verseTranslit','phoneTextSizePreview'].forEach(function(id){
+      var node = document.getElementById(id); if(node) node.style.fontSize = size + 'px';
+    });
+    document.getElementById('verseArabic').style.fontSize = size * 2 + 'px';
+    document.getElementById('settingPhoneTextSize').value = size;
+    document.getElementById('phoneTextSizeValue').textContent = size + ' px';
+  }
+  window.setPhoneTextSize = function(value) {
+    S.settings.phoneTextSize = normalizePhoneTextSize(value);
+    saveSettings(); applyPhoneTextSize();
+  };
   function loadSettings() {
     try {
       const s = Storage.getItem(SETTINGS_KEY);
@@ -2632,8 +2710,13 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       merged.lang = sanitizeTranslationLang(merged.lang);
       merged.transcriptionProvider = sanitizeProvider(merged.transcriptionProvider);
       merged.favoriteLanguages = Array.isArray(merged.favoriteLanguages) ? merged.favoriteLanguages.filter(function (code) { return ALLOWED_TRANSLATION_LANGS.has(code); }) : [];
+      // Every launch starts with Arabic above the selected translation.
+      merged.glassesLayout = 'arabic-translation';
+      merged.arabicImage = true;
+      merged.glassesBottom = 'translation-only';
       merged.arabicImage = merged.arabicImage === true;
       merged.dimSecondary = merged.dimSecondary === true;
+      merged.phoneTextSize = normalizePhoneTextSize(merged.phoneTextSize);
       delete merged.whisperUnlocked;
       return merged;
     } catch { return { ...DEFAULT_SETTINGS, pipelineVersion: 'v4', lang: '' }; }
@@ -2833,6 +2916,15 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
    * surah, so restricting there would strand the display — the backend ignores
    * it outside Practice, and this keeps the wire honest about that.
    */
+  window.setPracticeSurah = function(value) {
+    var n = Number(value);
+    if (!Number.isInteger(n) || n < 0 || n > 114) n = 0;
+    S.settings.defaultSurah = String(n); S.settings.onlyDefaultSurah = true;
+    document.getElementById('settingSurah').value = String(n);
+    document.getElementById('practiceSurah').value = String(n);
+    saveSettings();
+    if (_practiceMode) scheduleReinit('Practice: ' + (n ? SURAHS[n] : 'any surah'));
+  };
   function restrictSurahValue() {
     var n = parseInt(S.settings.defaultSurah || '0') || 0;
     if (!n || !S.settings.onlyDefaultSurah) return 0;
@@ -2874,7 +2966,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   };
 
   function populateSurahs() {
-    ['settingSurah'].forEach(function (id) {
+    ['settingSurah', 'practiceSurah'].forEach(function (id) {
       var el = document.getElementById(id);
       if (!el || el.options.length > 1) return;
       for (var i = 1; i <= 114; i++) {
@@ -2954,7 +3046,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   // "12:59 PM" is 82px and "R20/20 TSHD" is 115px. That leaves 356px of text
   // for the status line, against a widest-case 298px.
   var G2_CLK_W   = 90;
-  var G2_RAK_W   = 124;
+  var G2_RAK_W   = 168; // Fits "Translate mode" in one native text line.
   var G2_HDR_W   = G2_W - G2_RAK_W - G2_CLK_W;
   var G2_RAK_X   = G2_HDR_W;
   var G2_CLK_X   = G2_HDR_W + G2_RAK_W;
@@ -3160,8 +3252,8 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       { containerID: 2, containerName: 'rak',
         xPosition: G2_RAK_X, yPosition: 0, width: G2_RAK_W, height: G2_HDR_H,
         isEventCapture: 0,
-        borderWidth: G2_BORDER, borderColor: 5, borderRadius: 0, paddingLength: 6,
-        content: centerPx(rakatHdr(), G2_RAK_W - 14) },
+        borderWidth: G2_BORDER, borderColor: 5, borderRadius: 0, paddingLength: 4,
+        content: centerPx(rakatHdr(), G2_RAK_W - 10) },
       { containerID: 4, containerName: 'clk',
         xPosition: G2_CLK_X, yPosition: 0, width: G2_CLK_W, height: G2_HDR_H,
         isEventCapture: 0,
@@ -3184,7 +3276,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   function glassesMenu() {
     var items = [
       { itemID: 3, itemName: S.isRecording ? 'Stop listening' : 'Start listening' },
-      { itemID: 4, itemName: _readingHeld ? 'Resume live verse' : 'Hold verse' },
+      { itemID: 4, itemName: _readingHeld ? 'Resume verse' : 'Hold verse' },
       { itemID: 5, itemName: S.settings && S.settings.arabicImage ? 'Show translation' : S.settings && S.settings.glassesBottom === 'translation-only' ? 'Show pronunciation' : 'Hide pronunciation' },
     ];
     if (_taraweehMode) items.push({ itemID: 1, itemName: 'Rakat -' }, { itemID: 2, itemName: 'Rakat +' });
@@ -3370,7 +3462,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
   // Plain count alongside the verse and clock.
   function rakatHdr() {
-    if (!_taraweehMode) return _practiceMode ? 'Practice' : 'Listen';
+    if (!_taraweehMode) return _practiceMode ? 'Practice' : 'Translate mode';
     return pxClip('Rakat ' + (_prayer.rakat || 1), G2_RAK_PX);
   }
 
@@ -3407,7 +3499,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     if (rak !== _lastRakHdr) {
       _lastRakHdr = rak;
       queueBridgeCall('glassesRakat', function () {
-        return S.bridge.textContainerUpgrade({ containerID: 2, containerName: 'rak', content: centerPx(rak, G2_RAK_W - 14) });
+        return S.bridge.textContainerUpgrade({ containerID: 2, containerName: 'rak', content: centerPx(rak, G2_RAK_W - 10) });
       });
     }
     if (clk !== _lastClkHdr) {
@@ -3636,7 +3728,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     frame.secondaryOnly = !!(display.pages.pronunciationOnly && display.pages.pronunciationOnly.indexOf(idx) >= 0);
     var imageState = _readingHeld ? _heldState : S._lastGlassesState;
     if (S.settings && S.settings.arabicImage && imageState && imageState.arabic && S.isRecording) {
-      frame.arabicImage = imageState.arabic; var translatedImageState = applyLocalTranslation(imageState); frame.imageTranslation = translatedImageState.translationGlasses ?? translatedImageState.translation;
+      frame.arabicImage = quranArabicDisplay(imageState); var translatedImageState = applyLocalTranslation(imageState); frame.imageTranslation = S.settings.glassesLayout === 'arabic-pronunciation' ? imageState.transliteration : translatedImageState.translationGlasses ?? translatedImageState.translation;
       frame.imagePage = pageIdx;
       frame.hdr = (_readingHeld ? 'Held ' : '') + glassesRef(imageState) + ' Arabic';
     }
@@ -3752,6 +3844,89 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
   var _lastVerseState = null;
 
+  var _study = null, _studyRequest = 0, _studyWords = new Map(), _meaningRequest = 0;
+  function studyState() {
+    var state = _lastVerseState;
+    if (!state || !state.surah || !state.ayah) return null;
+    return {surah:state.surah,ayah:state.ayah,index:0,words:null};
+  }
+  async function studyFetch(state,kind) {
+    var url=backendBase()+'/api/study/'+state.surah+'/'+state.ayah+'/'+kind;
+    if(kind==='tafsir')url+='?id='+document.getElementById('studyTafsir').value;
+    var controller=new AbortController(), timer=setTimeout(function(){controller.abort();},15000);
+    try {var response=await fetch(url,{signal:controller.signal});if(!response.ok)throw Error('Content unavailable');return await response.json();}
+    finally {clearTimeout(timer);}
+  }
+  async function studyWords(state) {
+    var key=state.surah+':'+state.ayah;
+    if(!_studyWords.has(key)) {
+      var data=await studyFetch(state,'words');
+      if(_studyWords.size>=40)_studyWords.delete(_studyWords.keys().next().value);
+      _studyWords.set(key,data.words);
+    }
+    state.words=_studyWords.get(key);return state.words;
+  }
+  window.openWordMeaning=async function(index) {
+    var state=studyState();if(!state)return;state.index=index;_study=state;
+    var displayedWords=document.querySelectorAll('#verseArabic .k-word');
+    displayedWords.forEach(function(word,i){if(i===index)word.setAttribute('data-selected','true');else word.removeAttribute('data-selected');});
+    var seq=++_meaningRequest,box=document.getElementById('wordMeaning'),label=document.getElementById('wordMeaningText');
+    box.hidden=false;label.textContent='Loading word meaning…';
+    try {
+      await studyWords(state);if(seq!==_meaningRequest)return;
+      // Match the tapped text rather than assuming Uthmani joining and display
+      // tokenization always produce the same number of words.
+      var displayed=displayArabic(_lastVerseState.arabic).split(/\s+/).filter(Boolean);
+      var norm=function(s){return String(s).normalize('NFKD').replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g,'').replace(/ٱ/g,'ا');};
+      if(state.words.length!==displayed.length) {
+        var hit=state.words.findIndex(function(w){return norm(w.arabic)===norm(displayed[index]);});
+        if(hit<0)throw Error('Word unavailable');state.index=hit;
+      }
+      var word=state.words[state.index];if(!word)throw Error('Word unavailable');
+      label.textContent=word.meaning+' · '+word.transliteration;
+    } catch {if(seq===_meaningRequest)label.textContent='Word meaning unavailable. Tap again to retry.';}
+  };
+  window.expandWordMeaning=function(){if(!_study)return;document.getElementById('studyPanel').hidden=false;loadStudy('word');};
+  window.openStudy=function(kind){_study=studyState();if(!_study)return;document.getElementById('studyPanel').hidden=false;loadStudy(kind);};
+  window.closeStudy=function(){_studyRequest++;document.getElementById('studyPanel').hidden=true;};
+  window.studyWord=async function(delta){if(!_study)return;try {await studyWords(_study);_study.index=Math.max(0,Math.min(_study.words.length-1,_study.index+delta));loadStudy('word');}catch{document.getElementById('studyContent').textContent='Word meaning unavailable. Try again.';}};
+  function appendStudyHtml(host,html) {
+    // Preserve paragraphs/headings while dropping scripts, attributes and embeds.
+    var parsed=new DOMParser().parseFromString(String(html),'text/html');
+    var allowed=new Set(['P','H2','H3','STRONG','EM','B','I','UL','OL','LI','BR','BLOCKQUOTE']);
+    function copy(node,parent){
+      if(node.nodeType===3){parent.appendChild(document.createTextNode(node.textContent));return;}
+      if(node.nodeType!==1||['SCRIPT','STYLE','IFRAME','OBJECT'].includes(node.tagName))return;
+      var target=allowed.has(node.tagName)?document.createElement(node.tagName.toLowerCase()):document.createDocumentFragment();
+      Array.from(node.childNodes).forEach(function(child){copy(child,target);});parent.appendChild(target);
+    }
+    Array.from(parsed.body.childNodes).forEach(function(node){copy(node,host);});
+  }
+  window.loadStudy=async function(kind) {
+    if(!_study)return;var state=_study,seq=++_studyRequest,host=document.getElementById('studyContent');
+    document.getElementById('studyTitle').textContent=state.surah+':'+state.ayah+' · '+(kind==='word'?'Word details':kind==='tafsir'?'Tafsir':'Related Hadith');
+    document.getElementById('tafsirSelectRow').hidden=kind!=='tafsir';host.textContent='Loading…';
+    try {
+      var data=kind==='word'?await studyWords(state):await studyFetch(state,kind);
+      if(seq!==_studyRequest)return;host.textContent='';
+      if(kind==='word') {
+        var word=state.words[state.index];if(!word)throw Error('Word unavailable');
+        var arabic=document.createElement('div');arabic.className='verse-arabic';arabic.textContent=word.arabic;host.appendChild(arabic);
+        var meaning=document.createElement('p');meaning.textContent='Meaning: '+word.meaning;host.appendChild(meaning);
+        var pronunciation=document.createElement('p');pronunciation.textContent='Pronunciation: '+word.transliteration;host.appendChild(pronunciation);
+      } else if(kind==='tafsir') {
+        if(!data.text)host.textContent='No tafsir is available for this ayah.';else {var commentary=document.createElement('div');commentary.dir='rtl';commentary.lang='ar';commentary.style.whiteSpace='pre-wrap';appendStudyHtml(commentary,data.text);host.appendChild(commentary);}
+      } else {
+        if(!data.available){host.textContent=data.message;if(data.editions&&data.editions.length){var select=document.createElement('select');select.id='hadithEdition';select.setAttribute('aria-label','Hadith edition');data.editions.forEach(function(e){var option=document.createElement('option');option.value=e.name;option.textContent=e.collection+' · '+e.language+' ('+e.count+')';select.appendChild(option);});var number=document.createElement('input');number.id='hadithNumber';number.type='number';number.min='1';number.value='1';number.setAttribute('aria-label','Hadith number');var read=document.createElement('button');read.textContent='Read Hadith';read.onclick=readLocalHadith;host.appendChild(select);host.appendChild(number);host.appendChild(read);var result=document.createElement('div');result.id='hadithResult';host.appendChild(result);}}
+        else if(!data.references.length)host.textContent='No related Hadith references are listed for this ayah.';
+        else data.references.forEach(function(ref){var p=document.createElement('p');var link=document.createElement('a');link.textContent=ref.collection+' · '+ref.hadith_number;link.href='https://sunnah.com/'+encodeURIComponent(ref.collection)+':'+encodeURIComponent(ref.hadith_number);link.target='_blank';link.rel='noopener';p.appendChild(link);host.appendChild(p);});
+      }
+      var source=document.createElement('p');source.className='study-credit';source.textContent=data.source||'Served from our backend';host.appendChild(source);
+    }catch{if(seq===_studyRequest)host.textContent='Content unavailable. Select the tab again to retry.';}
+  };
+
+  async function readLocalHadith(){var host=document.getElementById('hadithResult');if(!host||!_study)return;host.textContent='Loading…';try{var url=backendBase()+'/api/study/'+_study.surah+'/'+_study.ayah+'/hadith-text?edition='+encodeURIComponent(document.getElementById('hadithEdition').value)+'&number='+encodeURIComponent(document.getElementById('hadithNumber').value);var response=await fetch(url,{signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error();var data=await response.json();if(!host.isConnected)return;host.dir=data.language==='Arabic'?'rtl':'ltr';host.style.whiteSpace='pre-wrap';host.textContent=data.collection+' · '+data.hadithnumber+'\n\n'+data.text+'\n\n'+(data.grades||[]).map(function(g){return g.name+': '+g.grade;}).join('\n');}catch{host.textContent='Hadith unavailable. Check the collection and number.';}}
+
   function renderVerseArabic(state) {
     var el = document.getElementById('verseArabic');
     if (!el) return;
@@ -3763,24 +3938,31 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     // word-level certainty. Not in Practice either: nothing advances the
     // word position there, so the verse would sit dimmed on word one forever.
     var karaoke = state.mode === 'LOCKED' && !state.isCandidate && !_practiceMode && text;
-    if (!karaoke) {
-      if (_kState.key !== 'plain:' + key || el.textContent !== text) {
-        el.textContent = text;
-        _kState.key = 'plain:' + key; _kState.count = 0; _kState.lastIdx = -1;
-      }
-      return;
-    }
+    if (!karaoke) key = 'plain:' + key;
     if (_kState.key !== key) {
+      _meaningRequest++;
+      document.getElementById('wordMeaning').hidden=true;
       el.textContent = '';
       var words = text.split(/\s+/).filter(Boolean);
       for (var i = 0; i < words.length; i++) {
         var s = document.createElement('span');
         s.className = 'k-word';
         s.textContent = words[i];
+        s.dataset.wordIndex = String(i);
+        s.setAttribute('role','button');s.tabIndex=0;
+        s.setAttribute('aria-label','Meaning of '+words[i]);
+        s.onclick = function(){openWordMeaning(Number(this.dataset.wordIndex));};
+        s.onkeydown = function(event){if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}};
         el.appendChild(s);
         if (i < words.length - 1) el.appendChild(document.createTextNode(' '));
       }
       _kState.key = key; _kState.count = words.length; _kState.lastIdx = -1;
+      if (state.ayah && !text.includes('۝')) {
+        var end = document.createElement('span');end.className='ayah-end';
+        // QPC Hafs Arabic-Indic digits already include the ayah rosette.
+        end.textContent = '۝'+String(state.ayah).replace(/[0-9]/g,function(d){return String.fromCharCode(0x660+Number(d));});
+        end.setAttribute('aria-label','End of ayah '+state.ayah);el.appendChild(end);
+      }
     }
     // Seed from the state packet so the highlight is right immediately after
     // lock and after a reconnect, before the first wordProgress tick.
@@ -3858,7 +4040,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       var scoreLabel = (isCandidate && !_practiceMode) ? ' \u007e' + (state.candidateScore || '') + '%' : (isUserSearching && !_practiceMode ? ' (Auto locking…)' : '');
       versePosEl.textContent = isBasmalaPos(state)
         ? 'Bismillah' + scoreLabel
-        : (state.surahName || '') + '  \u2022  Ayah ' + (state.ayah || '') + ' of ' + (state.ayahTotal || '?') + scoreLabel;
+        : (state.surahName || '') + ' ' + (state.surah || '') + ':' + (state.ayah || '') + ((state.ayahTotal || state.totalAyahs) ? ' · Ayah ' + state.ayah + ' of ' + (state.ayahTotal || state.totalAyahs) : '') + scoreLabel;
       versePosEl.style.opacity = (isCandidate || isUserSearching) && !_practiceMode ? '0.75' : '1';
 
       renderVerseArabic(state);
@@ -4638,7 +4820,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       log('No mic API', 'err'); return;
     }
     log('Requesting mic...');
-    navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true } })
+    navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false } })
       .then(function (stream) {
         S.mediaStream = stream;
         // Ask for a 16 kHz graph: the browser's own resampler is properly
@@ -5053,6 +5235,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
         await Storage.attach(S.bridge);
         var freshSettings = loadSettings();
         S.settings = { ...S.settings, ...freshSettings };
+        applyPhoneTextSize();
         if (RECITE_MODES[S.settings.reciteMode]) {
           _reciteMode = S.settings.reciteMode;
           _taraweehMode = _reciteMode === 'taraweeh';
@@ -5259,6 +5442,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     // Repaint the current verse immediately instead of waiting for the next
     // state packet; the karaoke key includes the flag so spans rebuild.
     if (_lastVerseState) renderVerseArabic(_lastVerseState);
+    refreshGlassesPreferences();
   };
 
   var ENGINE_NOTES = {
@@ -5454,7 +5638,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     var button = document.getElementById('holdVerseBtn');
     if (!button) return;
     button.disabled = !S.isRecording || !(state && state.arabic);
-    button.textContent = _readingHeld ? 'Resume live verse' : 'Hold verse';
+    button.textContent = _readingHeld ? 'Resume verse' : 'Hold verse';
     button.setAttribute('aria-pressed', String(_readingHeld));
     document.getElementById('holdVerseHint').textContent = _readingHeld ? 'Held · swipe glasses to read pages' : '';
   }
@@ -5488,14 +5672,14 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     S.settings.dimSecondary = !!enabled; saveSettings(); refreshGlassesPreferences();
   };
   function glassesLayout() {
-    if(S.settings.arabicImage) return S.settings.glassesLayout==='arabic-translation'?'arabic-translation':'arabic';
+    if(S.settings.arabicImage) return ['arabic-translation','arabic-pronunciation'].includes(S.settings.glassesLayout)?S.settings.glassesLayout:'arabic';
     return S.settings.glassesBottom==='pronunciation-only'?'pronunciation':S.settings.glassesBottom==='translation-only'?'translation':'translation-pronunciation';
   }
   window.setGlassesLayout = function(layout) {
-    if(!['arabic','translation','pronunciation','arabic-translation','translation-pronunciation'].includes(layout)) layout='translation';
+    if(!['arabic','translation','pronunciation','arabic-translation','arabic-pronunciation','translation-pronunciation'].includes(layout)) layout='translation';
     S.settings.glassesLayout=layout;S.settings.glassesBottom=layout==='pronunciation'?'pronunciation-only':layout==='translation-pronunciation'?'transliteration':'translation-only';
     document.getElementById('settingGlassesLayout').value=layout;
-    setArabicImage(layout==='arabic'||layout==='arabic-translation');
+    setArabicImage(layout==='arabic'||layout==='arabic-translation'||layout==='arabic-pronunciation');
   };
   window.setArabicImage = function (enabled) {
     S.settings.arabicImage = !!enabled; saveSettings();
@@ -5512,7 +5696,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   function languageNames() {
     var lang = S.settings && S.settings.lang || '';
     var phone = translationLabel(lang).replace(' (built-in)', '');
-    var glasses = S.settings && S.settings.arabicImage ? (S.settings.glassesLayout==='arabic-translation'?'Arabic image + '+(GLASSES_ENGLISH_LANGS[lang]?'English (font fallback)':lang==='uzc'?'Uzbek (Latin)':phone)+' text':'Arabic (image)')
+    var glasses = S.settings && S.settings.arabicImage ? (S.settings.glassesLayout==='arabic-translation'?'Arabic image + '+(GLASSES_ENGLISH_LANGS[lang]?'English (font fallback)':lang==='uzc'?'Uzbek (Latin)':phone)+' text':S.settings.glassesLayout==='arabic-pronunciation'?'Arabic image + transliteration text':'Arabic (image)')
       : GLASSES_ENGLISH_LANGS[lang] ? 'English (font fallback)'
       : lang === 'uzc' ? 'Uzbek (Latin)' : phone;
     return 'Phone: ' + phone + ' · Glasses: ' + glasses;
@@ -5566,14 +5750,6 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   };
 
   function setupReadingUI() {
-    var pills = document.getElementById('diagnosticPills');
-    ['sPillModel', 'sPillConf', 'sPillHeard', 'sPillShown', 'sPillPace', 'sPillTimer', 'sPillEndpoint'].forEach(function (id) {
-      var node = document.getElementById(id); if (node) pills.appendChild(node);
-    });
-    var details = document.getElementById('diagnosticContent');
-    ['matchPanel', 'wordProgress', 'confRow'].forEach(function (id) {
-      var node = document.getElementById(id); if (node) details.appendChild(node);
-    });
     var searching = document.getElementById('searchingContent');
     if (searching) {
       var hint = document.createElement('p'); hint.textContent = 'Listening for a verse…';
@@ -5590,6 +5766,14 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     return _arabicFontReady;
   }
 
+  function quranArabicDisplay(state) {
+    var arabic = displayArabic(state.arabic || '');
+    if (state.ayah && !arabic.includes('۝')) {
+      var number = String(state.ayah).replace(/[0-9]/g, function(digit) {return String.fromCharCode(0x660 + Number(digit));});
+      arabic += ' ۝' + number;
+    }
+    return arabic;
+  }
   function arabicImageLines(arabic) {
     var canvas = document.createElement('canvas');
     var ctx = canvas.getContext('2d'); ctx.font = '28px QuranBitmap';
@@ -5604,9 +5788,10 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   }
 
   function arabicLayoutPages(state) {
-    var combined = S.settings.glassesLayout === 'arabic-translation';
-    var translation = combined ? wrapText(glassesTranslationText(state.translationGlasses ?? state.translation), G2_BODY_PX) : [];
-    var arabic = arabicImageLines(state.arabic);
+    var combined = ['arabic-translation','arabic-pronunciation'].includes(S.settings.glassesLayout);
+    var bottom = S.settings.glassesLayout === 'arabic-pronunciation' ? (state.transliteration ?? state.translation) : (state.translationGlasses ?? state.translation);
+    var translation = combined ? wrapText(glassesTranslationText(bottom), G2_BODY_PX) : [];
+    var arabic = arabicImageLines(quranArabicDisplay(state));
     return {arabic:arabic,translation:translation,combined:combined,count:Math.max(1,Math.ceil(arabic.length/(combined?2:5)),Math.ceil(translation.length/4))};
   }
   async function arabicImageCanvas(arabic, page, translation) {
@@ -5686,24 +5871,24 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     if (revision !== _previewRevision) return;
     var ctx = canvas.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0,0,576,288);
     ctx.fillStyle = '#32ff32'; ctx.font = '20px Arial'; ctx.textBaseline = 'top'; ctx.textAlign = 'left'; ctx.direction = 'ltr';
-    ctx.fillText(glassesRef(state), 6, 8); ctx.fillText(rakatHdr(), 366, 8);
+    ctx.fillText(glassesRef(state), 6, 8); ctx.fillText(rakatHdr(), G2_RAK_X + 6, 8);
     try {
       if (S.settings.arabicImage) {
-        var image = await arabicImageCanvas(state.arabic, 0, (applyLocalTranslation(state).translationGlasses ?? applyLocalTranslation(state).translation));
+        var image = await arabicImageCanvas(quranArabicDisplay(state), 0, (S.settings.glassesLayout === 'arabic-pronunciation' ? state.transliteration : applyLocalTranslation(state).translationGlasses ?? applyLocalTranslation(state).translation));
         if (revision !== _previewRevision) return;
         ctx.drawImage(image.canvas, 0, G2_BODY_Y);
         // Convert white raster to the display's green without changing its black background.
         var pixels = ctx.getImageData(0,G2_BODY_Y,576,224);
         for (var i=0;i<pixels.data.length;i+=4) { pixels.data[i]=0; pixels.data[i+2]=0; }
         ctx.putImageData(pixels,0,G2_BODY_Y);
-        if (S.settings.glassesLayout === 'arabic-translation') {
+        if (['arabic-translation','arabic-pronunciation'].includes(S.settings.glassesLayout)) {
           var local = applyLocalTranslation(state);
           var layout = arabicLayoutPages(local);
           ctx.font = '20px Arial'; ctx.textAlign = 'left'; ctx.direction = 'ltr'; ctx.textBaseline = 'top';
           ctx.fillStyle = S.settings.dimSecondary ? '#168b16' : '#32ff32';
           layout.translation.slice(0,4).forEach(function(line,row){ctx.fillText(line,4,G2_BODY_Y+112+G2_PAD+row*G2_LINE_H);});
         }
-        caption.textContent = (S.settings.glassesLayout === 'arabic-translation' ? 'Arabic + translation preview · ' : 'Arabic preview · ') + glassesRef(state) + ' · ' + image.count + ' page(s). Experimental; hardware verification pending.';
+        caption.textContent = (S.settings.glassesLayout === 'arabic-translation' ? 'Arabic + translation preview · ' : S.settings.glassesLayout === 'arabic-pronunciation' ? 'Arabic + transliteration preview · ' : 'Arabic preview · ') + glassesRef(state) + ' · ' + image.count + ' page(s). Experimental; hardware verification pending.';
       } else {
         var display = buildGlassesText(state); var lines = display.pages[0].split('\n'); var secondary = false;
         lines.forEach(function (line,index) {
@@ -5879,6 +6064,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   };
 
   window.showSettings = function () {
+    applyPhoneTextSize();
     document.getElementById('mainView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'block';
     document.getElementById('settingLang').value = sanitizeTranslationLang(S.settings.lang || '');
@@ -6085,6 +6271,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     }
 
     S.settings = loadSettings();
+    applyPhoneTextSize();
     ensureLangPack(S.settings.lang);
     _originIsBackend = await detectOriginBackend();
     log('Backend: ' + backendBase() + (_originIsBackend ? ' (serving origin)' : ' (hosted)'), 'ok');

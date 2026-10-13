@@ -2,7 +2,7 @@ import {LANGUAGE_CODES, PACK_CODES} from './languageCatalog.js';
 /**
  * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.17 — on-device language packs + DIAG_TOKEN usage analytics
+ * v3.4.18 — on-device language packs + DIAG_TOKEN usage analytics
  *   Translate mode: general Quran follow-along translator; Taraweeh adds rak'ah tracking
  */
 import 'dotenv/config';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 import { networkInterfaces } from 'os';
 import express from 'express';
 import { WebSocketServer } from 'ws';
-import { loadQuran } from './keywordMatcher.js';
+import { loadQuran, getAyah } from './keywordMatcher.js';
 import { validRecoveryState } from './recoveryState.js';
 import { buildMushafIndex } from './mushafIndex.js';
 import { closeTranscription, PROVIDER, sharedKeyAvailability, compareProviders, probeProviderKey, STT_ENGINES, collectKeys, resolveProvider } from './transcriptionRouter.js';
@@ -23,6 +23,8 @@ import { AudioPipeline as AudioPipelineV4 } from './audioPipelineV4.js';
 import { SessionTrace } from './sessionTrace.js';
 import { TraceStore } from './traceStore.js';
 import { UsageStats, renderAnalyticsHtml } from './usageStats.js';
+import { QuranStudy } from './quranStudy.js';
+import { UsageJournal } from './usageJournal.js';
 
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
@@ -72,6 +74,32 @@ const APP_VERSION = (() => {
 const app = express();
 app.use(express.json({ limit: '4mb' }));
 const usageStats = new UsageStats();
+const usageJournal = new UsageJournal({path:process.env.USAGE_STATS_PATH || join(__dirname,'data','usage','sessions.json')});
+setInterval(()=>usageJournal.flush(),30000).unref();
+const quranStudy = new QuranStudy();
+app.get('/api/study/:surah/:ayah/:kind', async (req,res) => {
+  res.set('Access-Control-Allow-Origin','*');
+  const surah = Number(req.params.surah), ayah = Number(req.params.ayah);
+  if (!Number.isInteger(surah) || !Number.isInteger(ayah) || !getAyah(surah,ayah)) return res.status(400).json({error:'Invalid ayah'});
+  const key = `${surah}:${ayah}`;
+  try {
+    switch(req.params.kind) {
+      case 'words': return res.json(await quranStudy.words(key));
+      case 'tafsir': {
+        const id = Number(req.query.id || 22);
+        if (![22,23,37,27,523,518,488,491,489,494,496,500,493,513,501,512,510].includes(id)) return res.status(400).json({error:'Unknown tafsir'});
+        return res.json(await quranStudy.tafsir(key,id));
+      }
+      case 'hadith': return res.json(await quranStudy.hadith(key));
+      case 'hadith-text': {
+        const number=Number(req.query.number);
+        if(!Number.isInteger(number)||number<1)return res.status(400).json({error:'Invalid Hadith number'});
+        return res.json(await quranStudy.hadithText(String(req.query.edition||''),number));
+      }
+      default: return res.status(404).end();
+    }
+  } catch {return res.status(502).json({error:'Study content unavailable. Please try again.'});}
+});
 let liveConnections = 0;
 
 // A packed .ehpk runs from the Even Hub's own origin, so every /api call is
@@ -219,6 +247,8 @@ app.get('/api/status', (req, res) => {
     allowedProviders: [...STT_ENGINES, 'auto'],
     allowedModels: Object.fromEntries(Object.entries(ALLOWED_MODELS).map(([k, v]) => [k, [...v]])),
     translationSource: 'on-device-packs',
+    usageLogger: {enabled:true,ownerReadConfigured:!!(process.env.DIAG_TOKEN||'').trim(),
+      volumeMounted:!!process.env.RAILWAY_VOLUME_MOUNT_PATH,storageError:usageJournal.lastError},
     allowedTranslationLangs: ['', ...LANGUAGE_CODES],
     liveConnections,
     endpointLifecycle: lastEndpointLifecycle,
@@ -255,6 +285,7 @@ if (DIAG_TOKEN) {
   });
   app.get('/api/analytics', requireToken, (req, res) => {
     const snap = usageStats.snapshot({ concurrent: liveConnections });
+    snap.history = usageJournal.snapshot();
     const format = String(req.query.format || '').toLowerCase();
     const accept = String(req.get('accept') || '');
     const wantHtml = format === 'html' || (!format && accept.includes('text/html'));
@@ -417,6 +448,8 @@ wss.on('connection', (ws, req) => {
   console.log(`[WS] Client connected from ${clientIp} (${liveConnections} live)`);
   let pipeline = null;
   let sessionId = null;
+  let usageRun = null;
+  let sessionMeta = {};
 
   function send(msg) {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -425,11 +458,16 @@ wss.on('connection', (ws, req) => {
   // One trace per connection, recording whether or not anyone is watching.
   // Turning diagnostics on in the app only starts the streaming — the history
   // leading up to the bug is already there.
-  const trace = new SessionTrace({ onEvent: (event) => send({ type: 'trace', event }) });
+  const trace = new SessionTrace({ onEvent: (event) => send({ type: 'trace', event }),
+    onRecord:(event)=>usageJournal.event(usageRun,event) });
 
   let pipelineVersion = 'v4';
 
   function createPipeline(preferredSurah = 0, opts = {}, version) {
+    usageJournal.end(usageRun,'reinit'); usageRun = null;
+    sessionMeta = {provider:opts.transcriptionProvider,model:opts.transcriptionModel,
+      audioSource:opts.audioSource,practiceMode:opts.practiceMode,taraweehMode:opts.taraweehMode,
+      lang:opts.lang,appVersion:opts.appVersion};
     if (pipeline) pipeline.destroy();
     pipelineVersion = sanitizePipelineVersion(version || pipelineVersion);
     const Ctor = pipelineVersion === 'v3' ? AudioPipelineV3 : AudioPipelineV4;
@@ -508,7 +546,7 @@ wss.on('connection', (ws, req) => {
       prayerConfig: opts.prayerConfig || {},
       trace,
       onRecoveryState: (state) => send({ type: 'recovery_state', state }),
-      onStateUpdate: (msg) => send(msg),
+      onStateUpdate: (msg) => {if(msg.state)usageJournal.match(usageRun,msg.state);send(msg);},
       onStatus: (s) => {
         updateEndpointLifecycle(s, 'pipeline');
         // Statuses that name a sub-type used to overwrite the envelope —
@@ -648,9 +686,10 @@ wss.on('connection', (ws, req) => {
             usageStats.init({
               sessionId,
               lang: sanitizeTranslationLang(msg.lang),
-              provider: msg.transcriptionProvider || 'groq',
-              audioSource: sanitizeAudioSource(msg.audioSource),
+              provider: pipeline?.whisperOpts?.provider || msg.transcriptionProvider || 'groq',
+              audioSource: pipeline?.audioSource || sanitizeAudioSource(msg.audioSource),
               practiceMode: !!msg.practiceMode,
+              taraweehMode: !!pipeline?.taraweehMode,
               pipeline: ver,
               appVersion: msg.appVersion || '',
             });
@@ -660,22 +699,32 @@ wss.on('connection', (ws, req) => {
           case 'start':
             console.log(`[WS] Start → pipeline.active was ${pipeline?.active}`);
             usageStats.start();
+            if (!usageRun) usageRun = usageJournal.begin({...sessionMeta,
+              provider:pipeline?.whisperOpts?.provider||sessionMeta.provider,
+              audioSource:pipeline?.audioSource||sessionMeta.audioSource,
+              practiceMode:pipeline?.practiceMode,taraweehMode:pipeline?.taraweehMode});
             pipeline?.start();
             break;
           case 'stop':
             usageStats.stop();
+            usageJournal.end(usageRun);usageRun=null;
             pipeline?.stop();
             break;
           case 'reset': pipeline?.reset(); break;
           case 'pause': pipeline?.pause(); break;
           case 'audio_return': pipeline?.audioReturn(); break;
           case 'ping': ws.isAlive = true; send({ type: 'pong' }); break;
-          case 'manual_advance': pipeline?.manualAdvance(); break;
-          case 'manual_prev': pipeline?.manualPrev(); break;
-          case 'set_fast_mode': pipeline?.setFastMode(msg.enabled); break;
-          case 'set_slow_mode': pipeline?.setSlowMode(msg.enabled); break;
-          case 'set_audio_source': pipeline?.setAudioSource?.(sanitizeAudioSource(msg.source)); break;
-          case 'set_taraweeh_mode': pipeline?.setTaraweehMode(msg.enabled); break;
+          case 'manual_advance': usageJournal.manual(usageRun);pipeline?.manualAdvance(); break;
+          case 'manual_prev': usageJournal.manual(usageRun);pipeline?.manualPrev(); break;
+          case 'set_restrict_surah': {
+            const surah = Number(msg.surah);
+            if (Number.isInteger(surah) && surah >= 0 && surah <= 114) pipeline?.setRestrictSurah?.(surah);
+            break;
+          }
+          case 'set_fast_mode': pipeline?.setFastMode(msg.enabled); usageJournal.settings(usageRun,{pace:pipeline?.fastMode?'fast':pipeline?.slowMode?'slow':'follow'});break;
+          case 'set_slow_mode': pipeline?.setSlowMode(msg.enabled); usageJournal.settings(usageRun,{pace:pipeline?.fastMode?'fast':pipeline?.slowMode?'slow':'follow'});break;
+          case 'set_audio_source': pipeline?.setAudioSource?.(sanitizeAudioSource(msg.source)); usageJournal.settings(usageRun,{microphone:pipeline?.audioSource});break;
+          case 'set_taraweeh_mode': pipeline?.setTaraweehMode(msg.enabled); usageJournal.settings(usageRun,{mode:pipeline?.practiceMode?'practice':pipeline?.taraweehMode?'taraweeh':'translate'});break;
           case 'set_practice_mode':
           case 'set_verse_hold_mode': pipeline?.setPracticeMode?.(msg.enabled); break;
           case 'pace_nudge': pipeline?.paceNudge?.(Number(msg.factor) || 1.0); break;
@@ -706,6 +755,7 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
+    usageJournal.end(usageRun,'disconnect');usageRun=null;
     liveConnections = Math.max(0, liveConnections - 1);
     usageStats.disconnected();
     console.log(`[WS] Client disconnected from ${clientIp} (${liveConnections} live)`);
@@ -750,6 +800,8 @@ if (httpsServer) {
 
 process.on('SIGTERM', async () => {
   console.log('[Server] SIGTERM received — shutting down');
+  for (const id of usageJournal.active.keys()) usageJournal.end(id,'server_shutdown');
+  usageJournal.flush();
   // Close all WebSocket connections (triggers 'close' → pipeline.destroy())
   wss.clients.forEach(ws => ws.terminate());
   await closeTranscription();
