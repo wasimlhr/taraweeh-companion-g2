@@ -985,7 +985,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.20</span>
+      <span class="version" id="versionEl">v3.4.21</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1098,7 +1098,6 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <div class="verse-translit" id="verseTranslit"></div>
       <div class="verse-divider"></div>
       <div class="verse-translation" id="verseTrans" dir="auto"></div>
-      <div class="verse-lang-label" id="verseLangLabel"></div>
       <div class="study-tools"><button type="button" class="mode-btn" onclick="openStudy('tafsir')">Tafsir</button><button type="button" class="mode-btn" onclick="openStudy('hadith')">Hadith</button></div>
       <div id="studyBackdrop" hidden onclick="closeStudy()"></div>
       <section id="studyPanel" hidden role="dialog" aria-modal="true" aria-labelledby="studyTitle" tabindex="-1">
@@ -1495,7 +1494,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.20';
+  const APP_VERSION = 'v3.4.21';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.

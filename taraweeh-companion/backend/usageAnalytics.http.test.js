@@ -61,7 +61,7 @@ test('analytics is token-gated and records connect/init/start/lang_pack', { time
 
     const status = await fetch(`${BASE}/api/status`).then((r) => r.json());
     assert.equal(status.liveConnections, 0);
-    assert.equal(status.version, '3.4.20');
+    assert.equal(status.version, '3.4.21');
     assert.equal(status.translationSource, 'on-device-packs');
     const invalidStudy = await fetch(`${BASE}/api/study/999/1/words`);
     assert.equal(invalidStudy.status,400);
