@@ -1,6 +1,6 @@
 {
   "name": "quran-verse-translator",
-  "version": "3.4.13",
+  "version": "3.4.14",
   "description": "Quran Verse Translator — real-time Quran recitation recognition and translation for phone and Even G2",
   "type": "module",
   "scripts": {
@@ -33,7 +33,7 @@
     "import:languages": "node scripts/import-language-catalog.js"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "0.0.15",
+    "@evenrealities/even_hub_sdk": "0.0.16",
     "@evenrealities/pretext": "^0.1.4",
     "dotenv": "^17.3.1",
     "qrcode": "^1.5.4"
@@ -43,6 +43,6 @@
   },
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.1.14",
-    "@evenrealities/evenhub-simulator": "^0.9.0"
+    "@evenrealities/evenhub-simulator": "0.9.5"
   }
 }

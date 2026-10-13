@@ -37,6 +37,9 @@ function resolvePretext() {
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 copyFileSync(src, dest);
+mkdirSync(join(outDir, 'fonts'), { recursive: true });
+copyFileSync(join(root, 'app', 'fonts', 'AmiriQuran.ttf'), join(outDir, 'fonts', 'AmiriQuran.ttf'));
+copyFileSync(join(root, 'app', 'fonts', 'OFL.txt'), join(outDir, 'fonts', 'OFL.txt'));
 console.log('[build-evenhub-dist] Wrote', dest);
 
 if (existsSync(sdkSrc)) {

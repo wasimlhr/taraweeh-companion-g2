@@ -33,6 +33,8 @@ function harness() {
     WebSocket: { OPEN: 1 },
     document: {
       getElementById: node, querySelectorAll: () => [], addEventListener() {},
+      createElement: tag => node('created-' + tag),
+      createTextNode: text => ({ textContent:text }),
       documentElement: { getAttribute: () => null, setAttribute() {} },
     },
     setTimeout(fn, ms) { const id = ++timerID; timeouts.set(id, { fn, ms }); return id; },
@@ -123,7 +125,7 @@ test('glasses menu is valid and preserved by startup, recovery, and verse rebuil
   assert.ok(pages.filter((w) => w.type === 'rebuild').length >= 2);
   for (const { page } of pages) {
     assert.equal(validateEvenHubPageContainer(page).valid, true);
-    assert.deepEqual(Array.from(page.menuObject.menuItems, (item) => item.itemID), [1, 2]);
+    assert.deepEqual(Array.from(page.menuObject.menuItems, (item) => item.itemID), [3, 4, 5]);
   }
 });
 
@@ -337,4 +339,93 @@ test('long translation and pronunciation retain all text across bounded glasses 
  assert.ok(pages.length>2);assert.ok(pages.every(p=>p.split('\n').length<=h.ui.G2_BODY_LINES));
  assert.equal((pages.join(' ').match(/pronunciation/g)||[]).length,160);
  h.ui.S.settings.glassesBottom='translation-only';assert.doesNotMatch(h.ui.buildPages(translation,pronunciation).join(' '),/pronunciation/);
+});
+
+test('hold keeps both displays stable while recognition advances; resume catches up', async () => {
+  const h = harness();
+  const verse = { mode:'LOCKED', surah:114, ayah:1, arabic:'Quran text', translation:'First verse', timerMs:60000 };
+  h.ui.handleServerMsg({type:'state',state:verse}); await h.flush();
+  h.context.toggleVerseHold(); await h.flush();
+  const count = h.writes.length;
+  h.ui.handleServerMsg({type:'state',state:{...verse,ayah:2,translation:'Latest verse'}}); await h.flush();
+  assert.equal(h.writes.length, count);
+  assert.equal(h.nodes.get('holdVerseBtn').textContent, 'Resume live verse');
+  assert.ok(h.messages.every(msg => msg.type !== 'stop'));
+  h.context.toggleVerseHold(); await h.flush();
+  const frame = h.writes.filter(w => w.page).at(-1).page;
+  assert.equal(frame.textObject.find(c => c.containerName === 'body').content, 'Latest verse');
+  assert.equal(h.nodes.get('holdVerseBtn').textContent, 'Hold verse');
+});
+
+test('held glasses paginate without sending an ayah navigation command', async () => {
+  const h = harness();
+  h.ui.setMetrics({getTextWidth,pxTruncate});
+  h.ui.handleServerMsg({type:'state',state:{mode:'LOCKED',surah:2,ayah:1,arabic:'Quran text',translation:Array(160).fill('translation').join(' '),timerMs:60000}});
+  await h.flush(); h.context.toggleVerseHold(); await h.flush();
+  const messages = h.messages.length;
+  h.ui.onG2Event({textEvent:{eventType:2}}); await h.flush();
+  assert.equal(h.messages.length, messages);
+  const frame = h.writes.filter(w => w.type === 'text').at(-2);
+  assert.match(frame.data.content, /Held.*2\//);
+  h.context.setDimSecondary(false); await h.flush();
+  const repaint=h.writes.filter(w=>w.page).at(-1).page;
+  assert.match(repaint.textObject.find(c=>c.containerName==='hdr').content,/Held.*2\//);
+});
+
+test('secondary brightness preserves bright translation and dims pronunciation separately', async () => {
+  const h = harness();
+  h.ui.S.settings.dimSecondary = true;
+  h.ui.S.settings.glassesBottom = 'transliteration';
+  const body = h.ui.buildPages('Bright translation', 'Dim pronunciation')[0];
+  await h.ui._writeGlasses({hdr:'An-Nas',body});
+  const page = h.writes.at(-1).page;
+  assert.equal(validateEvenHubPageContainer(page).valid, true);
+  assert.equal(page.textObject.find(c=>c.containerName==='body').textColor,4);
+  assert.equal(page.textObject.find(c=>c.containerName==='pronunciation').textColor,2);
+  assert.equal(page.textObject.find(c=>c.containerName==='hdr').textColor,2);
+  h.ui.S.settings.dimSecondary = false;
+  await h.ui._writeGlasses({hdr:'An-Nas',body:'Translation only'});
+  assert.equal(h.writes.at(-1).page.textObject.length,4);
+});
+
+test('Taraweeh exposes Rakat corrections; other modes hide them and keep reading actions', () => {
+  const h = harness();
+  h.ui.setMode('taraweeh');
+  assert.deepEqual(Array.from(h.ui.glassesMenu().menuItems,item=>item.itemName),['Stop listening','Hold verse','Hide pronunciation','Rakat -','Rakat +']);
+  h.ui.setMode('practice');
+  assert.equal(h.ui.glassesMenu().menuItems.length,3);
+});
+
+test('Arabic image uses four bounded tiles and accepts the SDK string success result', async () => {
+  const h = harness();
+  const canvasContext = {
+    measureText: text => ({width:text.length*12}), fillRect(){}, fillText(){}, drawImage(){},
+    getImageData: () => ({data:new Uint8Array(288*112*4)}),
+  };
+  h.context.document.createElement = () => ({getContext:()=>canvasContext});
+  h.context.document.fonts = {load:async()=>[{}]};
+  h.ui.S.settings.arabicImage = true;
+  h.ui.S.bridge.updateImageRawData = async data => { h.writes.push({type:'image',data});return 'success'; };
+  await h.ui._writeGlasses({hdr:'An-Nas',arabicImage:'Arabic verse',imagePage:0});
+  const page = h.writes.find(w=>w.page).page;
+  assert.equal(validateEvenHubPageContainer(page).valid,true);
+  assert.equal(page.imageObject.length,4);
+  assert.ok(page.imageObject.every(image=>image.width===288 && image.height===112));
+  assert.equal(h.writes.filter(w=>w.type==='image').length,4);
+  assert.ok(h.writes.filter(w=>w.type==='image').every(w=>w.data.imageData.length===288*112));
+});
+
+test('failed Arabic transfer restores a readable translation instead of a blank image', async () => {
+  const h = harness();
+  const ctx = {measureText:()=>({width:80}),fillRect(){},fillText(){},drawImage(){},getImageData:()=>({data:new Uint8Array(288*112*4)})};
+  h.context.document.createElement=()=>({getContext:()=>ctx});
+  h.context.document.fonts={load:async()=>[{}]};
+  h.ui.S.settings.arabicImage=true;
+  h.ui.S._lastGlassesState={mode:'LOCKED',surah:114,ayah:1,translation:'Readable fallback'};
+  h.ui.S.bridge.updateImageRawData=async()=>'invalid';
+  await h.ui._writeGlasses({hdr:'An-Nas',arabicImage:'Arabic verse',imagePage:0});
+  assert.equal(h.ui.S.settings.arabicImage,false);
+  const page=h.writes.filter(w=>w.page).at(-1).page;
+  assert.equal(page.imageObject,undefined);
+  assert.equal(page.textObject.find(c=>c.containerName==='body').content,'Readable fallback');
 });

@@ -13,6 +13,8 @@ test('www is the shared frontend plus the standalone flag, nothing else', () => 
   assert.ok(html.includes('window.__QVT_ADS__ = {'));
   assert.ok(html.indexOf('capacitor.js') < html.indexOf('</head>'));
   assert.ok(existsSync(join(out, 'capacitor.js')));
+  assert.ok(existsSync(join(out, 'fonts', 'AmiriQuran.ttf')));
+  assert.ok(existsSync(join(out, 'fonts', 'OFL.txt')));
   assert.ok(existsSync(join(out, 'privacy.html')));
   assert.ok(existsSync(join(out, 'privacy.html')));
   const undone = html

@@ -7,14 +7,28 @@
   <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <style>
+@font-face { font-family: 'QuranBitmap'; src: url('./fonts/AmiriQuran.ttf') format('truetype'); font-display: block; }
+.reading-tools, .language-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+.language-tools input { flex:1; min-width:140px; }
+.device-language { font-size:12px; line-height:1.5; margin:8px 0; color:var(--tc-1); }
+.reading-tools button, .language-tools button { min-height:40px; }
+.reading-tools input[type="checkbox"] { width:18px; height:18px; flex:0 0 18px; margin:0; accent-color:var(--tc-highlight); }
+.s-row label.reading-tools { flex-wrap:nowrap; }
+.listening-details { margin:10px 0; color:var(--tc-1); }
+.listening-details summary { cursor:pointer; padding:10px 0; }
+.glasses-preview { display:block; width:100%; max-width:576px; background:#000; border-radius:8px; margin-top:12px; }
+.preview-caption { color:var(--tc-1); font-size:12px; line-height:1.5; margin-top:6px; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline:2px solid var(--tc-highlight); outline-offset:3px; }
+button:disabled { cursor:default; opacity:.55; }
+
 /* Even Realities design tokens. FK Grotesk is the brand face (commercial);
    Inter is the closest free substitute with the same geometric grotesk feel. */
 :root {
   /* Text colors — Even Realities spec */
   --tc-highlight: #232323;  /* primary */
   --tc-1: #232323;          /* body */
-  --tc-2: #7B7B7B;          /* secondary */
-  --tc-3: #9a9a9a;          /* tertiary */
+  --tc-2: #666666;          /* secondary */
+  --tc-3: #6b6b6b;          /* tertiary */
   --tc-red: #e53935;
   --tc-green: #2ea44f;
   --tc-gold: #b7860b;       /* retained for legacy refs */
@@ -917,7 +931,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.13</span>
+      <span class="version" id="versionEl">v3.4.14</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1031,12 +1045,22 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <div class="verse-translation" id="verseTrans" dir="auto"></div>
       <div class="verse-lang-label" id="verseLangLabel"></div>
     </div>
+    <div class="reading-tools">
+      <button type="button" class="nav-arrow-btn" id="holdVerseBtn" onclick="toggleVerseHold()" disabled aria-pressed="false">Hold verse</button>
+      <span id="holdVerseHint" class="s-hint" aria-live="polite"></span>
+    </div>
     <div id="verseNavRow" class="verse-nav-row" style="display:none">
       <button type="button" class="nav-arrow-btn" onclick="manualPrevAyah()" title="Previous ayah">← Prev</button>
       <button type="button" class="nav-arrow-btn" onclick="manualNextAyah()" title="Next ayah">Next →</button>
     </div>
   </div>
 
+  <div id="deviceLanguageSummary" class="device-language" aria-live="polite"></div>
+  <details id="listeningDetails" class="listening-details">
+    <summary>Listening details</summary>
+    <div id="diagnosticPills" class="status-bar"></div>
+    <div id="diagnosticContent"></div>
+  </details>
   <div id="confRow" style="display:none">
     <div id="confTrack"><div id="confFill"></div></div>
     <span id="confPct">0%</span>
@@ -1162,6 +1186,12 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     </div>
     <div class="s-row">
       <span class="s-label">Translation</span>
+      <div class="language-tools">
+        <input type="search" id="languageSearch" aria-label="Search languages" placeholder="Search languages" oninput="filterLanguages()" />
+        <button type="button" class="toggle-btn" id="favoritesOnly" onclick="toggleFavoritesOnly()" aria-pressed="false">Favourites</button>
+        <button type="button" class="toggle-btn" id="favoriteLanguage" onclick="toggleLanguageFavorite()" aria-pressed="false">Save favourite</button>
+      </div>
+      <span id="languageSearchStatus" class="s-hint" role="status"></span>
       <select id="settingLang" onchange="onTranslationLangChange()">
         <option value="" title="Built-in English translation on phone and glasses.">English (built-in)</option>
         <option value="aa" title="Afar Translation - Mahmoud Abdulqader Hamza · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Afar — English on glasses</option>
@@ -1268,6 +1298,12 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
         <button type="button" class="toggle-btn" id="btnBottomTranslationOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
       </div>
       <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Your selected translation, with optional Arabic pronunciation in Latin letters underneath. Long verses continue on additional pages.</span>
+      <label class="reading-tools"><input type="checkbox" id="settingDimSecondary" onchange="setDimSecondary(this.checked)" /> Dim secondary text on glasses</label>
+      <label class="reading-tools"><input type="checkbox" id="settingArabicImage" onchange="setArabicImage(this.checked)" /> Arabic verse image (experimental)</label>
+      <span class="s-hint">Image mode shows the Arabic verse instead of translation on glasses. Translation stays on the phone. Physical-glasses readability is not yet verified.</span>
+      <div id="previewLanguages" class="device-language"></div>
+      <canvas id="glassesPreview" class="glasses-preview" width="576" height="288" aria-label="Glasses layout preview"></canvas>
+      <div id="previewCaption" class="preview-caption" role="status">Layout preview</div>
     </div>
   </div>
 
@@ -1376,7 +1412,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.13';
+  const APP_VERSION = 'v3.4.14';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -1636,6 +1672,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     }
     _applyPrayerSnapshot(_prayer);
     syncAdBanner();
+    refreshGlassesPreferences();
   };
 
   window.toggleTaraweeh = function () { setReciteMode(_reciteMode === 'taraweeh' ? 'listen' : 'taraweeh'); };
@@ -2431,6 +2468,9 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     modelByProvider: {},            // last model chosen per engine
     backendUrl: '',                 // '' = auto (serving origin, else hosted)
     glassesBottom: 'transliteration',  // 'transliteration' (Latin text) | 'translation-only'
+    favoriteLanguages: [],
+    dimSecondary: false,
+    arabicImage: false,
     reciteMode: 'listen',
     showTashkeel: true,   // Quranic marks (madd, harakat) on Arabic text + hearing preview
     targetRakat: 20,      // how many rak'ah the mosque prays — 8 and 20 are both common
@@ -2593,6 +2633,9 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       merged.pipelineVersion = sanitizePipelineVersion(merged.pipelineVersion);
       merged.lang = sanitizeTranslationLang(merged.lang);
       merged.transcriptionProvider = sanitizeProvider(merged.transcriptionProvider);
+      merged.favoriteLanguages = Array.isArray(merged.favoriteLanguages) ? merged.favoriteLanguages.filter(function (code) { return ALLOWED_TRANSLATION_LANGS.has(code); }) : [];
+      merged.arabicImage = merged.arabicImage === true;
+      merged.dimSecondary = merged.dimSecondary === true;
       delete merged.whisperUnlocked;
       return merged;
     } catch { return { ...DEFAULT_SETTINGS, pipelineVersion: 'v4', lang: '' }; }
@@ -3131,17 +3174,23 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
         isEventCapture: 1,
         borderWidth: 0, borderColor: 5, borderRadius: 0, paddingLength: G2_PAD,
         content: body == null ? _startupBodyText() : body },
-    ];
+    ].map(function (container) {
+      container.textColor = container.containerID === 3 ? 4 : (S.settings && S.settings.dimSecondary ? 2 : 4);
+      return container;
+    });
   }
 
   function _startupTextContainers() { return _g2TextContainers(null, null); }
 
   // Menu actions are separate from temple taps and survive every page rebuild.
   function glassesMenu() {
-    return { menuItems: [
-      { itemID: 1, itemName: "Rak'ah -" },
-      { itemID: 2, itemName: "Rak'ah +" },
-    ] };
+    var items = [
+      { itemID: 3, itemName: S.isRecording ? 'Stop listening' : 'Start listening' },
+      { itemID: 4, itemName: _readingHeld ? 'Resume live verse' : 'Hold verse' },
+      { itemID: 5, itemName: S.settings && S.settings.arabicImage ? 'Show translation' : S.settings && S.settings.glassesBottom === 'translation-only' ? 'Show pronunciation' : 'Hide pronunciation' },
+    ];
+    if (_taraweehMode) items.push({ itemID: 1, itemName: 'Rakat -' }, { itemID: 2, itemName: 'Rakat +' });
+    return { menuItems: items };
   }
 
   function glassesStartup() {
@@ -3252,6 +3301,29 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
   function _writeGlasses(display) {
     return Promise.resolve().then(function () {
+      if (display.arabicImage) return writeArabicImage(display).catch(function (error) {
+        // An experimental transfer failure must leave a readable display.
+        S.settings.arabicImage = false; saveSettings();
+        var checkbox = document.getElementById('settingArabicImage');
+        if (checkbox) checkbox.checked = false;
+        _imagePageActive = false; S.displayRebuilt = false;
+        setStatus('Arabic image failed. Showing translation; retry in Settings.', 'warn');
+        log(error.message, 'w'); syncDeviceLanguages();
+        var state = _readingHeld ? _heldState : S._lastGlassesState;
+        var fallback = state ? buildGlassesText(state) : { hdr: appTitleHdr(), pages: [_startupBodyText()] };
+        return _writeGlasses({ hdr: fallback.hdr, body: fallback.pages[0] });
+      });
+      if (S.settings && S.settings.dimSecondary && display.secondaryOnly) {
+        var dimPage = _g2TextContainers(display.hdr, display.body);
+        dimPage[3].textColor = 2;
+        return S.bridge.rebuildPageContainer({ containerTotalNum: dimPage.length, textObject: dimPage, menuObject: glassesMenu() }).then(function (ok) {
+          if (ok === false) throw new Error('Glasses rejected dim text page');
+          _splitPageActive = true; _imagePageActive = false; S.displayRebuilt = true;
+        });
+      }
+      if (S.settings && S.settings.dimSecondary && (display.body || '').split('\n').includes(g2Divider())) return writeDimText(display);
+      if (_splitPageActive) { _splitPageActive = false; S.displayRebuilt = false; }
+      if (_imagePageActive) { _imagePageActive = false; S.displayRebuilt = false; }
       if (!S.displayRebuilt) {
         var hdrContent  = (display.hdr  || '').slice(0, 200);
         var bodyContent = (display.body || '').slice(0, MAX_REBUILD_CHARS - 200);
@@ -3382,6 +3454,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     }
 
     var pages = [];
+    pages.pronunciationOnly = [];
     for (var i = 0; i < transLines.length; i += maxLines) {
       pages.push(transLines.slice(i, i + maxLines).join('\n'));
     }
@@ -3393,6 +3466,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       } else {
         // Keep every pronunciation line within the glasses page height.
         for (var j = 0; j < tlitBlock.length; j += maxLines) {
+          pages.pronunciationOnly.push(pages.length);
           pages.push(tlitBlock.slice(j, j + maxLines).join('\n'));
         }
       }
@@ -3471,6 +3545,10 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   // Header: surah/ayah left, with room for the countdown on the right.
   function buildGlassesText(state) {
     state = applyLocalTranslation(state);
+    if (S.settings && S.settings.arabicImage && state && state.arabic) {
+      var imageCount = Math.max(1, Math.ceil(arabicImageLines(state.arabic).length / 5));
+      return { hdr: glassesRef(state) + ' Arabic', pages: Array(imageCount).fill('Arabic image') };
+    }
     if (_glassesPreamble && state.mode === 'SEARCHING' && !state.isCandidate && !state.userSearching) {
       return preambleDisplay(_glassesPreamble);
     }
@@ -3544,11 +3622,27 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
   // Show a specific page from a multi-page display
   function showGlassesPage(display, pageIdx, timerMs) {
+    if (_readingHeld) {
+      // Settings echoes and pack downloads can request a repaint while held.
+      // Always retain the held verse AND page, not just the verse position.
+      display = buildGlassesText(_heldState);
+      pageIdx = Math.min(_heldPage, display.pages.length - 1);
+      display = Object.assign({}, display, { hdr: 'Held ' + display.hdr });
+      timerMs = 0;
+    }
     var total = display.pages.length;
     var idx = Math.min(pageIdx, total - 1);
     var hdr = _hdrWithPage(display.hdr, idx, total);
     var shownHdr = timerMs > 0 ? padToWidth(hdr, Math.ceil(timerMs / 1000) + 's', G2_HDR_PX) : hdr;
-    glassesUpdate({ hdr: shownHdr, body: display.pages[idx] });
+    var frame = { hdr: shownHdr, body: display.pages[idx] };
+    frame.secondaryOnly = !!(display.pages.pronunciationOnly && display.pages.pronunciationOnly.indexOf(idx) >= 0);
+    var imageState = _readingHeld ? _heldState : S._lastGlassesState;
+    if (S.settings && S.settings.arabicImage && imageState && imageState.arabic && S.isRecording) {
+      frame.arabicImage = imageState.arabic;
+      frame.imagePage = pageIdx;
+      frame.hdr = (_readingHeld ? 'Held ' : '') + glassesRef(imageState) + ' Arabic';
+    }
+    glassesUpdate(frame);
     return hdr;
   }
 
@@ -3569,7 +3663,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   var _pageMs       = 0;
 
   function startPageFlip(display, totalMs) {
-    if (_practiceMode) { stopPageFlip(); return; }
+    if (_practiceMode || _readingHeld) { stopPageFlip(); return; }
     stopPageFlip();
     _pageDisplay = display;
     _pageIdx     = 0;
@@ -3718,6 +3812,8 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   // ─── Phone UI updater ─────────────────────────────────────────────────────
   function updatePhoneUI(state, whisper) {
     _lastPhoneState = state;
+    syncHoldControl(state);
+    syncDeviceLanguages();
     state = applyLocalTranslation(state);
     _lastPhoneWhisper = whisper;
     S.mode = state.mode;
@@ -4054,6 +4150,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   }
 
   function showGlassesPreamble(kind) {
+    if (_readingHeld) return;
     if (!PREAMBLE_GLASSES[kind] || !S.isRecording || !S.isG2 || !S.bridge) return;
     // Overlapping ASR windows can repeat one opening phrase. Do not extend
     // its display or bring it back after the brief notice has expired.
@@ -4256,6 +4353,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
         }));
       }
     } else if (msg.type === 'state') {
+      if (_readingHeld) { _heldLatestMsg = msg; return; }
       // A confirmed/candidate verse immediately replaces the opening phrase.
       // Plain search heartbeats must not erase it before the wearer can read it.
       if (msg.state.mode !== 'SEARCHING' || msg.state.isCandidate || msg.state.userSearching) {
@@ -4611,7 +4709,14 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   function onG2Event(event) {
     if (event.menuItemClickEvent) {
       var itemID = event.menuItemClickEvent.itemID;
+      trace('g2.menu', String(itemID));
       if (_taraweehMode && (itemID === 1 || itemID === 2)) window.adjustRakat(itemID === 1 ? -1 : 1);
+      else if (itemID === 3) { if (S.isRecording) stopListening(); else startListening(); }
+      else if (itemID === 4) toggleVerseHold();
+      else if (itemID === 5) {
+        if (S.settings.arabicImage) setArabicImage(false);
+        else setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'transliteration' : 'translation-only');
+      }
       return;
     }
     if (event.audioEvent && event.audioEvent.audioPcm) {
@@ -4647,6 +4752,12 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     noteRingInput(event, ev);
 
     var t = (ev.eventType == null ? 0 : ev.eventType);
+    if (_readingHeld && (t === 1 || t === 2 || t === 3)) {
+      var heldDisplay = buildGlassesText(_heldState);
+      _heldPage = Math.max(0, Math.min(heldDisplay.pages.length - 1, _heldPage + (t === 1 ? -1 : 1)));
+      showGlassesPage(heldDisplay, _heldPage);
+      return;
+    }
 
     // TAP (Click) - start/resume on root; pause while listening
     if (t === 0 || t === undefined) {
@@ -4716,12 +4827,14 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   }
 
   window.manualPrevAyah = function () {
+    if (_readingHeld) { onG2Event({ textEvent: { eventType: 1 } }); return; }
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'manual_prev' }));
     }
     mirrorManualNavOnGlasses();
   };
   window.manualNextAyah = function () {
+    if (_readingHeld) { onG2Event({ textEvent: { eventType: 2 } }); return; }
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'manual_advance' }));
     }
@@ -4730,6 +4843,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {
+    resetVerseHold();
     clearGlassesPreamble();
     _lastGlassesPreambleKind = '';
     // BYOK only: block start if no API key for the selected provider. Shared
@@ -4812,6 +4926,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   }
 
   function stopListening() {
+    resetVerseHold();
     _glassesSessionId++;
     clearGlassesPreamble();
     stopPageFlip(); stopCountdown(); stopSearchingDots(); stopLockingDots();
@@ -4855,6 +4970,11 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   }
 
   function _cleanupBridgeResources() {
+    resetVerseHold();
+    _glassesSessionId++;
+    S.isRecording = false;
+    S.displayRebuilt = false;
+    _pendingGlasses = null;
     clearGlassesPreamble();
     S.startupPageCreated = false;
     stopSearchingDots();
@@ -4914,7 +5034,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
         } catch (_) {}
       }
       if (!loaded) {
-        sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.15/dist/index.js');
+        sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.16/dist/index.js');
         log('Loaded SDK from CDN', 'ok');
       }
       S.sdk = sdk;
@@ -5321,6 +5441,259 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     }
   };
 
+  // Reading preferences belong to the phone; the live recognizer keeps running while held.
+  var _readingHeld = false;
+  var _heldState = null;
+  var _heldPage = 0;
+  var _heldLatestMsg = null;
+  var _favoritesOnly = false;
+  var _languageOptions = null;
+  var _previewRevision = 0;
+  var _imagePageActive = false;
+  var _splitPageActive = false;
+  var _arabicFontReady = null;
+
+  function resetVerseHold() {
+    _readingHeld = false; _heldState = null; _heldLatestMsg = null; _heldPage = 0;
+    syncHoldControl(null);
+  }
+
+  function syncHoldControl(state) {
+    var button = document.getElementById('holdVerseBtn');
+    if (!button) return;
+    button.disabled = !S.isRecording || !(state && state.arabic);
+    button.textContent = _readingHeld ? 'Resume live verse' : 'Hold verse';
+    button.setAttribute('aria-pressed', String(_readingHeld));
+    document.getElementById('holdVerseHint').textContent = _readingHeld ? 'Held · swipe glasses to read pages' : '';
+  }
+
+  window.toggleVerseHold = function () {
+    if (_readingHeld) {
+      var latest = _heldLatestMsg || { type: 'state', state: _heldState };
+      resetVerseHold();
+      S._lastGlassesState = null; S.displayRebuilt = false;
+      if (S.isRecording && latest.state) handleServerMsg(latest);
+      return;
+    }
+    if (!S.isRecording || !_lastPhoneState || !_lastPhoneState.arabic) return;
+    _heldState = Object.assign({}, _lastPhoneState);
+    _readingHeld = true; _heldLatestMsg = null;
+    stopPageFlip(); stopCountdown(); stopSearchingDots(); stopLockingDots();
+    syncHoldControl(_heldState);
+    refreshGlassesPreferences();
+  };
+
+  function refreshGlassesPreferences() {
+    S.displayRebuilt = false;
+    if (S.isG2 && S.bridge) {
+      var state = _readingHeld ? _heldState : S._lastGlassesState;
+      showGlassesPage(state && S.isRecording ? buildGlassesText(state) : { hdr: appTitleHdr(), pages: [_startupBodyText()] }, 0);
+    }
+    syncDeviceLanguages(); updateGlassesPreview();
+  }
+
+  window.setDimSecondary = function (enabled) {
+    S.settings.dimSecondary = !!enabled; saveSettings(); refreshGlassesPreferences();
+  };
+  window.setArabicImage = function (enabled) {
+    S.settings.arabicImage = !!enabled; saveSettings();
+    stopPageFlip(); stopCountdown();
+    if (enabled) ensureArabicFont().then(refreshGlassesPreferences).catch(function (error) {
+      S.settings.arabicImage = false; saveSettings();
+      document.getElementById('settingArabicImage').checked = false;
+      setStatus('Arabic font could not load. Retry image mode.', 'warn');
+      log(error.message, 'w'); refreshGlassesPreferences();
+    });
+    else refreshGlassesPreferences();
+  };
+
+  function languageNames() {
+    var lang = S.settings && S.settings.lang || '';
+    var phone = translationLabel(lang).replace(' (built-in)', '');
+    var glasses = S.settings && S.settings.arabicImage ? 'Arabic verse image (experimental)'
+      : GLASSES_ENGLISH_LANGS[lang] ? 'English (font fallback)'
+      : lang === 'uzc' ? 'Uzbek (Latin)' : phone;
+    return 'Phone: ' + phone + ' · Glasses: ' + glasses;
+  }
+  function syncDeviceLanguages() {
+    ['deviceLanguageSummary', 'previewLanguages'].forEach(function (id) {
+      var node = document.getElementById(id);
+      if (node) node.textContent = languageNames();
+    });
+  }
+
+  function favorites() { return S.settings.favoriteLanguages || []; }
+  function syncFavoriteButton() {
+    var code = S.settings.lang || '';
+    var saved = favorites().indexOf(code) >= 0;
+    var button = document.getElementById('favoriteLanguage');
+    if (!button) return;
+    button.textContent = saved ? 'Remove favourite' : 'Save favourite';
+    button.setAttribute('aria-pressed', String(saved));
+  }
+  window.toggleLanguageFavorite = function () {
+    var code = S.settings.lang || '';
+    S.settings.favoriteLanguages = favorites().indexOf(code) >= 0
+      ? favorites().filter(function (item) { return item !== code; }) : favorites().concat(code);
+    saveSettings(); syncFavoriteButton(); filterLanguages();
+  };
+  window.toggleFavoritesOnly = function () {
+    _favoritesOnly = !_favoritesOnly;
+    document.getElementById('favoritesOnly').setAttribute('aria-pressed', String(_favoritesOnly));
+    document.getElementById('favoritesOnly').classList.toggle('active', _favoritesOnly);
+    filterLanguages();
+  };
+  window.filterLanguages = function () {
+    var select = document.getElementById('settingLang');
+    if (!_languageOptions) _languageOptions = Array.from(select.options).map(function (option) { return option.cloneNode(true); });
+    var query = document.getElementById('languageSearch').value.trim().toLocaleLowerCase();
+    var selected = S.settings.lang || '';
+    var matches = _languageOptions.filter(function (option) {
+      return (!_favoritesOnly || favorites().indexOf(option.value) >= 0)
+        && (!query || option.textContent.toLocaleLowerCase().includes(query) || option.value.includes(query));
+    });
+    // Keep the current selection even when a search excludes it. Filtering must never switch languages.
+    var visible = matches.slice();
+    if (!visible.some(function (option) { return option.value === selected; })) {
+      var current = _languageOptions.find(function (option) { return option.value === selected; });
+      if (current) visible.unshift(current);
+    }
+    select.replaceChildren.apply(select, visible.map(function (option) { return option.cloneNode(true); }));
+    select.value = selected;
+    document.getElementById('languageSearchStatus').textContent = matches.length ? matches.length + ' matching options' : 'No matches. Current language remains selected.';
+  };
+
+  function setupReadingUI() {
+    var pills = document.getElementById('diagnosticPills');
+    ['sPillModel', 'sPillConf', 'sPillHeard', 'sPillShown', 'sPillPace', 'sPillTimer', 'sPillEndpoint'].forEach(function (id) {
+      var node = document.getElementById(id); if (node) pills.appendChild(node);
+    });
+    var details = document.getElementById('diagnosticContent');
+    ['matchPanel', 'wordProgress', 'confRow'].forEach(function (id) {
+      var node = document.getElementById(id); if (node) details.appendChild(node);
+    });
+    var searching = document.getElementById('searchingContent');
+    if (searching) {
+      var hint = document.createElement('p'); hint.textContent = 'Listening for a verse…';
+      hint.className = 's-hint'; searching.appendChild(hint);
+    }
+    syncDeviceLanguages(); syncFavoriteButton();
+    if (S.settings.arabicImage) ensureArabicFont().catch(function () { setArabicImage(false); });
+  }
+
+  function ensureArabicFont() {
+    if (!_arabicFontReady) _arabicFontReady = document.fonts.load('28px QuranBitmap').then(function (faces) {
+      if (!faces.length) throw new Error('Bundled Quran font unavailable');
+    }).catch(function (error) { _arabicFontReady = null; throw error; });
+    return _arabicFontReady;
+  }
+
+  function arabicImageLines(arabic) {
+    var canvas = document.createElement('canvas');
+    var ctx = canvas.getContext('2d'); ctx.font = '28px QuranBitmap';
+    var lines = [], current = '';
+    String(arabic).trim().split(/\s+/).forEach(function (word) {
+      var candidate = current ? current + ' ' + word : word;
+      if (current && ctx.measureText(candidate).width > 544) { lines.push(current); current = word; }
+      else current = candidate;
+    });
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  async function arabicImageCanvas(arabic, page) {
+    await ensureArabicFont();
+    var canvas = document.createElement('canvas'); canvas.width = 576; canvas.height = 224;
+    var ctx = canvas.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 576, 224);
+    ctx.fillStyle = '#fff'; ctx.font = '28px QuranBitmap'; ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+    var lines = arabicImageLines(arabic);
+    var count = Math.max(1, Math.ceil(lines.length / 5));
+    var index = Math.min(Math.max(0, page || 0), count - 1);
+    lines.slice(index * 5, index * 5 + 5).forEach(function (line, row) { ctx.fillText(line, 560, 38 + row * 40); });
+    return { canvas: canvas, count: count, index: index };
+  }
+
+  async function writeArabicImage(display) {
+    trace('g2.image', 'page=' + (display.imagePage || 0));
+    var session = _glassesSessionId;
+    var rendered = await arabicImageCanvas(display.arabicImage, display.imagePage);
+    // A stopped/new session must not receive an image that was waiting for its font.
+    if (!S.isRecording || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
+    var texts = _g2TextContainers(display.hdr + (rendered.count > 1 ? ' ' + (rendered.index + 1) + '/' + rendered.count : ''), ' ');
+    texts.forEach(function (text, index) { text.zOrderIndex = index; });
+    var images = [0,1,2,3].map(function (tile) {
+      return { containerID: 10 + tile, containerName: 'arabic' + tile, xPosition: tile % 2 * 288,
+        yPosition: G2_BODY_Y + Math.floor(tile / 2) * 112, width: 288, height: 112, zOrderIndex: 10 + tile };
+    });
+    var ok = await S.bridge.rebuildPageContainer({ containerTotalNum: texts.length + images.length, textObject: texts, imageObject: images, menuObject: glassesMenu() });
+    if (ok === false) throw new Error('Glasses rejected Arabic image layout');
+    _imagePageActive = true; S.displayRebuilt = true;
+    for (var tile = 0; tile < 4; tile++) {
+      if (!S.isRecording || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
+      var piece = document.createElement('canvas'); piece.width = 288; piece.height = 112;
+      piece.getContext('2d').drawImage(rendered.canvas, tile % 2 * 288, Math.floor(tile / 2) * 112, 288, 112, 0, 0, 288, 112);
+      var rgba = piece.getContext('2d').getImageData(0, 0, 288, 112).data;
+      var gray = new Uint8Array(288 * 112);
+      for (var pixel = 0; pixel < gray.length; pixel++) gray[pixel] = rgba[pixel * 4];
+      var result = await S.bridge.updateImageRawData({ containerID: 10 + tile, containerName: 'arabic' + tile, imageData: gray });
+      if (result !== 'success' && result !== 0) throw new Error('Arabic image transfer failed: ' + result);
+    }
+  }
+
+  function writeDimText(display) {
+    var lines = display.body.split('\n');
+    var split = lines.indexOf(g2Divider());
+    var text = _g2TextContainers(display.hdr, lines.slice(0, split).join('\n'));
+    var offset = Math.max(G2_LINE_H, split * G2_LINE_H);
+    text[3].height = offset;
+    text.push({ containerID: 5, containerName: 'pronunciation', xPosition: 0, yPosition: G2_BODY_Y + offset,
+      width: G2_W, height: G2_BODY_H - offset, paddingLength: G2_PAD, isEventCapture: 0,
+      textColor: 2, content: lines.slice(split).join('\n') });
+    return S.bridge.rebuildPageContainer({ containerTotalNum: text.length, textObject: text, menuObject: glassesMenu() }).then(function (ok) {
+      if (ok === false) throw new Error('Glasses rejected pronunciation layout');
+      _splitPageActive = true; _imagePageActive = false; S.displayRebuilt = true;
+    });
+  }
+
+  window.updateGlassesPreview = async function () {
+    var canvas = document.getElementById('glassesPreview');
+    if (!canvas || !canvas.getContext) return;
+    var revision = ++_previewRevision;
+    var caption = document.getElementById('previewCaption');
+    var state = _readingHeld ? _heldState : _lastPhoneState;
+    if (!state || !state.arabic) state = { mode:'LOCKED', surah:114, ayah:1, surahName:'An-Nas', arabic:'قُلْ أَعُوذُ بِرَبِّ النَّاسِ', translation:'Say, I seek refuge in the Lord of mankind.', translationLang:'en', transliteration:"Qul a‘udhu birabbin nas" };
+    var lang = S.settings && S.settings.lang || '';
+    if (packKeyFor(lang) && !hasLangPack(lang)) {
+      caption.textContent = 'Loading selected translation for preview…';
+      if (!await ensureLangPack(lang)) { caption.textContent = 'Preview unavailable. Download the selected language pack and retry.'; return; }
+    }
+    if (GLASSES_ENGLISH_LANGS[lang] && !hasLangPack('en')) await ensureLangPack('en');
+    if (revision !== _previewRevision) return;
+    var ctx = canvas.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0,0,576,288);
+    ctx.fillStyle = '#32ff32'; ctx.font = '20px Arial'; ctx.textBaseline = 'top'; ctx.textAlign = 'left'; ctx.direction = 'ltr';
+    ctx.fillText(glassesRef(state), 6, 8); ctx.fillText(rakatHdr(), 366, 8);
+    try {
+      if (S.settings.arabicImage) {
+        var image = await arabicImageCanvas(state.arabic, 0);
+        if (revision !== _previewRevision) return;
+        ctx.drawImage(image.canvas, 0, G2_BODY_Y);
+        // Convert white raster to the display's green without changing its black background.
+        var pixels = ctx.getImageData(0,G2_BODY_Y,576,224);
+        for (var i=0;i<pixels.data.length;i+=4) { pixels.data[i]=0; pixels.data[i+2]=0; }
+        ctx.putImageData(pixels,0,G2_BODY_Y);
+        caption.textContent = 'Arabic image preview · ' + glassesRef(state) + ' · ' + image.count + ' page(s). Experimental; hardware verification pending.';
+      } else {
+        var display = buildGlassesText(state); var lines = display.pages[0].split('\n'); var secondary = false;
+        lines.forEach(function (line,index) {
+          if (line === g2Divider()) secondary = true;
+          ctx.fillStyle = S.settings.dimSecondary && secondary ? '#168b16' : '#32ff32';
+          ctx.fillText(line, 4, G2_BODY_Y + 2 + index * G2_LINE_H);
+        });
+        caption.textContent = 'Layout preview · ' + glassesRef(state) + ' · page 1 of ' + display.pages.length + '. Glasses use their built-in font.';
+      }
+    } catch (error) { caption.textContent = 'Preview unavailable: ' + error.message; }
+  };
+
   /** Mirror the Settings language list onto the phone's main screen. */
   function syncMainLang() {
     var main = document.getElementById('mainLang');
@@ -5337,6 +5710,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     if (sl) sl.value = clean;
     syncMainLang();
     saveSettings();
+    repaintSelectedLanguage();
     updateTranslationDesc && updateTranslationDesc();
     ensureLangPack(clean);
     if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
@@ -5349,6 +5723,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     if (!valid[mode]) mode = 'transliteration';
     S.settings.glassesBottom = mode;
     saveSettings();
+    updateGlassesPreview();
     var mainBtns = {
       transliteration: 'btnGlassesTranslit',
       'translation-only': 'btnGlassesEnOnly',
@@ -5423,6 +5798,9 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     var sel = document.getElementById('settingLang');
     var descEl = document.getElementById('translationDesc');
     if (!sel || !descEl) return;
+    syncDeviceLanguages();
+    syncFavoriteButton();
+    updateGlassesPreview();
     var opt = sel.options[sel.selectedIndex];
     var title = opt ? opt.getAttribute('title') : '';
     var lang = sel.value;
@@ -5440,6 +5818,11 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   };
 
   function repaintSelectedLanguage() {
+    if (_readingHeld) {
+      updatePhoneUI(_heldState, _lastPhoneWhisper);
+      if (S.isG2) { S.displayRebuilt = false; showGlassesPage(buildGlassesText(_heldState), 0); }
+      return;
+    }
     if (_lastPhoneState) updatePhoneUI(_lastPhoneState, _lastPhoneWhisper);
     if (S.isG2 && S.isRecording && S._lastGlassesState) {
       var state = applyLocalTranslation(S._lastGlassesState);
@@ -5452,7 +5835,10 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     var sel = document.getElementById('settingLang');
     var lang = sel ? sel.value : '';
     if (S.settings) S.settings.lang = sanitizeTranslationLang(lang);
+    saveSettings();
+    syncMainLang();
     updateTranslationDesc();
+    if (S.ws && S.ws.readyState === WebSocket.OPEN) reinitPipeline();
     if (packKeyFor(lang) && !hasLangPack(lang)) ensureLangPack(lang);
     repaintSelectedLanguage();
   };
@@ -5474,6 +5860,12 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     document.getElementById('mainView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'block';
     document.getElementById('settingLang').value = sanitizeTranslationLang(S.settings.lang || '');
+    filterLanguages();
+    syncDeviceLanguages();
+    syncFavoriteButton();
+    document.getElementById('settingDimSecondary').checked = !!S.settings.dimSecondary;
+    document.getElementById('settingArabicImage').checked = !!S.settings.arabicImage;
+    updateGlassesPreview();
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     updateSurahScope();
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
@@ -5573,6 +5965,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');
     saveSettings();
+    refreshGlassesPreferences();
     syncMainLang();
     ensureLangPack(S.settings.lang);
     scheduleReinit();
@@ -5680,6 +6073,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       _practiceMode = _reciteMode === 'practice';
       _updateReciteModeUI();
     }
+    setupReadingUI();
     syncMainLang();
     if (S.settings.paceMode === 'fast' || S.settings.paceMode === 'slow' || S.settings.paceMode === 'follow') {
       _paceMode = S.settings.paceMode;

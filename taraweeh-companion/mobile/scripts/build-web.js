@@ -47,6 +47,9 @@ export function build() {
   writeFileSync(join(outDir, 'index.html'), transformHtml(readFileSync(srcHtml, 'utf8')));
   // Settings links to the privacy policy, so it ships inside the app too.
   copyFileSync(join(dirname(srcHtml), 'privacy.html'), join(outDir, 'privacy.html'));
+  mkdirSync(join(outDir, 'fonts'), { recursive: true });
+  copyFileSync(join(dirname(srcHtml), 'fonts', 'AmiriQuran.ttf'), join(outDir, 'fonts', 'AmiriQuran.ttf'));
+  copyFileSync(join(dirname(srcHtml), 'fonts', 'OFL.txt'), join(outDir, 'fonts', 'OFL.txt'));
   copyFileSync(join(dirname(srcHtml), 'privacy.html'), join(outDir, 'privacy.html'));
   // IIFE build of @capacitor/core: gives the plain <script> page registerPlugin.
   const require = createRequire(import.meta.url);

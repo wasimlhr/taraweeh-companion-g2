@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const repo = join(root, '..');
-const EXPECTED = '3.4.13';
+const EXPECTED = '3.4.14';
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -20,7 +20,18 @@ const checks = [
   ['app.json', readJson(join(root, 'app.json')).version],
   ['backend package.json', readJson(join(root, 'backend/package.json')).version],
   ['backend package-lock.json', readJson(join(root, 'backend/package-lock.json')).version],
+  ['phone package.json', readJson(join(root, 'mobile/package.json')).version],
+  ['phone package-lock.json', readJson(join(root, 'mobile/package-lock.json')).version],
 ];
+const android = readFileSync(join(root, 'mobile/android/app/build.gradle'), 'utf8').match(/versionName "([^"]+)"/);
+checks.push(['Android version', android && android[1]]);
+const ios = readFileSync(join(root, 'mobile/ios/App/App.xcodeproj/project.pbxproj'), 'utf8').matchAll(/MARKETING_VERSION = ([^;]+);/g);
+for (const match of ios) checks.push(['iOS version', match[1]]);
+for (const location of [repo, root]) {
+  if (readJson(join(location, 'package.json')).dependencies['@evenrealities/even_hub_sdk'] !== '0.0.16') {
+    console.error('FAIL SDK version must be pinned to 0.0.16 in both packages'); process.exit(1);
+  }
+}
 const serverBanner = readFileSync(join(root, 'backend/server.js'), 'utf8').match(/\* v([0-9.]+)/);
 checks.push(['server.js banner', serverBanner && serverBanner[1]]);
 

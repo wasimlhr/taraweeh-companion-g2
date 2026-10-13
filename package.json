@@ -1,7 +1,7 @@
 {
   "name": "quran-verse-translator",
-  "version": "3.4.13",
-  "description": "Quran Verse Translator \u2014 real-time Quran recitation recognition and translation",
+  "version": "3.4.14",
+  "description": "Quran Verse Translator — real-time Quran recitation recognition and translation",
   "type": "module",
   "scripts": {
     "postinstall": "cd taraweeh-companion && npm install",
@@ -27,7 +27,7 @@
     "replay:prayer": "cd taraweeh-companion && node scripts/replay-prayer-session.js"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "0.0.15",
+    "@evenrealities/even_hub_sdk": "0.0.16",
     "@evenrealities/pretext": "^0.1.4",
     "dotenv": "^17.3.1",
     "qrcode": "^1.5.4"
@@ -37,6 +37,6 @@
   },
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.1.14",
-    "@evenrealities/evenhub-simulator": "^0.9.0"
+    "@evenrealities/evenhub-simulator": "0.9.5"
   }
 }
