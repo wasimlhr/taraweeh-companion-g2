@@ -1,0 +1,21 @@
+import{readFileSync,writeFileSync,existsSync}from'node:fs';import{getAdvW}from'@evenrealities/pretext';import{fileURLToPath}from'node:url';
+const base=fileURLToPath(new URL('../',import.meta.url));
+const index=await(await fetch('https://quran-json.risanb.com/translations/index.json')).json();
+const existing=['en','ur','fr','es','id','tr','bn','zh','ru','sv','uzc'];
+const names={en:'English',ur:'Urdu',fr:'French',es:'Spanish',id:'Indonesian',tr:'Turkish',bn:'Bengali',zh:'Chinese',ru:'Russian',sv:'Swedish',uzc:'Uzbek (Cyrillic)',uz:'Uzbek (Latin)',nqo:'N’Ko',mdh:'Maguindanao',ilp:'Iranun',mos:'Mooré',ak:'Asante Twi',rn:'Kirundi',dag:'Dagbani',yao:'Yao',luy:'Luhya',ceb:'Cebuano',prs:'Dari',kmr:'Kurmanji Kurdish',ff:'Fulani'};
+const display=new Intl.DisplayNames(['en'],{type:'language'});
+const counts=JSON.parse(readFileSync(base+'backend/data/quran-json/quran_en.json','utf8')).map(c=>c.verses.length);
+const normalize=t=>String(t).replace(/`/g,"'").replace(/[ṣẓṢṡṭḥḤṬ]/g,c=>({'ṣ':'s','ẓ':'z','Ṣ':'S','ṡ':'s','ṭ':'t','ḥ':'h','Ḥ':'H','Ṭ':'T'}[c]));
+const entries=existing.map(code=>({code,label:names[code],file:'quran_'+code+'.json',glasses:!['ur','bn'].includes(code),source:'https://github.com/risan/quran-json',legacy:true}));
+entries.push({code:'uz',label:names.uz,file:'quran_uzc.json',pack:'uzc',glasses:true,source:'https://github.com/wasimlhr/taraweeh-companion-g2',legacy:true});
+const editions=index.editions.filter((e,i,a)=>a.findIndex(x=>x.code===e.code)===i && !entries.some(x=>x.code===e.code));
+let cursor=0;
+await Promise.all(Array.from({length:4},async()=>{while(cursor<editions.length){const e=editions[cursor++];const path=base+'backend/data/quran-json/quran_'+e.code+'.json';let data;
+if(existsSync(path))data=JSON.parse(readFileSync(path,'utf8'));else{const r=await fetch('https://quran-json.risanb.com'+e.files.quran,{signal:AbortSignal.timeout(60000)});if(!r.ok)throw new Error(e.code+' HTTP'+r.status);data=await r.json();}
+if(!Array.isArray(data)||data.length!==114)throw new Error(e.code+' incomplete chapters');
+data.forEach((ch,i)=>{if(ch.id!==i+1 || ch.verses.length!==counts[i])throw new Error(e.code+' chapter '+(i+1));ch.verses.forEach((v,a)=>{if(v.id!==a+1||typeof v.translation!=='string'||!v.translation.trim())throw new Error(e.code+' verse '+(i+1)+':'+(a+1));});});
+writeFileSync(path,JSON.stringify(data));
+const chars=[...new Set(data.flatMap(c=>c.verses.map(v=>normalize(v.translation))).join(''))];const missing=chars.filter(c=>!/^\s$/u.test(c)&&getAdvW(c.codePointAt(0))===0);
+const entry={code:e.code,label:names[e.code]||display.of(e.code)||e.language,file:'quran_'+e.code+'.json',pack:e.code,glasses:missing.length===0,missingGlyphs:missing,author:e.author,edition:e.edition,version:e.version,source:e.source,license:e.license,snapshot:'https://quran-json.risanb.com'+e.files.quran};entries.push(entry);console.log(e.code+' complete; glasses='+entry.glasses);
+}}));
+entries.sort((a,b)=>a.label.localeCompare(b.label));writeFileSync(base+'backend/data/language-catalog.json',JSON.stringify({v:1,source:'https://github.com/risan/quran-json',retrievedAt:new Date().toISOString(),languages:entries},null,2));console.log('Total '+entries.length+' options; added '+editions.length);

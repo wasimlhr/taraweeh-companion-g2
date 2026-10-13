@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcDir = join(root, 'backend/data/quran-json');
 const destDir = join(root, 'app/translations');
-const LANGS = ['en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uzc'];
+import { PACK_CODES as LANGS } from '../backend/languageCatalog.js';
 export { LANGS as PACK_LANGS };
 
 export function compactLang(lang) {

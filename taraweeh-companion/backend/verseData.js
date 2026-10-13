@@ -8,6 +8,7 @@ import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { getAyah, loadQuran } from './keywordMatcher.js';
+import { LANGUAGE_CODES, GLASSES_FALLBACK_CODES } from './languageCatalog.js';
 import { cyrillicToUzbekLatin } from './uzbekLatin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -38,9 +39,9 @@ const SURAH_NAMES = [
   'Al-Masad', 'Al-Ikhlas', 'Al-Falaq', 'An-Nas',
 ];
 
-const QURAN_JSON_LANGS = new Set(['en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc']);
+const QURAN_JSON_LANGS = new Set(LANGUAGE_CODES);
 /** Languages that don't render on G2 glasses (Arabic script, etc.) — glasses fallback to English */
-const GLASSES_UNSUPPORTED_LANGS = new Set(['ur', 'ar', 'fa', 'bn', 'hi']);
+const GLASSES_UNSUPPORTED_LANGS = new Set(GLASSES_FALLBACK_CODES);
 
 let versesDisplay = null;
 const quranJsonCache = new Map(); // lang -> { translation: [...], transliteration: [...] }

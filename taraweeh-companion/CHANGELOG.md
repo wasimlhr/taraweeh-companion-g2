@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.13 - 2026-10-12
+
+- Add 70 complete Quran translations from the expanded risan/quran-json catalog, preserving existing editions.
+- Offer 82 choices with downloadable cached packs, translator/version credits and explicit glasses support labels.
+- Scan each full edition for unsupported glasses glyphs and use English on glasses for unsupported editions.
+
 ## 3.4.12 - 2026-10-11
 
 - Configure glasses for selected translation only or translation plus Arabic pronunciation in Latin letters.

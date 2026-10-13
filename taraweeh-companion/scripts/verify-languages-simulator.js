@@ -1,3 +1,4 @@
+import { LANGUAGE_CATALOG } from '../backend/languageCatalog.js';
 import WebSocket from '../backend/node_modules/ws/wrapper.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { getAdvW } from '@evenrealities/pretext';
@@ -55,16 +56,20 @@ await evaluate('(async () => { window.__languageTest.glassesStartup(); await win
 await new Promise(resolve => setTimeout(resolve, 500));
 await evaluate('window.__languageTest.S._lastGlassesState = null');
 
-const languages = ['en','fr','es','id','tr','zh','ru','sv','uz','uzc','ur','bn'];
+const requested = process.argv.find(a=>a.startsWith('--languages='))?.slice(12).split(',');
+const languages = requested || LANGUAGE_CATALOG.map(e=>e.code);
+if (languages.some(code=>!LANGUAGE_CATALOG.some(e=>e.code===code))) throw new Error('Unknown audit language');
+const fallback = LANGUAGE_CATALOG.filter(e=>!e.glasses).map(e=>e.code);
 const results = [];
 for (const lang of languages) {
+  console.log("Verifying " + lang);
   const row = await evaluate(`(async () => {
     const t = window.__languageTest;
     // Exercise the same selector handler users invoke, then await its download.
     document.getElementById('settingLang').value = ${JSON.stringify(lang)};
     window.onTranslationLangChange();
     if (!await t.ensureLangPack(${JSON.stringify(lang)})) throw new Error('pack failed');
-    if (${JSON.stringify(lang)} === 'ur' || ${JSON.stringify(lang)} === 'bn') await t.ensureLangPack('en');
+    if (${JSON.stringify(fallback.includes(lang))}) await t.ensureLangPack('en');
     t.S.isRecording = true;
     t.S.settings.glassesBottom = 'translation-only';
     t.handleServerMsg({ type: 'state', state: {
@@ -82,7 +87,7 @@ for (const lang of languages) {
       bridge: t.S.isG2, installed: t.hasLangPack(${JSON.stringify(lang)}), selected:document.getElementById('settingLang').value, requested:t.S.settings.lang, lookup:t.lookupPackVerse(${JSON.stringify(lang)},114,1) };
   })()`);
   if (!row.bridge || !row.installed || !row.phone || !row.glasses) throw new Error('Incomplete rendering: ' + lang);
-  if (!['en','ur','bn'].includes(lang) && row.glasses.includes('Lord of mankind')) throw new Error('English glasses fallback: ' + JSON.stringify(row));
+  if (lang !== 'en' && !fallback.includes(lang) && row.glasses.includes('Lord of mankind')) throw new Error('English glasses fallback: ' + JSON.stringify(row));
   // Capture the actual simulator framebuffer and phone WebView, not mock output.
   await new Promise(resolve => setTimeout(resolve, 350));
   const phone = await send('Page.captureScreenshot', {format:'png'});
@@ -96,7 +101,7 @@ for (const lang of languages) {
   writeFileSync(new URL(lang + '-glasses.png', out), Buffer.from(glasses.data,'base64'));
   glassSocket.close();
   const key = lang === 'uz' ? 'uzc' : lang;
-  let verses = compactLang(['ur','bn'].includes(lang) ? 'en' : key).verses.flat();
+  let verses = compactLang(fallback.includes(lang) ? 'en' : key).verses.flat();
   if (lang === 'uz' || lang === 'uzc') {
     verses = await evaluate('(' + JSON.stringify(verses) + ').map(window.__languageTest.cyrillicToUzbekLatinClient)');
   }
@@ -109,13 +114,13 @@ for (const lang of languages) {
   if (row.missingGlyphs.length) throw new Error('Missing glasses glyphs for ' + lang);
   results.push(row);
   console.log(JSON.stringify(row));
-  writeFileSync(new URL('results.json', out), JSON.stringify(results, null, 2));
+  writeFileSync(new URL(requested ? 'selected-results.json' : 'results.json', out), JSON.stringify(results, null, 2));
 }
 const escape = text => String(text).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-writeFileSync(new URL('index.html', out), `<!doctype html><meta charset="utf-8"><title>Language simulator evidence</title>
+writeFileSync(new URL(requested ? 'selected-index.html' : 'index.html', out), `<!doctype html><meta charset="utf-8"><title>Language simulator evidence</title>
 <style>body{font:16px system-ui;background:#f3f4f6;color:#172027;margin:32px;max-width:1200px}section{background:white;padding:24px;margin:24px 0;border-radius:12px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:24px}img{max-width:100%;border:1px solid #ddd}pre{white-space:pre-wrap}a{color:#164ea6}</style>
-<h1>Language verification — EvenHub simulator 0.9.0</h1><p>Actual app WebView and glasses display captures. Tested with a controlled An-Nas 114:1 state through the app's normal state handler and language selector. Fresh language downloads from the pinned public release; every glasses output corpus scanned across 6,236 ayahs for unsupported firmware glyphs. This verifies translation display, not audio recognition or physical hardware.</p>
-${results.map(r=>`<section><h2>${escape(r.label)}</h2><p>${r.ayahs} ayahs checked · ${r.missingGlyphs.length} missing glyphs in glasses output${['ur','bn'].includes(r.lang)?' · English on glasses; native script unsupported':r.lang==='uzc'?' · Cyrillic on phone; Latin on glasses':''}</p><div class="pair"><div><h3>Glasses</h3><a href="${r.lang}-glasses.png"><img src="${r.lang}-glasses.png"></a><pre>${escape(r.glasses)}</pre></div><div><h3>Phone WebView</h3><a href="${r.lang}-webview.png"><img src="${r.lang}-webview.png"></a><pre>${escape(r.phone)}</pre></div></div></section>`).join('')}`);
+<h1>Language verification — EvenHub simulator 0.9.0</h1><p>Actual app WebView and glasses display captures. Tested with a controlled An-Nas 114:1 state through the app's normal state handler and language selector. Language downloads through the app’s standard handler; every glasses output corpus scanned across 6,236 ayahs for unsupported firmware glyphs. This verifies translation display, not audio recognition or physical hardware.</p>
+${results.map(r=>`<section><h2>${escape(r.label)}</h2><p>${r.ayahs} ayahs checked · ${r.missingGlyphs.length} missing glyphs in glasses output${fallback.includes(r.lang)?' · English on glasses; native script unsupported':r.lang==='uzc'?' · Cyrillic on phone; Latin on glasses':''}</p><div class="pair"><div><h3>Glasses</h3><a href="${r.lang}-glasses.png"><img src="${r.lang}-glasses.png"></a><pre>${escape(r.glasses)}</pre></div><div><h3>Phone WebView</h3><a href="${r.lang}-webview.png"><img src="${r.lang}-webview.png"></a><pre>${escape(r.phone)}</pre></div></div></section>`).join('')}`);
 await evaluate(`(async () => {
   const t = window.__languageTest;
   t.S.settings.lang = 'uz';

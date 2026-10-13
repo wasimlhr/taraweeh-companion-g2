@@ -106,7 +106,7 @@ test('a stalled pack source times out and falls through to the next source', asy
   const verses = await result;
   assert.equal(verses.length, 114);
   assert.equal(urls.length, 2);
-  assert.match(urls[0], /077c80932fa617dd56a1473476ad7a4d90a041de/);
+  assert.match(urls[0], /07276a16cecee4f42512cc9ab5dac754a4e77a24/);
 });
 
 test('glasses menu is valid and preserved by startup, recovery, and verse rebuilds', async () => {

@@ -1,7 +1,8 @@
+import {LANGUAGE_CODES, PACK_CODES} from './languageCatalog.js';
 /**
  * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.12 — on-device language packs + DIAG_TOKEN usage analytics
+ * v3.4.13 — on-device language packs + DIAG_TOKEN usage analytics
  *   Translate mode: general Quran follow-along translator; Taraweeh adds rak'ah tracking
  */
 import 'dotenv/config';
@@ -47,7 +48,7 @@ const ALLOWED_MODELS = {
   openai: new Set(['gpt-4o-mini-transcribe', 'gpt-transcribe', 'gpt-4o-transcribe', 'whisper-1']),
   deepgram: new Set(['nova-3', 'whisper-large']),
 };
-const LOCAL_TRANSLATION_LANGS = new Set(['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc']);
+const LOCAL_TRANSLATION_LANGS = new Set(['', ...LANGUAGE_CODES]);
 
 let lastEndpointLifecycle = {
   component: 'model',
@@ -124,7 +125,7 @@ function sendAppHtml(req, res) {
 app.get('/', sendAppHtml);
 app.get('/index.html', sendAppHtml);
 
-const PACK_LANGS = new Set(['en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uzc']);
+const PACK_LANGS = new Set(PACK_CODES);
 const translationPackCache = new Map();
 function compactTranslationPack(lang) {
   const key = lang === 'uz' ? 'uzc' : lang;
@@ -218,7 +219,7 @@ app.get('/api/status', (req, res) => {
     allowedProviders: [...STT_ENGINES, 'auto'],
     allowedModels: Object.fromEntries(Object.entries(ALLOWED_MODELS).map(([k, v]) => [k, [...v]])),
     translationSource: 'on-device-packs',
-    allowedTranslationLangs: ['', 'en', 'ur', 'fr', 'es', 'id', 'tr', 'bn', 'zh', 'ru', 'sv', 'uz', 'uzc'],
+    allowedTranslationLangs: ['', ...LANGUAGE_CODES],
     liveConnections,
     endpointLifecycle: lastEndpointLifecycle,
   });

@@ -1,6 +1,6 @@
 {
   "name": "quran-verse-translator-mobile",
-  "version": "3.4.12",
+  "version": "3.4.13",
   "private": true,
   "description": "Quran Verse Translator standalone phone app (iOS + Android) \u2014 phone mic in, phone screen out",
   "type": "module",
