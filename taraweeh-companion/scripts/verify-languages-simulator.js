@@ -54,7 +54,7 @@ await evaluate('(async () => { window.__languageTest.glassesStartup(); await win
 // Startup queues a welcome repaint after its create/rebuild completes. Let
 // that finish before feeding the first verse so evidence cannot show welcome.
 await new Promise(resolve => setTimeout(resolve, 500));
-await evaluate('window.__languageTest.S._lastGlassesState = null');
+await evaluate('window.__languageTest.S._lastGlassesState = null; window.__languageTest.originalSettings = { lang: window.__languageTest.S.settings.lang, glassesBottom: window.__languageTest.S.settings.glassesBottom };');
 
 const requested = process.argv.find(a=>a.startsWith('--languages='))?.slice(12).split(',');
 const languages = requested || LANGUAGE_CATALOG.map(e=>e.code);
@@ -123,8 +123,9 @@ writeFileSync(new URL(requested ? 'selected-index.html' : 'index.html', out), `<
 ${results.map(r=>`<section><h2>${escape(r.label)}</h2><p>${r.ayahs} ayahs checked · ${r.missingGlyphs.length} missing glyphs in glasses output${fallback.includes(r.lang)?' · English on glasses; native script unsupported':r.lang==='uzc'?' · Cyrillic on phone; Latin on glasses':''}</p><div class="pair"><div><h3>Glasses</h3><a href="${r.lang}-glasses.png"><img src="${r.lang}-glasses.png"></a><pre>${escape(r.glasses)}</pre></div><div><h3>Phone WebView</h3><a href="${r.lang}-webview.png"><img src="${r.lang}-webview.png"></a><pre>${escape(r.phone)}</pre></div></div></section>`).join('')}`);
 await evaluate(`(async () => {
   const t = window.__languageTest;
-  t.S.settings.lang = 'uz';
-  document.getElementById('settingLang').value = 'uz';
+  t.S.settings.lang = t.originalSettings.lang || '';
+  document.getElementById('settingLang').value = t.S.settings.lang;
+  window.setGlassesBottom(t.originalSettings.glassesBottom || 'transliteration');
   t.handleServerMsg({type:'state', state:t.S._lastGlassesState});
   t.stopPageFlip(); t.stopCountdown();
   await t.S.bridgeCallQueue;
