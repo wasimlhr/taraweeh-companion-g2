@@ -146,13 +146,14 @@ the same filesystem but not replacement of the Railway container. A structured
 
 Study content is served from checked-in compressed datasets through
 `/api/study/:surah/:ayah/:kind`, without external content APIs or credentials.
-The import contains 17 classical Arabic tafsirs and 74 Hadith editions.
+The import contains English Al-Mukhtasar (the default), 17 classical Arabic tafsirs and 74 Hadith editions.
 Use `node scripts/import-study-data.mjs` to reproduce the pinned download.
 `backend/data/study/catalog.json` records source revisions and file hashes;
 source licence notices are retained alongside it. These are the available
-editions, not every tafsir or Hadith ever written. Modern copyrighted tafsir
+editions, not every tafsir or Hadith ever written. English Al-Mukhtasar is published by Tafsir Center for Quranic Studies under CC BY 4.0; publisher attribution is retained. Other modern copyrighted tafsir
 translations and AI translations are excluded. Hadith browsing preserves the
 source grades; no unverified ayah associations are generated.
+Study Settings save a default tafsir, Hadith language and collection; fresh installations default to English Al-Mukhtasar and English Sahih al-Bukhari. Word taps open an anchored popover; its arrow opens the study dialog. Reading shortcuts select Arabic + translation, translation + transliteration, or the saved Custom layout.
 The bundled Amiri Quran font serves phone and glasses Arabic (OFL).
 Tapping a word shows local morphology; English word translations are not
 installed pending a dataset with clear redistribution rights.

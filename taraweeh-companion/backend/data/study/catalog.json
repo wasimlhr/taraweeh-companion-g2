@@ -2,6 +2,817 @@
   "schema": 1,
   "tafsirs": [
     {
+      "id": 266,
+      "name": "Al-Mukhtasar · English",
+      "language_name": "english",
+      "author_name": "Tafsir Center for Quranic Studies",
+      "source": "https://huggingface.co/datasets/tafsircenter/tafsir-mcp-data",
+      "revision": "dbbfa77518a724a10e72d8d7fd48d2d36a50fa9e",
+      "license": "CC-BY-4.0",
+      "attribution": "Tafsir Center for Quranic Studies (https://tafsir.net)",
+      "entries": 6236,
+      "chapters": [
+        {
+          "surah": 1,
+          "entries": 7,
+          "file": "tafsir-266-1.json.gz",
+          "bytes": 1090,
+          "sha256": "7d6d064eb4fbadee388226a42b4fce4b982276ffb50d99b87dbccc839e685b12"
+        },
+        {
+          "surah": 2,
+          "entries": 286,
+          "file": "tafsir-266-2.json.gz",
+          "bytes": 43970,
+          "sha256": "6607ba7a0e90e721b0da6801684a0fa6d31cd6047eaf41ebe1b982c4bc946b56"
+        },
+        {
+          "surah": 3,
+          "entries": 200,
+          "file": "tafsir-266-3.json.gz",
+          "bytes": 24618,
+          "sha256": "c12d0d1489504d6c048b734e5405d60e2f28783eb28132c5632ed27987286395"
+        },
+        {
+          "surah": 4,
+          "entries": 176,
+          "file": "tafsir-266-4.json.gz",
+          "bytes": 24630,
+          "sha256": "48bac43679052205789f17f5654b1030b5490b37871dd11c9f58519d2cebcd90"
+        },
+        {
+          "surah": 5,
+          "entries": 120,
+          "file": "tafsir-266-5.json.gz",
+          "bytes": 19339,
+          "sha256": "bdeb59dd42d2a49af0eda6f688ef5fb08ae22a067b012ae4a7c1b3c97d6ba3e7"
+        },
+        {
+          "surah": 6,
+          "entries": 165,
+          "file": "tafsir-266-6.json.gz",
+          "bytes": 22469,
+          "sha256": "b724e88b14759fcdf1d65bbba513a3c613f44705a950019eb54212ea474cca3b"
+        },
+        {
+          "surah": 7,
+          "entries": 206,
+          "file": "tafsir-266-7.json.gz",
+          "bytes": 26239,
+          "sha256": "b56ec3ab423aeaa075a0adb0ded355625e55dbe671bcac950326ca84f3d2092d"
+        },
+        {
+          "surah": 8,
+          "entries": 75,
+          "file": "tafsir-266-8.json.gz",
+          "bytes": 10655,
+          "sha256": "683ccebc0a74551fa68d76048e6e55907d516774f0347617e904f962bfc89d44"
+        },
+        {
+          "surah": 9,
+          "entries": 129,
+          "file": "tafsir-266-9.json.gz",
+          "bytes": 19054,
+          "sha256": "6b4dbca8ced6371ab05953159e6e661c369f16ac47238abb4bee32e9c7bb685b"
+        },
+        {
+          "surah": 10,
+          "entries": 109,
+          "file": "tafsir-266-10.json.gz",
+          "bytes": 13456,
+          "sha256": "500489733f1446b9293c41fea40c3778e42178fcf8ed3b1e99fdef03e47bde13"
+        },
+        {
+          "surah": 11,
+          "entries": 123,
+          "file": "tafsir-266-11.json.gz",
+          "bytes": 14305,
+          "sha256": "67d0c8ea34db29efa29e4f37c636cb78c7888a9275c36e92214578bba001ac10"
+        },
+        {
+          "surah": 12,
+          "entries": 111,
+          "file": "tafsir-266-12.json.gz",
+          "bytes": 13436,
+          "sha256": "55960788ecf3c3765ac4f56b0de819104915672ca19de84a2cecacd76632297e"
+        },
+        {
+          "surah": 13,
+          "entries": 43,
+          "file": "tafsir-266-13.json.gz",
+          "bytes": 7645,
+          "sha256": "518fe2a7dd4df403f5a52b3d5504c9f058aa91d485d31f0607d730f4338ea770"
+        },
+        {
+          "surah": 14,
+          "entries": 52,
+          "file": "tafsir-266-14.json.gz",
+          "bytes": 7864,
+          "sha256": "5065a9832e9614b1b3d9696e2db37c2dd463b5400db99713c29b12247356fecf"
+        },
+        {
+          "surah": 15,
+          "entries": 99,
+          "file": "tafsir-266-15.json.gz",
+          "bytes": 6071,
+          "sha256": "7a3ae983e44b2a70ad63157987364c050ea0eac288835dac0baa6737598cfe6e"
+        },
+        {
+          "surah": 16,
+          "entries": 128,
+          "file": "tafsir-266-16.json.gz",
+          "bytes": 15653,
+          "sha256": "d8fe3cb7e6592a8d96e35776f8b6d9c5e0cf2d01f3935b44b0db0f35fabcbb5c"
+        },
+        {
+          "surah": 17,
+          "entries": 111,
+          "file": "tafsir-266-17.json.gz",
+          "bytes": 13043,
+          "sha256": "8b6218c3800f4e619ec04a6553a5b767c4953d120060cbce691ed8b4059ec992"
+        },
+        {
+          "surah": 18,
+          "entries": 110,
+          "file": "tafsir-266-18.json.gz",
+          "bytes": 12612,
+          "sha256": "c31def87d4da69100c751e3405f37f18267aaf0b042a29dfe10b52fe6457cafc"
+        },
+        {
+          "surah": 19,
+          "entries": 98,
+          "file": "tafsir-266-19.json.gz",
+          "bytes": 8016,
+          "sha256": "89c5bf897154de6c602c19a8b76916f679b99db7f39add884607595ed11aad62"
+        },
+        {
+          "surah": 20,
+          "entries": 135,
+          "file": "tafsir-266-20.json.gz",
+          "bytes": 10610,
+          "sha256": "59ef46d89a5b91e8b4602b4b55d60d2097d1af45056700c3e097bb11c61810bf"
+        },
+        {
+          "surah": 21,
+          "entries": 112,
+          "file": "tafsir-266-21.json.gz",
+          "bytes": 10282,
+          "sha256": "ff6aec4af288ed175295732a4856d02c3af916c4e9b910263de6eab52e665eb2"
+        },
+        {
+          "surah": 22,
+          "entries": 78,
+          "file": "tafsir-266-22.json.gz",
+          "bytes": 10228,
+          "sha256": "029191ec34d0ee21c364b6acedfae1669f826fb6b0c5e614d28546bd15ee9992"
+        },
+        {
+          "surah": 23,
+          "entries": 118,
+          "file": "tafsir-266-23.json.gz",
+          "bytes": 9132,
+          "sha256": "d043899673165caab2aea60f6c85fbfd5546b8974d03b66cb4f20859dc013813"
+        },
+        {
+          "surah": 24,
+          "entries": 64,
+          "file": "tafsir-266-24.json.gz",
+          "bytes": 9129,
+          "sha256": "2b10d319e9e7064a35b8a0a86c04f46464301852c7f25842e96e01e4eadf7a8a"
+        },
+        {
+          "surah": 25,
+          "entries": 77,
+          "file": "tafsir-266-25.json.gz",
+          "bytes": 7780,
+          "sha256": "dfd22ca8049dc9f3cb84bcc34ba91dacdc27960afacf91179c64d3df84c27156"
+        },
+        {
+          "surah": 26,
+          "entries": 227,
+          "file": "tafsir-266-26.json.gz",
+          "bytes": 11074,
+          "sha256": "e6deb51804e28c1a965b2bf684c3db884fe5809faf42cdc7af89ffc110a870c8"
+        },
+        {
+          "surah": 27,
+          "entries": 93,
+          "file": "tafsir-266-27.json.gz",
+          "bytes": 9556,
+          "sha256": "6459624a8d3c8cf0efd5e09fbffe737fba2ca224470947827f5c89d4500e360a"
+        },
+        {
+          "surah": 28,
+          "entries": 88,
+          "file": "tafsir-266-28.json.gz",
+          "bytes": 10907,
+          "sha256": "7c41836f0bde0f0ec00b1c25e9b37b46775baa8dffe90d6d6a7d149772b929c4"
+        },
+        {
+          "surah": 29,
+          "entries": 69,
+          "file": "tafsir-266-29.json.gz",
+          "bytes": 8492,
+          "sha256": "399a900c67c2a807241904572ec0675c9da0db1776f91930a1193fb72b504012"
+        },
+        {
+          "surah": 30,
+          "entries": 60,
+          "file": "tafsir-266-30.json.gz",
+          "bytes": 6916,
+          "sha256": "492efa233cd5c976000fb1e279bcb7b2fbc956c1dbbf4655905a4dd51a664021"
+        },
+        {
+          "surah": 31,
+          "entries": 34,
+          "file": "tafsir-266-31.json.gz",
+          "bytes": 4635,
+          "sha256": "91d76cdf2941e8b3cd989170e5aec4578f31813da1f25f3459a5de6718194cb3"
+        },
+        {
+          "surah": 32,
+          "entries": 30,
+          "file": "tafsir-266-32.json.gz",
+          "bytes": 3548,
+          "sha256": "5817b4d94c648c877e197301b4145ad153fc2a12d57f823c716ac81724ae5dd4"
+        },
+        {
+          "surah": 33,
+          "entries": 73,
+          "file": "tafsir-266-33.json.gz",
+          "bytes": 10627,
+          "sha256": "192cc256ddbc05786b8376987982e8076afd011c1e92c1ae1befe79d0945363c"
+        },
+        {
+          "surah": 34,
+          "entries": 54,
+          "file": "tafsir-266-34.json.gz",
+          "bytes": 7366,
+          "sha256": "1eab749498f920b950bac99055337a13e54741c018a9cf07881a273fe80e0960"
+        },
+        {
+          "surah": 35,
+          "entries": 45,
+          "file": "tafsir-266-35.json.gz",
+          "bytes": 6320,
+          "sha256": "fbcef489d5b520b0dac1ede300d07d820017105a100e5b274be0f466762a821a"
+        },
+        {
+          "surah": 36,
+          "entries": 83,
+          "file": "tafsir-266-36.json.gz",
+          "bytes": 8016,
+          "sha256": "2c08d96db84f8320b9da7a29681a0c961149febffe0ec0b3d066551a8f2921ef"
+        },
+        {
+          "surah": 37,
+          "entries": 182,
+          "file": "tafsir-266-37.json.gz",
+          "bytes": 10277,
+          "sha256": "35e21557a27ad01dd881354a87a2869a6876097ef1596d75ca5813c53a74d961"
+        },
+        {
+          "surah": 38,
+          "entries": 88,
+          "file": "tafsir-266-38.json.gz",
+          "bytes": 7231,
+          "sha256": "add920e546bb5a1641211221ae9a4a9547a1ad3f2450730d9b43abc994459762"
+        },
+        {
+          "surah": 39,
+          "entries": 75,
+          "file": "tafsir-266-39.json.gz",
+          "bytes": 9095,
+          "sha256": "682ff8136d5ed9f978b5189da445e0176ea3e1684469aaaa2a248d25d42b6494"
+        },
+        {
+          "surah": 40,
+          "entries": 85,
+          "file": "tafsir-266-40.json.gz",
+          "bytes": 9453,
+          "sha256": "6166be3b34960ffa49ba2097a40e67f4272bfeba33ad288dd9fc523cc8c7e6f0"
+        },
+        {
+          "surah": 41,
+          "entries": 54,
+          "file": "tafsir-266-41.json.gz",
+          "bytes": 6712,
+          "sha256": "96b49ca99f3ce349c465ad7e1a32a011c4fcb93003045cf9f5cfc0f602bd161f"
+        },
+        {
+          "surah": 42,
+          "entries": 53,
+          "file": "tafsir-266-42.json.gz",
+          "bytes": 6741,
+          "sha256": "7145dd56ba2ab476cf58037aa2b35a34d6a9fb376f28c9fe76061556ac00172f"
+        },
+        {
+          "surah": 43,
+          "entries": 89,
+          "file": "tafsir-266-43.json.gz",
+          "bytes": 7609,
+          "sha256": "41f697e4dcf8bc2c698fa78ecad51d916ef67a6003e1c7c726ad85e483eda7e5"
+        },
+        {
+          "surah": 44,
+          "entries": 59,
+          "file": "tafsir-266-44.json.gz",
+          "bytes": 3610,
+          "sha256": "77a1a90466a890cb9bc25809548ce775fd3bde45aca252fafc4cf530ab76c33e"
+        },
+        {
+          "surah": 45,
+          "entries": 37,
+          "file": "tafsir-266-45.json.gz",
+          "bytes": 4062,
+          "sha256": "a22ecd8f76650be03414dbb7d02fd92873777fbcadfdd573f7efecb6ff29bbf5"
+        },
+        {
+          "surah": 46,
+          "entries": 35,
+          "file": "tafsir-266-46.json.gz",
+          "bytes": 5156,
+          "sha256": "94dcbbcc0ffa430e6293432bb31cb95f5e5ed455f9ac781eeed929d8e4c5b9c6"
+        },
+        {
+          "surah": 47,
+          "entries": 38,
+          "file": "tafsir-266-47.json.gz",
+          "bytes": 4939,
+          "sha256": "81392d36b5460b5faeb0509d950acbb988a92a0fe069f618b64b11f04a3aee5c"
+        },
+        {
+          "surah": 48,
+          "entries": 29,
+          "file": "tafsir-266-48.json.gz",
+          "bytes": 4931,
+          "sha256": "ce704f7efae585b74ea6a8e161872417a79c7b7cb746f884033f9d5a1c6f730c"
+        },
+        {
+          "surah": 49,
+          "entries": 18,
+          "file": "tafsir-266-49.json.gz",
+          "bytes": 3105,
+          "sha256": "8d5d9313fa3f7d4387f4da24f7162e617f04db984bafd52337a87cdd308af9cc"
+        },
+        {
+          "surah": 50,
+          "entries": 45,
+          "file": "tafsir-266-50.json.gz",
+          "bytes": 4269,
+          "sha256": "564bffe905051e1c75bf3bf8611aeb2965162d63b04a695563e5d86b6ac87585"
+        },
+        {
+          "surah": 51,
+          "entries": 60,
+          "file": "tafsir-266-51.json.gz",
+          "bytes": 3731,
+          "sha256": "313806e4e2a1eaf706a5d5901baecef033050eddcaa5dd8a2413bbd6beac5b9d"
+        },
+        {
+          "surah": 52,
+          "entries": 49,
+          "file": "tafsir-266-52.json.gz",
+          "bytes": 3259,
+          "sha256": "3d7a4e51d62e42cd6eae7eca1f147fe8ba73ae7b5b60b98979b692b38c562531"
+        },
+        {
+          "surah": 53,
+          "entries": 62,
+          "file": "tafsir-266-53.json.gz",
+          "bytes": 3476,
+          "sha256": "82b2f72721df80ca248aa620cdccfd7a0cfd3f7729f26d462f41ae96468aa683"
+        },
+        {
+          "surah": 54,
+          "entries": 55,
+          "file": "tafsir-266-54.json.gz",
+          "bytes": 3570,
+          "sha256": "2e5b05ecc0e567cbbbd21101fd57342be854e795253060f01d52c770ea2be912"
+        },
+        {
+          "surah": 55,
+          "entries": 78,
+          "file": "tafsir-266-55.json.gz",
+          "bytes": 2640,
+          "sha256": "a97b4371b00426db32a1f65fdc8ee8baec89ab49cfedc605b0db891c7a4a38e8"
+        },
+        {
+          "surah": 56,
+          "entries": 96,
+          "file": "tafsir-266-56.json.gz",
+          "bytes": 3946,
+          "sha256": "84285db93adf26d7d29e20f94e229031c4128086986a7e0ad29afc15867883fd"
+        },
+        {
+          "surah": 57,
+          "entries": 29,
+          "file": "tafsir-266-57.json.gz",
+          "bytes": 4751,
+          "sha256": "00534433eca4f2eeb5110b13cca7e5e8b408bfdf004470030f19f4d9b62ecea6"
+        },
+        {
+          "surah": 58,
+          "entries": 22,
+          "file": "tafsir-266-58.json.gz",
+          "bytes": 4177,
+          "sha256": "434fc8f17e5d27ec3522ae4076df0dce6b270d332eceb30dca1f1d707ea1bd2e"
+        },
+        {
+          "surah": 59,
+          "entries": 24,
+          "file": "tafsir-266-59.json.gz",
+          "bytes": 4190,
+          "sha256": "cba99fee9d49d61d2349a1efc2f161d2f2b1f5307f1adcf95d642b3eef2bc2b5"
+        },
+        {
+          "surah": 60,
+          "entries": 13,
+          "file": "tafsir-266-60.json.gz",
+          "bytes": 3099,
+          "sha256": "6db0cfb235110abb97f943b073a93f9e9612e15e9527278169768a101e64a778"
+        },
+        {
+          "surah": 61,
+          "entries": 14,
+          "file": "tafsir-266-61.json.gz",
+          "bytes": 2033,
+          "sha256": "d8d2e5f993434714637ef33b1ed45ead3fc32241e0db64f27252a00539fb7564"
+        },
+        {
+          "surah": 62,
+          "entries": 11,
+          "file": "tafsir-266-62.json.gz",
+          "bytes": 1864,
+          "sha256": "a6923d25c92c7d107da9e73bfe7a30f2bce3bcf88701072c79d2cdfa7ad95bb8"
+        },
+        {
+          "surah": 63,
+          "entries": 11,
+          "file": "tafsir-266-63.json.gz",
+          "bytes": 1851,
+          "sha256": "9a536dce4f518a01cbbe7da6432ec73757d6c5c06d31c1a9612f90784b203bd1"
+        },
+        {
+          "surah": 64,
+          "entries": 18,
+          "file": "tafsir-266-64.json.gz",
+          "bytes": 2640,
+          "sha256": "df2399a934fa7a0d5c52cffeb134f437d2e57d301cf032f0644e55aaebe66a78"
+        },
+        {
+          "surah": 65,
+          "entries": 12,
+          "file": "tafsir-266-65.json.gz",
+          "bytes": 2642,
+          "sha256": "9739b3eb8cde4f09d552ebf53238276953abbae65a81d1dc5ff726c244487653"
+        },
+        {
+          "surah": 66,
+          "entries": 12,
+          "file": "tafsir-266-66.json.gz",
+          "bytes": 2389,
+          "sha256": "b319437faa2f1f2ca297037fa1f251ddd06c2e459ff1424297408dc60347de73"
+        },
+        {
+          "surah": 67,
+          "entries": 30,
+          "file": "tafsir-266-67.json.gz",
+          "bytes": 2972,
+          "sha256": "220d0bd58d27ca88f1269fcdb39c21ae8514bae94576b182b44a8233b7a6622d"
+        },
+        {
+          "surah": 68,
+          "entries": 52,
+          "file": "tafsir-266-68.json.gz",
+          "bytes": 3342,
+          "sha256": "c360beac6e6ca36e311b0809f6f3269b2f180773c54e602ccbc80230c4fb79ad"
+        },
+        {
+          "surah": 69,
+          "entries": 52,
+          "file": "tafsir-266-69.json.gz",
+          "bytes": 2657,
+          "sha256": "7561ac93a6ee1bd23a2ca332a96e65a79959687d5d18e20d254f9a73023d902a"
+        },
+        {
+          "surah": 70,
+          "entries": 44,
+          "file": "tafsir-266-70.json.gz",
+          "bytes": 2461,
+          "sha256": "fc616293a2eff3b17d22d863cbdb803690ee4105f240b217c3e14cbfcf1fa3d1"
+        },
+        {
+          "surah": 71,
+          "entries": 28,
+          "file": "tafsir-266-71.json.gz",
+          "bytes": 2297,
+          "sha256": "9a175eb3c8a74085a266fe8e4e1a1eadae3d17f84060531085fa160f6548ac9a"
+        },
+        {
+          "surah": 72,
+          "entries": 28,
+          "file": "tafsir-266-72.json.gz",
+          "bytes": 2681,
+          "sha256": "b59351c129daec34661e65e389c1e27dfa0a6c431129a816a77f404cadc27071"
+        },
+        {
+          "surah": 73,
+          "entries": 20,
+          "file": "tafsir-266-73.json.gz",
+          "bytes": 1844,
+          "sha256": "170e7ce7ec52fdaa6c41b2e3722b1ee2161b2ea35dd0f5ffc566a768474f7d37"
+        },
+        {
+          "surah": 74,
+          "entries": 56,
+          "file": "tafsir-266-74.json.gz",
+          "bytes": 2976,
+          "sha256": "5a9e9e8b78797bddfa867b216fec306e393bf092e49818074a33fda34f521147"
+        },
+        {
+          "surah": 75,
+          "entries": 40,
+          "file": "tafsir-266-75.json.gz",
+          "bytes": 2038,
+          "sha256": "a4587370a40090dac668c207d0509517d7847060f996e24b4f6cd4699fd19a04"
+        },
+        {
+          "surah": 76,
+          "entries": 31,
+          "file": "tafsir-266-76.json.gz",
+          "bytes": 2649,
+          "sha256": "2323314ad55a172f6d9091d8dc02a20ecee6952542e4b65f874d866dcc2be00e"
+        },
+        {
+          "surah": 77,
+          "entries": 50,
+          "file": "tafsir-266-77.json.gz",
+          "bytes": 2166,
+          "sha256": "11b2a0496d23c9116af6b34a33a3ece5001c1ea1710dc4ba21a88a413394257f"
+        },
+        {
+          "surah": 78,
+          "entries": 40,
+          "file": "tafsir-266-78.json.gz",
+          "bytes": 2313,
+          "sha256": "bca77d6ec7dfd0ae64b833359ceba0fcd68aa4f4be663e5d4db061e4d15e50be"
+        },
+        {
+          "surah": 79,
+          "entries": 46,
+          "file": "tafsir-266-79.json.gz",
+          "bytes": 2284,
+          "sha256": "06081e755f845afc927dfcc7ddb30cc8c1608b4098d02426db97da3499e42280"
+        },
+        {
+          "surah": 80,
+          "entries": 42,
+          "file": "tafsir-266-80.json.gz",
+          "bytes": 1773,
+          "sha256": "8e1803ab47e0a29bf5bf3af3f9c9ad08cda0d1ba91e6f0957b210dec55933831"
+        },
+        {
+          "surah": 81,
+          "entries": 29,
+          "file": "tafsir-266-81.json.gz",
+          "bytes": 1343,
+          "sha256": "fb84aee73f8a1f2c2c913f00c1baf47e27faec22b16f31f0d3e12b9e108fcd2d"
+        },
+        {
+          "surah": 82,
+          "entries": 19,
+          "file": "tafsir-266-82.json.gz",
+          "bytes": 934,
+          "sha256": "4e5fc960e83d0691e75cc987ada0b819b86af9bbc323ba99da7679ba14c7a306"
+        },
+        {
+          "surah": 83,
+          "entries": 36,
+          "file": "tafsir-266-83.json.gz",
+          "bytes": 1818,
+          "sha256": "d7d2b345ac26b44450c3ba9861d5a325847eaec646da669bbb9ab94c9e2091e1"
+        },
+        {
+          "surah": 84,
+          "entries": 25,
+          "file": "tafsir-266-84.json.gz",
+          "bytes": 1183,
+          "sha256": "47c769d5dc552bd255983e256a1ff70d83088222bcb2eec38d43034961fc5d92"
+        },
+        {
+          "surah": 85,
+          "entries": 22,
+          "file": "tafsir-266-85.json.gz",
+          "bytes": 1349,
+          "sha256": "25eb93b27222c77f0d6c45c082f72ea51d0ee389cdac9512cb6f4eab00b2bcc8"
+        },
+        {
+          "surah": 86,
+          "entries": 17,
+          "file": "tafsir-266-86.json.gz",
+          "bytes": 993,
+          "sha256": "57bbcaf5a03da941b81470b6c6a4d415ebd56d37564c40f151725117b7ccfd8c"
+        },
+        {
+          "surah": 87,
+          "entries": 19,
+          "file": "tafsir-266-87.json.gz",
+          "bytes": 1215,
+          "sha256": "ff09596688989a7a8cecdceea8be0a628332126433e56f5c494de85df95d838b"
+        },
+        {
+          "surah": 88,
+          "entries": 26,
+          "file": "tafsir-266-88.json.gz",
+          "bytes": 1487,
+          "sha256": "5542c8db574015410c6f6022004f91bc1bafd715833bfe5927dd11bb0cf61d8b"
+        },
+        {
+          "surah": 89,
+          "entries": 30,
+          "file": "tafsir-266-89.json.gz",
+          "bytes": 1946,
+          "sha256": "c25610505f7566db59d91e9c372f2a584e8bec5f1c07501fd83fcc8bef390582"
+        },
+        {
+          "surah": 90,
+          "entries": 20,
+          "file": "tafsir-266-90.json.gz",
+          "bytes": 1094,
+          "sha256": "85085b02d0b11d20cbcb93c2babdbc0b00ac99e4bd61d5f2ed06d90eb65a74df"
+        },
+        {
+          "surah": 91,
+          "entries": 15,
+          "file": "tafsir-266-91.json.gz",
+          "bytes": 975,
+          "sha256": "8afa73e2f8ac37d3a6874c1a1140b6a04a80e97cbca36278424a18e69e77c8d4"
+        },
+        {
+          "surah": 92,
+          "entries": 21,
+          "file": "tafsir-266-92.json.gz",
+          "bytes": 1115,
+          "sha256": "7d2991148ae9b141e0f8c76714e7e0f963503e24bada473a98270d946b67f2e5"
+        },
+        {
+          "surah": 93,
+          "entries": 11,
+          "file": "tafsir-266-93.json.gz",
+          "bytes": 682,
+          "sha256": "82add52d31cbef91aa1702bc0c7474b91f6bc887fc33b1a846db26c0c3b60f4f"
+        },
+        {
+          "surah": 94,
+          "entries": 8,
+          "file": "tafsir-266-94.json.gz",
+          "bytes": 451,
+          "sha256": "9026dafb237a5c0a85d38c8f58cbccea1a35ec20e2b63cd7385d531c39b50a7f"
+        },
+        {
+          "surah": 95,
+          "entries": 8,
+          "file": "tafsir-266-95.json.gz",
+          "bytes": 714,
+          "sha256": "b9c32d1b2dc794dedfa2565dc7e7de0578a5fe6c2a87c2a9e9335c451fe5c95c"
+        },
+        {
+          "surah": 96,
+          "entries": 19,
+          "file": "tafsir-266-96.json.gz",
+          "bytes": 1298,
+          "sha256": "4aaf6f29bc77ffa84ed97a1fb002219c407d790c91f1ed8e9b4b2929a6f69133"
+        },
+        {
+          "surah": 97,
+          "entries": 5,
+          "file": "tafsir-266-97.json.gz",
+          "bytes": 519,
+          "sha256": "3536e38fb85942f4963855ddb7099df2314445ef25566ac2d2c13ecbdb7c5517"
+        },
+        {
+          "surah": 98,
+          "entries": 8,
+          "file": "tafsir-266-98.json.gz",
+          "bytes": 1005,
+          "sha256": "16f2d0734ea2dad3697b762ff281fb1c29a6379d3c279f476cb1e37296eabecc"
+        },
+        {
+          "surah": 99,
+          "entries": 8,
+          "file": "tafsir-266-99.json.gz",
+          "bytes": 482,
+          "sha256": "2cbc4cc03b0657476d6c139194b9e796113e5aa11db0a9399fc5c2f7b15fa37a"
+        },
+        {
+          "surah": 100,
+          "entries": 11,
+          "file": "tafsir-266-100.json.gz",
+          "bytes": 621,
+          "sha256": "f8b6e903a865421e73a849a20864db9ecc4b9240f3acda24676579fb76d32265"
+        },
+        {
+          "surah": 101,
+          "entries": 11,
+          "file": "tafsir-266-101.json.gz",
+          "bytes": 459,
+          "sha256": "254c62c45aa894b00429135774d42e17ae2720e2f75173d9ec7f965c477e3dc2"
+        },
+        {
+          "surah": 102,
+          "entries": 8,
+          "file": "tafsir-266-102.json.gz",
+          "bytes": 473,
+          "sha256": "789c85fcc72d04ddbdc02c34ca48aa2d2739377cde6cc56d91b31e27fb5e75eb"
+        },
+        {
+          "surah": 103,
+          "entries": 3,
+          "file": "tafsir-266-103.json.gz",
+          "bytes": 282,
+          "sha256": "31e1e55371a71214807dc418a39f0c0d510295477f80060178ae2f3445da13a9"
+        },
+        {
+          "surah": 104,
+          "entries": 9,
+          "file": "tafsir-266-104.json.gz",
+          "bytes": 531,
+          "sha256": "a2b48f64450bd4d59adb7212559302ebe399a9f91539467ba3f3ee98986161d6"
+        },
+        {
+          "surah": 105,
+          "entries": 5,
+          "file": "tafsir-266-105.json.gz",
+          "bytes": 383,
+          "sha256": "37b7337ca7144cd7eea13e132683030a9c05edaf76f18ad3b7c3fe5fe60f0573"
+        },
+        {
+          "surah": 106,
+          "entries": 4,
+          "file": "tafsir-266-106.json.gz",
+          "bytes": 345,
+          "sha256": "3d0e2a5b6ddfe29ddf8208e786c212d0cd0ac110b734024a171599790cf130ae"
+        },
+        {
+          "surah": 107,
+          "entries": 7,
+          "file": "tafsir-266-107.json.gz",
+          "bytes": 391,
+          "sha256": "fd981ca6f85a59070ac51b223687bcf76fd5f750b457b88121f8cde9b139ad2e"
+        },
+        {
+          "surah": 108,
+          "entries": 3,
+          "file": "tafsir-266-108.json.gz",
+          "bytes": 309,
+          "sha256": "d0c3f1fcc3e039caa3873b58028198beced9adc8baaffe1fbfcaff3a0cf12a2b"
+        },
+        {
+          "surah": 109,
+          "entries": 6,
+          "file": "tafsir-266-109.json.gz",
+          "bytes": 257,
+          "sha256": "758e3476c09c03406f16d252871e98c9f8ee736482f2c33932272845a890e684"
+        },
+        {
+          "surah": 110,
+          "entries": 3,
+          "file": "tafsir-266-110.json.gz",
+          "bytes": 368,
+          "sha256": "0a6d4228a307ef20d5b7e2843d4e98f71e67a670394cff5c7ad6baf4e2719617"
+        },
+        {
+          "surah": 111,
+          "entries": 5,
+          "file": "tafsir-266-111.json.gz",
+          "bytes": 452,
+          "sha256": "5f6851a7e47e50bdd8e973b772102908e4a8a3829501b3a6e6556c3de8716996"
+        },
+        {
+          "surah": 112,
+          "entries": 4,
+          "file": "tafsir-266-112.json.gz",
+          "bytes": 304,
+          "sha256": "4f24dbbc758fb5b6d67b7c22bfbeb667a9b15352058b433bda2bf055e010ba21"
+        },
+        {
+          "surah": 113,
+          "entries": 5,
+          "file": "tafsir-266-113.json.gz",
+          "bytes": 284,
+          "sha256": "e4ebe0a4ad564aa234e73b933a1206b7718ed42b49b4b65b5ed1df74e412dc20"
+        },
+        {
+          "surah": 114,
+          "entries": 6,
+          "file": "tafsir-266-114.json.gz",
+          "bytes": 369,
+          "sha256": "cf3a6b9624fa1a344cb7d67fc5c321e400e93697e90f6c31f85593ee7a033648"
+        }
+      ]
+    },
+    {
       "author_name": "Hafiz Ibn Kathir",
       "id": 22,
       "language_name": "arabic",

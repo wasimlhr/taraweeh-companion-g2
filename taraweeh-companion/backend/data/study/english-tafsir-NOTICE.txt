@@ -1,0 +1,4 @@
+English Al-Mukhtasar. Copyright Tafsir Center for Quranic Studies (https://tafsir.net).
+CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+Source: https://huggingface.co/datasets/tafsircenter/tafsir-mcp-data/tree/dbbfa77518a724a10e72d8d7fd48d2d36a50fa9e
+Text extracted verbatim from QuranTafseer.Mukhtasaren; presentation packaged as per-surah JSON.

@@ -2,7 +2,7 @@ import {LANGUAGE_CODES, PACK_CODES} from './languageCatalog.js';
 /**
  * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.18 — on-device language packs + DIAG_TOKEN usage analytics
+ * v3.4.19 — on-device language packs + DIAG_TOKEN usage analytics
  *   Translate mode: general Quran follow-along translator; Taraweeh adds rak'ah tracking
  */
 import 'dotenv/config';
@@ -86,8 +86,8 @@ app.get('/api/study/:surah/:ayah/:kind', async (req,res) => {
     switch(req.params.kind) {
       case 'words': return res.json(await quranStudy.words(key));
       case 'tafsir': {
-        const id = Number(req.query.id || 22);
-        if (![22,23,37,27,523,518,488,491,489,494,496,500,493,513,501,512,510].includes(id)) return res.status(400).json({error:'Unknown tafsir'});
+        const id = Number(req.query.id || 266);
+        if (![266,22,23,37,27,523,518,488,491,489,494,496,500,493,513,501,512,510].includes(id)) return res.status(400).json({error:'Unknown tafsir'});
         return res.json(await quranStudy.tafsir(key,id));
       }
       case 'hadith': return res.json(await quranStudy.hadith(key));
