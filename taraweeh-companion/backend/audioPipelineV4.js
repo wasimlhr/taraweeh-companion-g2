@@ -490,9 +490,15 @@ export class AudioPipeline {
     this.onStatus({ type: 'audio_profile', component: 'audio', status: 'ready', source: normalized });
   }
 
+  setFollowMode(enabled) {
+    this.followMode = !!enabled;
+    if (this.followMode) this._cancelReadAdvance();
+  }
+
   setFastMode(enabled) {
     this.fastMode = !!enabled;
     if (enabled) this.slowMode = false;
+    this.setFollowMode(!this.fastMode && !this.slowMode);
     console.log(`[Pipeline] Pace: ${this.fastMode ? 'FAST' : this.slowMode ? 'SLOW' : 'normal'}`);
     this.onStatus({ type: 'fast_mode', enabled: this.fastMode });
     this.onStatus({ type: 'slow_mode', enabled: this.slowMode });
@@ -501,6 +507,7 @@ export class AudioPipeline {
   setSlowMode(enabled) {
     this.slowMode = !!enabled;
     if (enabled) this.fastMode = false;
+    this.setFollowMode(!this.fastMode && !this.slowMode);
     console.log(`[Pipeline] Pace: ${this.slowMode ? 'SLOW' : this.fastMode ? 'FAST' : 'normal'}`);
     this.onStatus({ type: 'slow_mode', enabled: this.slowMode });
     this.onStatus({ type: 'fast_mode', enabled: this.fastMode });
@@ -2070,8 +2077,8 @@ export class AudioPipeline {
       this._whisperAyah  = confirmedAyah;
     }
 
-    // Practice mode: sync display to heard verse only — no timers or catch-up.
-    if (this.practiceMode) {
+    // Follow and Practice show confirmed recitation, never a predicted next verse.
+    if (this.practiceMode || this.followMode) {
       this._cancelReadAdvance();
       const confPct = this._practiceConfPct(score);
       if (realMatch && confPct >= 18) {
@@ -2575,7 +2582,7 @@ export class AudioPipeline {
   // ── Timer: reading-pace advance (uncapped — Whisper corrects, never blocks) ─
 
   _canDisplayAdvance() {
-    if (this.practiceMode) return false;
+    if (this.practiceMode || this.followMode) return false;
 
     // End-of-surah exception: if we're on the last ayah, let the timer run even
     // during silence. Firing it is the trigger that resets state to SEARCHING;

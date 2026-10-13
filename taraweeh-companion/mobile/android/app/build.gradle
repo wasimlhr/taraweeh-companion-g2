@@ -7,8 +7,8 @@ android {
         applicationId "com.quranversetranslator.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 30415
-        versionName "3.4.15"
+        versionCode 30416
+        versionName "3.4.16"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // AdMob app ID. Defaults to Google's public test app ID.
         resValue "string", "admob_app_id", (System.getenv("ADMOB_APP_ID_ANDROID") ?: "ca-app-pub-3940256099942544~3347511713")

@@ -272,3 +272,22 @@ test('count corrections and Fatiha openings never reset recitation', () => {
     assert.ok(updates.some(m=>m.type==='taraweeh' && m.rakat===2));
   } finally {pipeline.destroy();}
 });
+
+
+test('Follow blocks predicted advancement and moves only on real heard confirmation', () => {
+ const pipeline=new AudioPipeline({onStateUpdate(){},onStatus(){}});
+ pipeline.active=true;pipeline.state={mode:'LOCKED',surah:114,ayah:1,confidence:1};
+ pipeline._displaySurah=114;pipeline._displayAyah=1;
+ pipeline.setFollowMode(true);assert.equal(pipeline.practiceMode,false);
+ pipeline._scheduleReadAdvance(100);assert.equal(pipeline._displayAdvanceTimer,null);
+ pipeline._onWhisperConfirm(114,2,0.95,'heard verse',0.1,false);assert.equal(pipeline._displayAyah,1);
+ pipeline._onWhisperConfirm(114,2,0.95,'heard verse',0.1,true);assert.equal(pipeline._displayAyah,2);
+ assert.equal(pipeline._displayAdvanceTimer,null);pipeline.stop();
+});
+
+test('pace choices keep Follow separate from Practice and preserve fast and slow selection', () => {
+ const pipeline=new AudioPipeline({onStateUpdate(){},onStatus(){}});
+ pipeline.setFastMode(true);assert.equal(pipeline.followMode,false);assert.equal(pipeline.fastMode,true);
+ pipeline.setSlowMode(true);assert.equal(pipeline.followMode,false);assert.equal(pipeline.fastMode,false);assert.equal(pipeline.slowMode,true);
+ pipeline.setSlowMode(false);assert.equal(pipeline.followMode,true);assert.equal(pipeline.practiceMode,false);pipeline.stop();
+});

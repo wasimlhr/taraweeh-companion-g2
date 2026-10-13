@@ -931,7 +931,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.15</span>
+      <span class="version" id="versionEl">v3.4.16</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1045,10 +1045,6 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <div class="verse-translation" id="verseTrans" dir="auto"></div>
       <div class="verse-lang-label" id="verseLangLabel"></div>
     </div>
-    <div class="reading-tools">
-      <button type="button" class="nav-arrow-btn" id="holdVerseBtn" onclick="toggleVerseHold()" disabled aria-pressed="false">Hold verse</button>
-      <span id="holdVerseHint" class="s-hint" aria-live="polite"></span>
-    </div>
     <div id="verseNavRow" class="verse-nav-row" style="display:none">
       <button type="button" class="nav-arrow-btn" onclick="manualPrevAyah()" title="Previous ayah">← Prev</button>
       <button type="button" class="nav-arrow-btn" onclick="manualNextAyah()" title="Next ayah">Next →</button>
@@ -1100,7 +1096,8 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <button type="button" class="mv-toggle-btn" id="btnModeTaraweeh" onclick="setReciteMode('taraweeh')">🌙 Taraweeh</button>
     </div>
     <span class="s-hint" id="reciteModeHint" style="display:block;margin:0 0 8px;font-size:11px;line-height:1.45">Translate follows Quran recitation and shows each verse in your selected language.</span>
-    <button id="paceModeBtn" class="mode-btn" onclick="cyclePaceMode()" title="Tap to cycle: Follow mode → Fast recitor → Slow recitor (Listen and Taraweeh)">👣 Follow mode</button>
+    <div class="reading-tools" style="flex-wrap:wrap"><button type="button" class="nav-arrow-btn" id="holdVerseBtn" onclick="toggleVerseHold()" disabled aria-pressed="false">Hold verse</button>
+    <button id="paceModeBtn" class="mode-btn" onclick="cyclePaceMode()" title="Tap to cycle: Follow mode → Fast recitor → Slow recitor (Listen and Taraweeh)">👣 Follow mode</button></div><span id="holdVerseHint" class="s-hint" aria-live="polite"></span>
   </div>
 
 </div>
@@ -1412,7 +1409,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.15';
+  const APP_VERSION = 'v3.4.16';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -1560,6 +1557,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
   function _applyPaceMode() {
     _syncPaceFlags();
+    if (_paceMode === 'follow') { stopPageFlip(); stopCountdown(); }
     S.settings.paceMode = _paceMode;
     S.settings.fastMode = _fastMode;
     S.settings.slowMode = _slowMode;
@@ -1641,7 +1639,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
         ? 'Practice: lock the ayah you recite (including repeats). Stays there — no auto-forward, no multi-ayah wait.'
         : _reciteMode === 'taraweeh'
           ? 'Taraweeh: follow the imam. Count each new Al-Fatihah; use +/− to correct.'
-          : 'Translate: lock the recitation, then follow it verse by verse in your selected language.';
+          : 'Translate: follow confirmed recitation across the Quran. Practice stays within your chosen surah.';
     }
   }
 
@@ -3162,8 +3160,8 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       { containerID: 2, containerName: 'rak',
         xPosition: G2_RAK_X, yPosition: 0, width: G2_RAK_W, height: G2_HDR_H,
         isEventCapture: 0,
-        borderWidth: G2_BORDER, borderColor: 5, borderRadius: 0, paddingLength: G2_PAD,
-        content: rakatHdr() },
+        borderWidth: G2_BORDER, borderColor: 5, borderRadius: 0, paddingLength: 6,
+        content: centerPx(rakatHdr(), G2_RAK_W - 14) },
       { containerID: 4, containerName: 'clk',
         xPosition: G2_CLK_X, yPosition: 0, width: G2_CLK_W, height: G2_HDR_H,
         isEventCapture: 0,
@@ -3409,7 +3407,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     if (rak !== _lastRakHdr) {
       _lastRakHdr = rak;
       queueBridgeCall('glassesRakat', function () {
-        return S.bridge.textContainerUpgrade({ containerID: 2, containerName: 'rak', content: rak });
+        return S.bridge.textContainerUpgrade({ containerID: 2, containerName: 'rak', content: centerPx(rak, G2_RAK_W - 14) });
       });
     }
     if (clk !== _lastClkHdr) {
@@ -4424,21 +4422,15 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
         if (msg.state.mode === 'LOCKED') {
           var ayahChanged = sessionStart || msg.state.translationGlasses !== prev.translationGlasses || msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
-          if (!_practiceMode) {
+          if (!_practiceMode && _paceMode !== 'follow') {
             if (ayahChanged) {
               // Force full rebuild so glasses reliably receive the new verse
               // (textContainerUpgrade can fail to push over BLE in some cases)
               S.displayRebuilt = false;
               var wc = (msg.state.arabic || '').split(/\s+/).length || 4;
               var rawMs = msg.state.timerMs || Math.max(3000, wc * 700);
-              // With Groq (fast transcription), the next ayah lock arrives sooner than
-              // the display timer would expire — shave more aggressively so the visual
-              // countdown doesn't lag behind real events. The next state update will
-              // still preempt the timer immediately when an ayah change arrives.
-              var usingGroq = S.settings && S.settings.transcriptionProvider === 'groq';
-              var shave = usingGroq ? 1200 : 500;
-              var floor = usingGroq ? 900 : 1500;
-              var estMs = Math.max(floor, rawMs - shave);
+              // Page timing follows the backend pace without a provider offset.
+              var estMs = rawMs;
               startPageFlip(gDisplay, estMs);
             } else if (msg.state.timerMs && !_pageTimer) {
               // Refresh countdown when we have timerMs — backend sends every 1s so
