@@ -931,7 +931,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.14</span>
+      <span class="version" id="versionEl">v3.4.15</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1292,15 +1292,15 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Madd, zabar, zer and the other marks on the verse text — and on the live hearing preview for recognized words.</span>
     </div>
     <div class="s-row g2-only">
-      <span class="s-label">Glasses content</span>
-      <div class="toggle-group" role="group">
+      <label class="s-label" for="settingGlassesLayout">Glasses content</label><select id="settingGlassesLayout" onchange="setGlassesLayout(this.value)"><option value="arabic">Arabic only</option><option value="translation">Translation only</option><option value="pronunciation">Transliteration only (Latin letters)</option><option value="arabic-translation">Arabic above translation</option><option value="translation-pronunciation">Translation + transliteration</option></select>
+      <div class="toggle-group" style="display:none">
         <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Translation + pronunciation</button>
         <button type="button" class="toggle-btn" id="btnBottomTranslationOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
       </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Your selected translation, with optional Arabic pronunciation in Latin letters underneath. Long verses continue on additional pages.</span>
+      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Choose what appears on glasses. Transliteration is Arabic pronunciation written in Latin letters. Long verses continue on additional pages.</span>
       <label class="reading-tools"><input type="checkbox" id="settingDimSecondary" onchange="setDimSecondary(this.checked)" /> Dim secondary text on glasses</label>
-      <label class="reading-tools"><input type="checkbox" id="settingArabicImage" onchange="setArabicImage(this.checked)" /> Arabic verse image (experimental)</label>
-      <span class="s-hint">Image mode shows the Arabic verse instead of translation on glasses. Translation stays on the phone. Physical-glasses readability is not yet verified.</span>
+      <label class="reading-tools" style="display:none"><input type="checkbox" id="settingArabicImage" onchange="setArabicImage(this.checked)" /> Arabic verse image (experimental)</label>
+      <span class="s-hint">Arabic uses shaped text images. Translation underneath uses the glasses font, with English fallback for unsupported languages. Physical-glasses readability is not yet verified.</span>
       <div id="previewLanguages" class="device-language"></div>
       <canvas id="glassesPreview" class="glasses-preview" width="576" height="288" aria-label="Glasses layout preview"></canvas>
       <div id="previewCaption" class="preview-caption" role="status">Layout preview</div>
@@ -1412,7 +1412,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.14';
+  const APP_VERSION = 'v3.4.15';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -3442,11 +3442,11 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   // when user scrolls to next page, transliteration appears (on last page if it fits, else its own page).
   function buildPages(translation, transliteration, reserveLines) {
     var maxLines = G2_BODY_LINES - (reserveLines || 0);
-    var transLines = wrapText(translation || '', G2_BODY_PX);
+    var transLines = S.settings.glassesBottom === 'pronunciation-only' ? [] : wrapText(translation || '', G2_BODY_PX);
     var bottomMode = (S.settings && S.settings.glassesBottom) || 'transliteration';
-    var effectiveTransliteration = bottomMode === 'transliteration' ? transliteration : '';
+    var effectiveTransliteration = (bottomMode === 'transliteration' || bottomMode === 'pronunciation-only') ? transliteration : '';
     var tlitLines  = effectiveTransliteration ? wrapText(effectiveTransliteration, G2_BODY_PX) : [];
-    var tlitBlock  = tlitLines.length > 0 ? [g2Divider()].concat(tlitLines) : [];
+    var tlitBlock  = tlitLines.length > 0 ? (bottomMode === 'pronunciation-only' ? tlitLines : [g2Divider()].concat(tlitLines)) : [];
     var tlitCost   = tlitBlock.length;
 
     if (transLines.length + tlitCost <= maxLines) {
@@ -3460,8 +3460,8 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     }
 
     if (tlitCost > 0) {
-      var last = pages[pages.length - 1].split('\n');
-      if (last.length + tlitCost <= maxLines) {
+      var last = pages.length ? pages[pages.length - 1].split('\n') : [];
+      if (pages.length && last.length + tlitCost <= maxLines) {
         pages[pages.length - 1] += '\n' + tlitBlock.join('\n');
       } else {
         // Keep every pronunciation line within the glasses page height.
@@ -3546,7 +3546,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   function buildGlassesText(state) {
     state = applyLocalTranslation(state);
     if (S.settings && S.settings.arabicImage && state && state.arabic) {
-      var imageCount = Math.max(1, Math.ceil(arabicImageLines(state.arabic).length / 5));
+      var imageCount = arabicLayoutPages(state).count;
       return { hdr: glassesRef(state) + ' Arabic', pages: Array(imageCount).fill('Arabic image') };
     }
     if (_glassesPreamble && state.mode === 'SEARCHING' && !state.isCandidate && !state.userSearching) {
@@ -3638,7 +3638,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     frame.secondaryOnly = !!(display.pages.pronunciationOnly && display.pages.pronunciationOnly.indexOf(idx) >= 0);
     var imageState = _readingHeld ? _heldState : S._lastGlassesState;
     if (S.settings && S.settings.arabicImage && imageState && imageState.arabic && S.isRecording) {
-      frame.arabicImage = imageState.arabic;
+      frame.arabicImage = imageState.arabic; var translatedImageState = applyLocalTranslation(imageState); frame.imageTranslation = translatedImageState.translationGlasses ?? translatedImageState.translation;
       frame.imagePage = pageIdx;
       frame.hdr = (_readingHeld ? 'Held ' : '') + glassesRef(imageState) + ' Arabic';
     }
@@ -5495,6 +5495,16 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   window.setDimSecondary = function (enabled) {
     S.settings.dimSecondary = !!enabled; saveSettings(); refreshGlassesPreferences();
   };
+  function glassesLayout() {
+    if(S.settings.arabicImage) return S.settings.glassesLayout==='arabic-translation'?'arabic-translation':'arabic';
+    return S.settings.glassesBottom==='pronunciation-only'?'pronunciation':S.settings.glassesBottom==='translation-only'?'translation':'translation-pronunciation';
+  }
+  window.setGlassesLayout = function(layout) {
+    if(!['arabic','translation','pronunciation','arabic-translation','translation-pronunciation'].includes(layout)) layout='translation';
+    S.settings.glassesLayout=layout;S.settings.glassesBottom=layout==='pronunciation'?'pronunciation-only':layout==='translation-pronunciation'?'transliteration':'translation-only';
+    document.getElementById('settingGlassesLayout').value=layout;
+    setArabicImage(layout==='arabic'||layout==='arabic-translation');
+  };
   window.setArabicImage = function (enabled) {
     S.settings.arabicImage = !!enabled; saveSettings();
     stopPageFlip(); stopCountdown();
@@ -5510,7 +5520,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   function languageNames() {
     var lang = S.settings && S.settings.lang || '';
     var phone = translationLabel(lang).replace(' (built-in)', '');
-    var glasses = S.settings && S.settings.arabicImage ? 'Arabic verse image (experimental)'
+    var glasses = S.settings && S.settings.arabicImage ? (S.settings.glassesLayout==='arabic-translation'?'Arabic image + '+(GLASSES_ENGLISH_LANGS[lang]?'English (font fallback)':lang==='uzc'?'Uzbek (Latin)':phone)+' text':'Arabic (image)')
       : GLASSES_ENGLISH_LANGS[lang] ? 'English (font fallback)'
       : lang === 'uzc' ? 'Uzbek (Latin)' : phone;
     return 'Phone: ' + phone + ' · Glasses: ' + glasses;
@@ -5601,34 +5611,47 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     return lines;
   }
 
-  async function arabicImageCanvas(arabic, page) {
+  function arabicLayoutPages(state) {
+    var combined = S.settings.glassesLayout === 'arabic-translation';
+    var translation = combined ? wrapText(glassesTranslationText(state.translationGlasses ?? state.translation), G2_BODY_PX) : [];
+    var arabic = arabicImageLines(state.arabic);
+    return {arabic:arabic,translation:translation,combined:combined,count:Math.max(1,Math.ceil(arabic.length/(combined?2:5)),Math.ceil(translation.length/4))};
+  }
+  async function arabicImageCanvas(arabic, page, translation) {
     await ensureArabicFont();
     var canvas = document.createElement('canvas'); canvas.width = 576; canvas.height = 224;
     var ctx = canvas.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 576, 224);
     ctx.fillStyle = '#fff'; ctx.font = '28px QuranBitmap'; ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
-    var lines = arabicImageLines(arabic);
-    var count = Math.max(1, Math.ceil(lines.length / 5));
+    var layout = arabicLayoutPages({arabic:arabic,translation:translation}); var lines = layout.arabic; var count = layout.count;
     var index = Math.min(Math.max(0, page || 0), count - 1);
-    lines.slice(index * 5, index * 5 + 5).forEach(function (line, row) { ctx.fillText(line, 560, 38 + row * 40); });
+    var perPage = layout.combined ? 2 : 5;
+    lines.slice(index * perPage, index * perPage + perPage).forEach(function(line,row){ctx.fillText(line,560,38+row*40);});
     return { canvas: canvas, count: count, index: index };
   }
 
   async function writeArabicImage(display) {
     trace('g2.image', 'page=' + (display.imagePage || 0));
     var session = _glassesSessionId;
-    var rendered = await arabicImageCanvas(display.arabicImage, display.imagePage);
+    var rendered = await arabicImageCanvas(display.arabicImage, display.imagePage, display.imageTranslation);
     // A stopped/new session must not receive an image that was waiting for its font.
     if (!S.isRecording || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
     var texts = _g2TextContainers(display.hdr + (rendered.count > 1 ? ' ' + (rendered.index + 1) + '/' + rendered.count : ''), ' ');
+    var layout = arabicLayoutPages({arabic:display.arabicImage,translation:display.imageTranslation});
+    if (layout.combined) {
+      texts[3].yPosition = G2_BODY_Y + 112; texts[3].height = G2_BODY_H - 112;
+      texts[3].content = layout.translation.slice(rendered.index * 4, rendered.index * 4 + 4).join('\n') || ' ';
+      texts[3].textColor = S.settings.dimSecondary ? 2 : 4;
+    }
     texts.forEach(function (text, index) { text.zOrderIndex = index; });
-    var images = [0,1,2,3].map(function (tile) {
+    var tiles = layout.combined ? [0,1] : [0,1,2,3];
+    var images = tiles.map(function (tile) {
       return { containerID: 10 + tile, containerName: 'arabic' + tile, xPosition: tile % 2 * 288,
         yPosition: G2_BODY_Y + Math.floor(tile / 2) * 112, width: 288, height: 112, zOrderIndex: 10 + tile };
     });
     var ok = await S.bridge.rebuildPageContainer({ containerTotalNum: texts.length + images.length, textObject: texts, imageObject: images, menuObject: glassesMenu() });
     if (ok === false) throw new Error('Glasses rejected Arabic image layout');
     _imagePageActive = true; S.displayRebuilt = true;
-    for (var tile = 0; tile < 4; tile++) {
+    for (var tile = 0; tile < tiles.length; tile++) {
       if (!S.isRecording || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
       var piece = document.createElement('canvas'); piece.width = 288; piece.height = 112;
       piece.getContext('2d').drawImage(rendered.canvas, tile % 2 * 288, Math.floor(tile / 2) * 112, 288, 112, 0, 0, 288, 112);
@@ -5674,14 +5697,21 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     ctx.fillText(glassesRef(state), 6, 8); ctx.fillText(rakatHdr(), 366, 8);
     try {
       if (S.settings.arabicImage) {
-        var image = await arabicImageCanvas(state.arabic, 0);
+        var image = await arabicImageCanvas(state.arabic, 0, (applyLocalTranslation(state).translationGlasses ?? applyLocalTranslation(state).translation));
         if (revision !== _previewRevision) return;
         ctx.drawImage(image.canvas, 0, G2_BODY_Y);
         // Convert white raster to the display's green without changing its black background.
         var pixels = ctx.getImageData(0,G2_BODY_Y,576,224);
         for (var i=0;i<pixels.data.length;i+=4) { pixels.data[i]=0; pixels.data[i+2]=0; }
         ctx.putImageData(pixels,0,G2_BODY_Y);
-        caption.textContent = 'Arabic image preview · ' + glassesRef(state) + ' · ' + image.count + ' page(s). Experimental; hardware verification pending.';
+        if (S.settings.glassesLayout === 'arabic-translation') {
+          var local = applyLocalTranslation(state);
+          var layout = arabicLayoutPages(local);
+          ctx.font = '20px Arial'; ctx.textAlign = 'left'; ctx.direction = 'ltr'; ctx.textBaseline = 'top';
+          ctx.fillStyle = S.settings.dimSecondary ? '#168b16' : '#32ff32';
+          layout.translation.slice(0,4).forEach(function(line,row){ctx.fillText(line,4,G2_BODY_Y+112+G2_PAD+row*G2_LINE_H);});
+        }
+        caption.textContent = (S.settings.glassesLayout === 'arabic-translation' ? 'Arabic + translation preview · ' : 'Arabic preview · ') + glassesRef(state) + ' · ' + image.count + ' page(s). Experimental; hardware verification pending.';
       } else {
         var display = buildGlassesText(state); var lines = display.pages[0].split('\n'); var secondary = false;
         lines.forEach(function (line,index) {
@@ -5719,7 +5749,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 
   window.setGlassesBottom = function (mode) {
-    var valid = { transliteration: 1, 'translation-only': 1 };
+    var valid = { transliteration: 1, 'translation-only': 1, 'pronunciation-only': 1 };
     if (!valid[mode]) mode = 'transliteration';
     S.settings.glassesBottom = mode;
     saveSettings();
@@ -5864,7 +5894,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     syncDeviceLanguages();
     syncFavoriteButton();
     document.getElementById('settingDimSecondary').checked = !!S.settings.dimSecondary;
-    document.getElementById('settingArabicImage').checked = !!S.settings.arabicImage;
+    document.getElementById('settingArabicImage').checked = !!S.settings.arabicImage; document.getElementById('settingGlassesLayout').value=glassesLayout();
     updateGlassesPreview();
     document.getElementById('settingSurah').value = S.settings.defaultSurah || '0';
     updateSurahScope();
@@ -5881,7 +5911,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     setProvider(sanitizeProvider(S.settings.transcriptionProvider), false);
     setKeyMode('byok', false);
     setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
-    setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'translation-only' : 'transliteration');
+    setGlassesBottom(S.settings.glassesBottom || 'transliteration');
     var tOn = S.settings.showTashkeel !== false;
     var bTOn = document.getElementById('btnTashkeelOn');
     var bTOff = document.getElementById('btnTashkeelOff');
@@ -5959,8 +5989,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       S.settings.transcriptionModel = normalizeModel(S.settings.transcriptionProvider, modelEl.value);
       rememberModel(S.settings.transcriptionProvider, S.settings.transcriptionModel);
     }
-    S.settings.glassesBottom = document.getElementById('btnBottomTranslit').classList.contains('active')
-      ? 'transliteration' : 'translation-only';
+    setGlassesLayout(document.getElementById('settingGlassesLayout').value);
     S.settings.forcePhoneMic = _backendStatusInfo.mobileOnlyMode
       ? true
       : document.getElementById('btnPhoneMic').classList.contains('active');

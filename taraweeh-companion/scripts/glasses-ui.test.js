@@ -48,7 +48,7 @@ function harness() {
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       clearGlassesPreamble, startSearchingDots, PREAMBLE_GLASSES,
-      buildPages, G2_BODY_LINES, startPageFlip, _buildTraceReport, stopListening, rakatHdr, _applyPrayerSnapshot,
+      arabicLayoutPages, arabicImageCanvas, buildPages, G2_BODY_LINES, startPageFlip, _buildTraceReport, stopListening, rakatHdr, _applyPrayerSnapshot,
       setMode: function (mode) {
         _reciteMode = mode; _practiceMode = mode === 'practice'; _taraweehMode = mode === 'taraweeh';
       },
@@ -428,4 +428,42 @@ test('failed Arabic transfer restores a readable translation instead of a blank 
   const page=h.writes.filter(w=>w.page).at(-1).page;
   assert.equal(page.imageObject,undefined);
   assert.equal(page.textObject.find(c=>c.containerName==='body').content,'Readable fallback');
+});
+
+
+test('pronunciation-only pages exclude translation and retain every pronunciation word', () => {
+  const h=harness();h.ui.S.settings.glassesBottom='pronunciation-only';
+  const pages=h.ui.buildPages('Translation must be hidden',Array(160).fill('pronunciation').join(' '));
+  assert.doesNotMatch(pages.join(' '),/Translation/);
+  assert.equal((pages.join(' ').match(/pronunciation/g)||[]).length,160);
+  assert.ok(pages.every(p=>p.split('\n').length<=h.ui.G2_BODY_LINES));
+});
+
+test('Arabic above translation paginates both texts without losing words and draws translation below Arabic', async () => {
+  const h=harness(),draws=[];
+  const ctx={measureText:text=>({width:text.length*12}),fillRect(){},fillText(text,x,y){draws.push({text,x,y});}};
+  h.context.document.createElement=()=>({getContext:()=>ctx});h.context.document.fonts={load:async()=>[{}]};
+  h.ui.S.settings.glassesLayout='arabic-translation';
+  const state={arabic:Array(100).fill('Arabic').join(' '),translation:Array(180).fill('Uzbek').join(' ')};
+  const layout=h.ui.arabicLayoutPages(state);assert.ok(layout.count>1);
+  for(let page=0;page<layout.count;page++) await h.ui.arabicImageCanvas(state.arabic,page,state.translation);
+  assert.equal(draws.filter(d=>d.y<88).map(d=>d.text).join(' '),state.arabic);
+  assert.equal(layout.translation.join(' '),state.translation);
+  assert.ok(draws.every(d=>d.y<88), 'Only Arabic is rasterized');
+  assert.ok(draws.every(d=>d.y<=182));
+});
+
+
+test('combined layout sends Arabic tiles above a native translation container', async () => {
+ const h=harness();const ctx={measureText:text=>({width:text.length*12}),fillRect(){},fillText(){},drawImage(){},getImageData:()=>({data:new Uint8Array(288*112*4)})};
+ h.context.document.createElement=()=>({getContext:()=>ctx});h.context.document.fonts={load:async()=>[{}]};
+ h.ui.S.settings.arabicImage=true;h.ui.S.settings.glassesLayout='arabic-translation';
+ h.ui.S.bridge.updateImageRawData=async data=>{h.writes.push({type:'image',data});return 'success';};
+ await h.ui._writeGlasses({hdr:'An-Nas',arabicImage:'Arabic verse',imageTranslation:'Native Uzbek translation',imagePage:0});
+ const page=h.writes.find(w=>w.page).page;
+ assert.equal(validateEvenHubPageContainer(page).valid,true);
+ assert.equal(page.imageObject.length,2);
+ const translation=page.textObject.find(c=>c.containerName==='body');
+ assert.equal(translation.content,'Native Uzbek translation');assert.equal(translation.yPosition,152);
+ assert.ok(page.imageObject.every(c=>c.yPosition+c.height<=translation.yPosition));
 });
