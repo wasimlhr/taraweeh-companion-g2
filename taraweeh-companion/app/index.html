@@ -985,7 +985,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.21</span>
+      <span class="version" id="versionEl">v3.4.22</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1116,18 +1116,13 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     <span id="holdVerseHint" class="s-hint" aria-live="polite"></span>
   </div>
 
-  <div id="deviceLanguageSummary" class="device-language" aria-live="polite"></div>
-
-  <div id="confRow" style="display:none">
-    <div id="confTrack"><div id="confFill"></div></div>
-    <span id="confPct">0%</span>
-  </div>
-
   <div id="waveRow"></div>
 
   <button id="recordBtn" disabled>Detecting glasses...</button>
   <button id="wakeServerMainBtn" class="back-btn btn-primary btn-arrow" style="display:none;margin-top:8px;font-size:13px">Wake server</button>
 
+  <details id="readingOptions" style="margin-top:12px">
+    <summary style="cursor:pointer;padding:10px 0;font-size:13px">Reading options</summary>
   <!-- Reading layout shortcuts -->
   <div class="reading-presets" style="margin-top:12px">
     <div class="mv-toggle-group" role="group">
@@ -1137,18 +1132,20 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     </div>
   </div>
 
-  <!-- Translation language (phone app) — the reason the app exists, so it
-       lives on the main screen rather than behind Settings. -->
-  <div class="standalone-only" style="margin-top:12px">
-    <select id="mainLang" aria-label="Translation language" onchange="setMainLang(this.value)"></select>
-  </div>
-
   <!-- Transcription provider switch (main screen) -->
   <div style="margin-top:8px">
     <div class="mv-toggle-group" role="group" aria-label="Transcription provider" style="flex-wrap:wrap">
       <button type="button" class="mv-toggle-btn active" id="btnProviderGroqMain" onclick="setProvider('groq')">Groq</button>
       <button type="button" class="mv-toggle-btn" id="btnProviderOpenAIMain" onclick="setProvider('openai')">OpenAI</button>
     </div>
+  </div>
+
+  </details>
+
+  <!-- Translation language (phone app) — the reason the app exists, so it
+       lives on the main screen rather than behind Settings. -->
+  <div class="standalone-only" style="margin-top:12px">
+    <select id="mainLang" aria-label="Translation language" onchange="setMainLang(this.value)"></select>
   </div>
 
   <div class="btn-group" style="margin-top:8px">
@@ -1494,7 +1491,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.21';
+  const APP_VERSION = 'v3.4.22';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -4046,7 +4043,6 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
     var searching = document.getElementById('searchingContent');
     var locked = document.getElementById('lockedContent');
-    var confRow = document.getElementById('confRow');
 
     // Show verse panel when LOCKED, RESUMING, or when we have a strong candidate (>=40%), or user searching
     var showVerse = state.mode === 'LOCKED' || state.mode === 'RESUMING'
@@ -4098,14 +4094,6 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       var verseCard = locked.querySelector ? locked.querySelector('.verse-card') : null;
       if (verseCard) verseCard.style.opacity = (isCandidate || isUserSearching) && !_practiceMode ? '0.75' : '1';
 
-      // confidence from backend is 0-1 float
-      var conf = isCandidate
-        ? (state.candidateScore || 0)
-        : Math.round((state.confidence || 0) * 100);
-      document.getElementById('confFill').style.width = conf + '%';
-      document.getElementById('confPct').textContent = conf + '%';
-      confRow.style.display = (state.mode === 'LOCKED' || isCandidate || isUserSearching) ? 'flex' : 'none';
-
       var posText = isBasmalaPos(state)
         ? 'Bismillah'
         : (state.surahName || '') + ' \u2022 ' + (state.ayah || '');
@@ -4123,7 +4111,6 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       var navRow = document.getElementById('verseNavRow');
       if (navRow) navRow.style.display = (state.mode === 'SEARCHING' && S.isRecording) ? 'flex' : 'none';
       searching.style.display = 'flex';
-      confRow.style.display = 'none';
 
       // Show match panel when recording, idle state when not
       var matchIdle  = document.getElementById('matchIdle');
