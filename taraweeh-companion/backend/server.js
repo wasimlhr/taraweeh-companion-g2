@@ -93,7 +93,7 @@ app.get('/api/study/:surah/:ayah/:kind', async (req,res) => {
       case 'hadith': return res.json(await quranStudy.hadith(key));
       case 'hadith-text': {
         const number=Number(req.query.number);
-        if(!Number.isInteger(number)||number<1)return res.status(400).json({error:'Invalid Hadith number'});
+        if(!Number.isFinite(number)||number<=0)return res.status(400).json({error:'Invalid Hadith number'});
         return res.json(await quranStudy.hadithText(String(req.query.edition||''),number));
       }
       default: return res.status(404).end();
