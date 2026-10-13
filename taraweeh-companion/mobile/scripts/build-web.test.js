@@ -46,3 +46,11 @@ test('the banner stays out of Taraweeh mode and never covers the page', () => {
   assert.match(src, /var\(--ad-h, 0px\)/);
   assert.doesNotMatch(src, /showInterstitial|showRewardVideoAd|showAppOpen/);
 });
+
+test('the phone shell docks Start, swipes ayahs and treats a missing key as setup', () => {
+  const src = readFileSync(new URL('../../app/index.html', import.meta.url), 'utf8');
+  assert.match(src, /setupMobileShell\(\);\s*setupAds\(\);/);
+  assert.match(src, /if \(next\) manualNextAyah\(\); else manualPrevAyah\(\);/);
+  assert.match(src, /<div id="qvtDock">/);
+  assert.match(src, /if \(IS_STANDALONE && !hasKey\)/);
+});
