@@ -2,7 +2,7 @@ import {LANGUAGE_CODES, PACK_CODES} from './languageCatalog.js';
 /**
  * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.22 — on-device language packs + DIAG_TOKEN usage analytics
+ * v3.4.23 — on-device language packs + DIAG_TOKEN usage analytics
  *   Translate mode: general Quran follow-along translator; Taraweeh adds rak'ah tracking
  */
 import 'dotenv/config';

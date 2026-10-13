@@ -985,7 +985,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.22</span>
+      <span class="version" id="versionEl">v3.4.23</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1491,7 +1491,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.22';
+  const APP_VERSION = 'v3.4.23';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -3761,7 +3761,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     var frame = { hdr: shownHdr, body: display.pages[idx] };
     frame.secondaryOnly = !!(display.pages.pronunciationOnly && display.pages.pronunciationOnly.indexOf(idx) >= 0);
     var imageState = _readingHeld ? _heldState : S._lastGlassesState;
-    if (S.settings && S.settings.arabicImage && imageState && imageState.arabic && S.isRecording) {
+    if (S.settings && S.settings.arabicImage && imageState && imageState.arabic && (S.isRecording || _manualBrowse)) {
       frame.arabicImage = quranArabicDisplay(imageState); var translatedImageState = applyLocalTranslation(imageState); frame.imageTranslation = S.settings.glassesLayout === 'arabic-pronunciation' ? imageState.transliteration : translatedImageState.translationGlasses ?? translatedImageState.translation;
       frame.imagePage = pageIdx;
       frame.hdr = (_readingHeld ? 'Held ' : '') + glassesRef(imageState) + ' Arabic';
@@ -3770,7 +3770,9 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     return hdr;
   }
 
+  var _manualBrowse = false;
   function mirrorManualNavOnGlasses() {
+    _manualBrowse = true;
     if (!S.isG2) return;
     var st = S._lastGlassesState || { mode: 'SEARCHING' };
     var d = buildGlassesText(st);
@@ -4601,7 +4603,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
       updatePhoneUI(msg.state, msg.whisperText);
       // The backend initializes in SEARCHING mode even before capture starts.
       // Keep those idle state packets from overwriting the glasses welcome UI.
-      if (S.isG2 && S.isRecording) {
+      if (S.isG2 && (S.isRecording || (_manualBrowse && msg.state.arabic))) {
         var prev = S._lastGlassesState || {};
         var sessionStart = prev._glassesSession !== _glassesSessionId;
         S._lastGlassesState = Object.assign({}, msg.state, { _glassesSession: _glassesSessionId });
@@ -5050,6 +5052,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {
+    _manualBrowse = false;
     resetVerseHold();
     clearGlassesPreamble();
     _lastGlassesPreambleKind = '';
@@ -5133,6 +5136,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
   }
 
   function stopListening() {
+    _manualBrowse = false;
     resetVerseHold();
     _glassesSessionId++;
     clearGlassesPreamble();
@@ -5849,7 +5853,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     var session = _glassesSessionId;
     var rendered = await arabicImageCanvas(display.arabicImage, display.imagePage, display.imageTranslation);
     // A stopped/new session must not receive an image that was waiting for its font.
-    if (!S.isRecording || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
+    if ((!S.isRecording && !_manualBrowse) || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
     var texts = _g2TextContainers(display.hdr + (rendered.count > 1 ? ' ' + (rendered.index + 1) + '/' + rendered.count : ''), ' ');
     var layout = arabicLayoutPages({arabic:display.arabicImage,translation:display.imageTranslation});
     if (layout.combined) {
@@ -5867,7 +5871,7 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
     if (ok === false) throw new Error('Glasses rejected Arabic image layout');
     _imagePageActive = true; S.displayRebuilt = true;
     for (var tile = 0; tile < tiles.length; tile++) {
-      if (!S.isRecording || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
+      if ((!S.isRecording && !_manualBrowse) || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
       var piece = document.createElement('canvas'); piece.width = 288; piece.height = 112;
       piece.getContext('2d').drawImage(rendered.canvas, tile % 2 * 288, Math.floor(tile / 2) * 112, 288, 112, 0, 0, 288, 112);
       var rgba = piece.getContext('2d').getImageData(0, 0, 288, 112).data;
