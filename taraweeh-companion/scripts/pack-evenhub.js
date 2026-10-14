@@ -19,6 +19,7 @@ function run(cmd, args) {
 }
 
 run('node', ['scripts/build-evenhub-dist.js']);
+run('node', ['scripts/check-bundle-network.js']);
 
 const packArgs = [
   '@evenrealities/evenhub-cli@0.1.14',

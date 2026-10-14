@@ -4,7 +4,7 @@ import {LANGUAGE_CATALOG} from '../backend/languageCatalog.js';
 import {compactLang} from './build-translation-packs.js';
 const path=new URL('../app/index.html',import.meta.url);
 const before=readFileSync(path,'utf8').replace(/\r\n/g,'\n');
-const metadata=Object.fromEntries(LANGUAGE_CATALOG.map(e=>[e.code,{label:e.label,glasses:e.glasses,source:e.source,author:e.author,version:e.version,snapshot:e.snapshot,licenseUrl:e.license?.url}]));
+const metadata=Object.fromEntries(LANGUAGE_CATALOG.map(e=>[e.code,{label:e.label,glasses:e.glasses,source:e.source,author:e.author,version:e.version}]));
 const packKeys=Object.fromEntries(LANGUAGE_CATALOG.map(e=>[e.code,e.pack||e.code]));
 const sizes=Object.fromEntries([...new Set(Object.values(packKeys))].map(code=>[code,Math.ceil(gzipSync(JSON.stringify(compactLang(code))).length/1024)]));
 const json=data=>JSON.stringify(data).replaceAll('<','\\u003c');

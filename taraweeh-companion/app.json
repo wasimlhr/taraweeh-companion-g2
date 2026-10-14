@@ -2,14 +2,14 @@
   "package_id": "com.taraweehcompanion.g2",
   "edition": "202601",
   "name": "Quran Translator",
-  "version": "3.4.23",
+  "version": "3.4.24",
   "min_app_version": "2.2.10",
   "min_sdk_version": "0.0.15",
   "entrypoint": "index.html",
   "permissions": [
     {
       "name": "network",
-      "desc": "Loads SDK assets and connects to backend transcription endpoints.",
+      "desc": "Connects to our backend for transcription, translation packs and study content; loads SDK/font assets and opens provider and source-credit links.",
       "whitelist": [
         "https://taraweeh-companion-g2-production-150e.up.railway.app",
         "wss://taraweeh-companion-g2-production-150e.up.railway.app/ws",
@@ -29,7 +29,12 @@
         "https://api.groq.com",
         "https://api.openai.com",
         "https://console.groq.com",
-        "https://platform.openai.com"
+        "https://platform.openai.com",
+        "https://quranenc.com",
+        "https://github.com",
+        "https://tafsir.net",
+        "https://creativecommons.org",
+        "https://openfontlicense.org"
       ]
     },
     {
