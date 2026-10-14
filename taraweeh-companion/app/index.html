@@ -1905,7 +1905,8 @@ html.reader-open #qvtDock { display:none !important; }
     const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;
     const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,576,288);
     const number=String(currentAyah).replace(/[0-9]/g,d=>String.fromCharCode(0x660+Number(d)));
-    _readerArtworkModule.drawReaderFrame(ctx,'سورة '+(_readerData.arabicName||_readerData.name)+' · '+number,readerFont());
+    const range=page.ayahs[0]+(page.ayahs.length>1?'–'+page.ayahs.at(-1):'');
+    _readerArtworkModule.drawReaderFrame(ctx,'سورة '+(_readerData.arabicName||_readerData.name),readerFont(),range);
     // The opening invocation is a separate heading, never part of an ayah's flow.
     const opening=packed?page.opening:currentAyah===1&&page.part===1;
     const basmala=opening?_readerData.basmala:'';
@@ -1964,7 +1965,7 @@ html.reader-open #qvtDock { display:none !important; }
       if(!_readerActive||epoch!==_readerEpoch)return;
       if(!_readerImageLayout){
       const images=Array.from({length:4},(_,i)=>({containerID:20+i,containerName:'reader'+i,xPosition:i%2*288,yPosition:Math.floor(i/2)*144,width:288,height:144,zOrderIndex:i+1}));
-      const ok=await S.bridge.rebuildPageContainer({containerTotalNum:5,textObject:[{containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:1,height:1,content:' ',isEventCapture:1,zOrderIndex:0}],imageObject:images,menuObject:glassesMenu()});
+      const ok=await S.bridge.rebuildPageContainer({containerTotalNum:5,textObject:[{containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:576,height:288,content:' ',isEventCapture:1,zOrderIndex:0}],imageObject:images,menuObject:glassesMenu()});
       if(ok===false){failure=Error('Reader layout rejected');throw failure;}
       _readerImageLayout=true;_readerLastTiles=[];
       }

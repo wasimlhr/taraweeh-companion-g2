@@ -88,5 +88,7 @@ await evaluate('document.getElementById("readerText").dispatchEvent(new WheelEve
 await new Promise(r=>setTimeout(r,1500));
 assert.notDeepEqual(await evaluate('__uiAudit.getReaderWindow().lines'),dense.lines);
 assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".reader-verse")).map(r=>Number(r.dataset.ayah))'),await evaluate('__uiAudit.getReaderWindow().ayahs'));
+await evaluate('loadReaderSurah(98,0,1)');await evaluate('__uiAudit.S.bridgeCallQueue');const beforeSwipe=await evaluate('__uiAudit.getReaderWindow().startLine');await input('down');await evaluate('__uiAudit.S.bridgeCallQueue');assert.notEqual(await evaluate('__uiAudit.getReaderWindow().startLine'),beforeSwipe,'one native swipe advances the reader');
+await evaluate('loadReaderSurah(112,0,1)');await evaluate('__uiAudit.S.bridgeCallQueue');await capture('reader-range-1-4');
 await evaluate('closeQuranReader();__uiAudit.S.bridge.rebuildPageContainer=window.__readerRebuildOriginal;__uiAudit.S.settings=window.__readerOldSettings;__uiAudit.saveSettings();document.documentElement.setAttribute("data-theme",window.__readerOldTheme||"light")');
 console.log('PASS: inherited dark theme; phone scrolling generated 0 image updates; repeat selection generated 0 image updates; selection reused the layout; 98:2 matched on both; next selected 98:3; long 2:282 stayed within its ayah');phone.close();glasses.close();
