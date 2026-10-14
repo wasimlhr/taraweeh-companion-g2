@@ -1301,7 +1301,7 @@ html.reader-open #qvtDock { display:none !important; }
       <label class="reader-check"><input id="readerShowTranslit" type="checkbox" onchange="setReaderDisplay('readerShowTranslit',this.checked)" />Transliteration</label>
     </div></details>
   </header>
-  <div class="reader-jump"><label for="readerAyah">Go to ayah</label><select id="readerAyah" onchange="jumpReaderAyah(Number(this.value))"></select></div>
+  <div class="reader-jump"><label for="readerAyah">Go to ayah</label><select id="readerAyah" onchange="jumpReaderAyah(Number(this.value))"></select><button type="button" id="readerBookmarkStar" class="reader-back" onclick="toggleReaderBookmark()" aria-label="Bookmark this page" aria-pressed="false">☆</button><button type="button" id="readerBookmarkResume" class="reader-back" onclick="resumeReaderBookmark()" hidden>Resume bookmark</button></div>
   <p id="readerAutoStatus" class="s-hint" hidden></p>
   <p id="readerStatus" class="s-hint" role="status"></p>
   <div id="readerPaper"><div id="readerSurahTitle" lang="ar" dir="rtl"></div><div id="readerText" translate="no"></div></div>
@@ -1842,6 +1842,10 @@ html.reader-open #qvtDock { display:none !important; }
   }
   window.setReaderAutoScroll=function(enabled){_readerAutoEnabled=!!enabled;document.getElementById('readerAutoScroll').checked=_readerAutoEnabled;resetReaderAutoTimer();};
   window.setReaderAutoSeconds=function(seconds){S.settings.readerAutoSeconds=[5,10,15,20,30,45,60,90,120].includes(seconds)?seconds:15;saveSettings();document.getElementById('readerAutoSeconds').value=String(S.settings.readerAutoSeconds);resetReaderAutoTimer();};
+  function readerBookmarkMatches(){const b=S.settings.readerBookmark;return !!(b&&_readerData&&b.surah===_readerData.surah&&b.page===_readerPage&&b.layout===(S.settings.readerLayout==='single'?'single':'maximum')&&b.script===(S.settings.readerScript==='madani'?'madani':'indopak'));}
+  function updateReaderBookmarkUI(){const b=S.settings.readerBookmark,selected=readerBookmarkMatches();const star=document.getElementById('readerBookmarkStar');star.textContent=selected?'★':'☆';star.setAttribute('aria-pressed',String(selected));star.setAttribute('aria-label',selected?'Remove bookmark':'Bookmark this page');const resume=document.getElementById('readerBookmarkResume');resume.hidden=!b;resume.textContent=b?'Resume '+b.surah+':'+b.ayah:'Resume bookmark';}
+  window.toggleReaderBookmark=function(){if(!_readerData||_readerLoading)return;if(readerBookmarkMatches())delete S.settings.readerBookmark;else S.settings.readerBookmark={surah:_readerData.surah,ayah:_readerPages[_readerPage].ayahs[0],page:_readerPage,layout:S.settings.readerLayout==='single'?'single':'maximum',script:S.settings.readerScript==='madani'?'madani':'indopak'};saveSettings();updateReaderBookmarkUI();_readerImageLayout=false;renderReaderPage();log(S.settings.readerBookmark?'Reading bookmark saved':'Reading bookmark removed','ok');};
+  window.resumeReaderBookmark=async function(){const b=S.settings.readerBookmark;if(!b||!Number.isInteger(b.surah)||b.surah<1||b.surah>114)return;setReaderAutoScroll(false);S.settings.readerSurah=b.surah;S.settings.readerAyah=b.ayah;S.settings.readerLayout=b.layout==='single'?'single':'maximum';S.settings.readerScript=b.script==='madani'?'madani':'indopak';saveSettings();if(!_readerActive)await openQuranReader();document.getElementById('readerScript').value=S.settings.readerScript;applyReaderDisplay();await loadReaderSurah(b.surah,Number(b.page)||0);};
   window.openQuranReader=async function () {
     if(S.isRecording)stopListening();
     closeMoreSheet();if(getComputedStyle(document.getElementById('settingsView')).display!=='none')hideSettings();_manualBrowse=false;resetVerseHold();
@@ -1917,6 +1921,7 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('readerAyah').value=String(currentAyah);
     document.getElementById('readerPrev').disabled=_readerData.surah===1&&_readerPage===0;
     document.getElementById('readerNext').disabled=_readerData.surah===114&&_readerPage===_readerPages.length-1;
+    updateReaderBookmarkUI();
     S.settings.readerSurah=_readerData.surah;S.settings.readerPage=_readerPage;S.settings.readerAyah=currentAyah;saveSettings();
     if(!S.isG2||!S.bridge){resetReaderAutoTimer();return;}
     const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;
@@ -2011,7 +2016,7 @@ html.reader-open #qvtDock { display:none !important; }
     queueBridgeCall('readerSurahPicker',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'surahPicker',xPosition:8,yPosition:4,width:560,height:280,content:lines.join('\n'),isEventCapture:1,paddingLength:2}],menuObject:glassesMenu()}));
   }
   function readerEvent(event){
-    if(event.menuItemClickEvent){const id=event.menuItemClickEvent.itemID;if(id===10||id===11||id===12){closeQuranReader();setReciteMode(id===10?'listen':id===11?'practice':'taraweeh');}else if(id===14)setReaderAutoScroll(!_readerAutoEnabled);else if(id===13)pickReaderSurah();else if(id===6)renderReaderPage();else if(id===7)readerStep(1);else if(id===8)readerStep(-1);else if(id===9)closeQuranReader();return;}
+    if(event.menuItemClickEvent){const id=event.menuItemClickEvent.itemID;if(id===15)toggleReaderBookmark();else if(id===16)resumeReaderBookmark();else if(id===10||id===11||id===12){closeQuranReader();setReciteMode(id===10?'listen':id===11?'practice':'taraweeh');}else if(id===14)setReaderAutoScroll(!_readerAutoEnabled);else if(id===13)pickReaderSurah();else if(id===6)renderReaderPage();else if(id===7)readerStep(1);else if(id===8)readerStep(-1);else if(id===9)closeQuranReader();return;}
     const e=event.textEvent||event.listEvent||event.sysEvent;if(!e)return;const t=e.eventType;
     if(event.sysEvent&&(t===6||t===7)){stopReaderAutoTimer();_readerAutoEnabled=false;_readerActive=false;_readerEpoch++;if(_readerAbort)_readerAbort.abort();_cleanupBridgeResources();return;}
     if(_readerPicking){if(t===1||t===2){_readerPick=Math.max(1,Math.min(114,_readerPick+(t===1?-1:1)));renderReaderPicker();}else if(t===0)loadReaderSurah(_readerPick);else if(t===3)renderReaderPage();return;}
@@ -3658,7 +3663,7 @@ html.reader-open #qvtDock { display:none !important; }
 
   // Menu actions are separate from temple taps and survive every page rebuild.
   function glassesMenu() {
-    if(_readerActive)return {menuItems:[{itemID:6,itemName:'Read Quran'},{itemID:10,itemName:'Translate'},{itemID:11,itemName:'Practice'},{itemID:12,itemName:'Taraweeh'},{itemID:13,itemName:'Choose surah'},{itemID:8,itemName:'Previous page'},{itemID:7,itemName:'Next page'},{itemID:14,itemName:'Toggle auto-scroll'}]};
+    if(_readerActive)return {menuItems:[{itemID:6,itemName:'Read Quran'},{itemID:10,itemName:'Translate'},{itemID:11,itemName:'Practice'},{itemID:12,itemName:'Taraweeh'},{itemID:13,itemName:'Choose surah'},{itemID:8,itemName:'Previous page'},{itemID:7,itemName:'Next page'},{itemID:14,itemName:'Toggle auto-scroll'},{itemID:15,itemName:'Bookmark page'},...(S.settings.readerBookmark?[{itemID:16,itemName:'Resume bookmark'}]:[])]};
     var items = [
       { itemID: 3, itemName: S.isRecording ? 'Stop listening' : 'Start listening' },
       { itemID: 4, itemName: _readingHeld ? 'Resume verse' : 'Hold verse' },
@@ -3668,6 +3673,7 @@ html.reader-open #qvtDock { display:none !important; }
       { itemID: 11, itemName: 'Practice' },
       { itemID: 12, itemName: 'Taraweeh' },
     ];
+    if(S.settings.readerBookmark)items.push({itemID:16,itemName:'Resume bookmark'});
     if (_taraweehMode) items.push({ itemID: 1, itemName: 'Rakat -' }, { itemID: 2, itemName: 'Rakat +' });
     return { menuItems: items };
   }
@@ -5278,6 +5284,7 @@ html.reader-open #qvtDock { display:none !important; }
     if (event.menuItemClickEvent) {
       var itemID = event.menuItemClickEvent.itemID;
       trace('g2.menu', String(itemID));
+      if(itemID===16){resumeReaderBookmark();return;}
       if(itemID===6){openQuranReader();return;}
       if(itemID===10||itemID===11||itemID===12){setReciteMode(itemID===10?'listen':itemID===11?'practice':'taraweeh');return;}
       if (_taraweehMode && (itemID === 1 || itemID === 2)) window.adjustRakat(itemID === 1 ? -1 : 1);
