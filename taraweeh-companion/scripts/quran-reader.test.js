@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readerChapter} from '../backend/quranReader.js';
-import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows} from '../app/readerPagination.js';
+import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows,readerSinglePages} from '../app/readerPagination.js';
 import {validateEvenHubPageContainer} from '@evenrealities/even_hub_sdk';
 test('reader contains all 114 surahs and 6236 intact numbered ayahs',()=>{
  let count=0;for(let s=1;s<=114;s++){const c=readerChapter(s);assert.equal(c.surah,s);assert.equal(c.verses.length,c.totalAyahs);c.verses.forEach((v,i)=>{assert.equal(v.ayah,i+1);assert.ok(v.arabic.trim());});count+=c.totalAyahs;}
@@ -57,4 +57,14 @@ test('maximum-ayah pages preserve all text and reserve a separate opening line',
  assert.equal(pages[0].opening,true);
  assert.ok(pages.slice(1).every(p=>!p.opening));
  assert.deepEqual(pages.flatMap(p=>p.lines),paginateReader(verses,measure,520,1).flatMap(p=>p.lines));
+});
+
+test('single-ayah reading fits short translations and completes long translations before next ayah',()=>{
+ const short=readerChapter(112).verses[0],measure=t=>t.length*10;
+ const combined=readerSinglePages([short],measure,measure);assert.equal(combined.length,1);assert.equal(combined[0].kind,'combined');assert.ok(combined[0].translationLines.length);
+ const long=readerChapter(2).verses[281],next=readerChapter(2).verses[282];const pages=readerSinglePages([long,next],measure,measure);
+ const own=pages.filter(p=>p.ayah===282);assert.ok(own.some(p=>p.kind==='translation'));const firstTranslation=own.findIndex(p=>p.kind==='translation');assert.ok(own.slice(0,firstTranslation).every(p=>p.kind==='arabic'));assert.ok(own.slice(firstTranslation).every(p=>p.kind==='translation'));
+ assert.equal(own.flatMap(p=>p.translationLines).join(' '),long.translation);assert.equal(pages[own.length].ayah,283);
+ assert.equal(own.flatMap(p=>p.lines).join(' '),paginateReader([long],measure,520,1).flatMap(p=>p.lines).join(' '));
+ assert.ok(own.every(p=>!p.translationLines.length||p.translationY+(p.translationLines.length-1)*26<=258));
 });
