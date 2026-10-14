@@ -1052,7 +1052,6 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.25</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1231,6 +1230,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
     <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" title="Tap to cycle: Follow mode → Fast recitor → Slow recitor (Listen and Taraweeh)">👣 Follow mode</button></div>
   </div>
 
+  <footer class="version" id="versionEl" style="text-align:center;padding:16px 0 8px">v3.4.26</footer>
 </div>
 
 <!-- Phone app: bottom dock and "more" sheet. setupMobileShell() moves the
@@ -1573,7 +1573,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.25';
+  const APP_VERSION = 'v3.4.26';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -4630,7 +4630,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
       if (langEl && langEl.textContent) updateVerseLangLabel({ translationLang: _activeTranslationLang });
     } else if (msg.type === 'pipeline_version') {
       var pv = (msg.version || 'v3').toUpperCase();
-      document.getElementById('versionEl').textContent = APP_VERSION + ' ' + pv;
+      document.getElementById('versionEl').textContent = APP_VERSION;
       log('Pipeline: ' + pv, 'ok');
     } else if (msg.type === 'pace') {
       updatePacePill(msg);
@@ -6576,7 +6576,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
     _updatePaceButton();
     if (typeof S.settings.targetRakat === 'number') _prayer.targetRakat = S.settings.targetRakat;
     _applyPrayerSnapshot(_prayer);
-    document.getElementById('versionEl').textContent = APP_VERSION + ' ' + (S.settings.pipelineVersion || 'v4').toUpperCase();
+    document.getElementById('versionEl').textContent = APP_VERSION;
     // Splash: show version, fade out after 1.2s
     var splashV = document.getElementById('splashVersion');
     if (splashV) splashV.textContent = APP_VERSION;
