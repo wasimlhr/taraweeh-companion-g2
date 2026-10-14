@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const repo = join(root, '..');
-const EXPECTED = '3.4.26';
+const EXPECTED = '3.4.27';
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -37,7 +37,7 @@ checks.push(['server.js banner', serverBanner && serverBanner[1]]);
 
 const html = readFileSync(join(root, 'app/index.html'), 'utf8');
 const appVer = html.match(/const APP_VERSION = 'v([^']+)'/);
-const elVer = html.match(/id="versionEl">v([^<]+)</);
+const elVer = html.match(/id="versionEl"[^>]*>v([^<]+)</);
 checks.push(['index.html APP_VERSION', appVer && appVer[1]]);
 checks.push(['index.html versionEl', elVer && elVer[1]]);
 

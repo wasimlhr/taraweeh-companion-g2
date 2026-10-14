@@ -1227,10 +1227,10 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
     </div>
     <span class="s-hint" id="reciteModeHint" style="display:block;margin:0 0 8px;font-size:11px;line-height:1.45">Translate follows Quran recitation and shows each verse in your selected language.</span>
     <div class="reading-tools" style="flex-wrap:wrap">
-    <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" title="Tap to cycle: Follow mode → Fast recitor → Slow recitor (Listen and Taraweeh)">👣 Follow mode</button></div>
+    <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" role="switch" aria-checked="false" aria-label="Slow reciter" title="Tap to switch between fast and slow reciter">🐇 Fast reciter</button></div>
   </div>
 
-  <footer class="version" id="versionEl" style="text-align:center;padding:16px 0 8px">v3.4.26</footer>
+  <footer class="version" id="versionEl" style="text-align:center;padding:16px 0 8px">v3.4.27</footer>
 </div>
 
 <!-- Phone app: bottom dock and "more" sheet. setupMobileShell() moves the
@@ -1573,7 +1573,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.26';
+  const APP_VERSION = 'v3.4.27';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -1703,15 +1703,14 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
     }
   });
 
-  // ── Pace cycle: Follow → Fast recitor → Slow recitor (Taraweeh only) ─────
-  var _paceMode = 'follow';  // 'follow' | 'fast' | 'slow'
-  var _fastMode = false;
+  // ── Reciter pace: whole-button Fast / Slow toggle ──────────────────────
+  var _paceMode = 'fast';  // 'fast' | 'slow'
+  var _fastMode = true;
   var _slowMode = false;
 
   var PACE_LABELS = {
-    follow: '\uD83D\uDC63 Follow mode',
-    fast:   '\uD83D\uDC07 Fast recitor',
-    slow:   '\uD83D\uDC22 Slow recitor',
+    fast:   '\uD83D\uDC07 Fast reciter',
+    slow:   '\uD83D\uDC22 Slow reciter',
   };
 
   function _syncPaceFlags() {
@@ -1721,7 +1720,6 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
 
   function _applyPaceMode() {
     _syncPaceFlags();
-    if (_paceMode === 'follow') { stopPageFlip(); stopCountdown(); }
     S.settings.paceMode = _paceMode;
     S.settings.fastMode = _fastMode;
     S.settings.slowMode = _slowMode;
@@ -1733,7 +1731,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
   }
 
   window.cyclePaceMode = function () {
-    _paceMode = _paceMode === 'follow' ? 'fast' : _paceMode === 'fast' ? 'slow' : 'follow';
+    _paceMode = _paceMode === 'fast' ? 'slow' : 'fast';
     _applyPaceMode();
     _updatePaceButton();
     log(PACE_LABELS[_paceMode], 'ok');
@@ -1744,8 +1742,10 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
   function _updatePaceButton() {
     var btn = document.getElementById('paceModeBtn');
     if (!btn) return;
-    btn.textContent = PACE_LABELS[_paceMode] || PACE_LABELS.follow;
-    btn.classList.toggle('active', _paceMode !== 'follow');
+    btn.textContent = (PACE_LABELS[_paceMode] || PACE_LABELS.fast) + ' ↔';
+    btn.setAttribute('aria-checked', String(_paceMode === 'slow'));
+    btn.title = 'Switch to ' + (_paceMode === 'fast' ? 'slow' : 'fast') + ' reciter';
+    btn.classList.add('active');
   }
   _updatePaceButton();
 
@@ -2619,9 +2619,9 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
     onlyDefaultSurah: true,   // Practice: pin the search rather than bias it
     pipelineVersion: 'v4',  // V4: Word-level tracking
     forcePhoneMic: false,
-    fastMode: false,
+    fastMode: true,
     slowMode: false,
-    paceMode: 'follow',
+    paceMode: 'fast',
     keyMode: 'byok',      // 'shared' = use server-held free key; 'byok' = user key
     groqApiKey: '',
     openaiApiKey: '',
@@ -2970,12 +2970,12 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
       }
     } else if (sub === 'fast_mode') {
       if (s.enabled) _paceMode = 'fast';
-      else if (_paceMode === 'fast') _paceMode = 'follow';
+      else if (_slowMode) _paceMode = 'slow';
       _syncPaceFlags();
       _updatePaceButton();
     } else if (sub === 'slow_mode') {
       if (s.enabled) _paceMode = 'slow';
-      else if (_paceMode === 'slow') _paceMode = 'follow';
+      else _paceMode = 'fast';
       _syncPaceFlags();
       _updatePaceButton();
     } else if (sub === 'taraweeh_mode') {
@@ -6563,14 +6563,14 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
     }
     setupReadingUI();
     syncMainLang();
-    if (S.settings.paceMode === 'fast' || S.settings.paceMode === 'slow' || S.settings.paceMode === 'follow') {
+    if (S.settings.paceMode === 'fast' || S.settings.paceMode === 'slow') {
       _paceMode = S.settings.paceMode;
     } else if (S.settings.slowMode) {
       _paceMode = 'slow';
     } else if (S.settings.fastMode) {
       _paceMode = 'fast';
     } else {
-      _paceMode = 'follow';
+      _paceMode = 'fast';
     }
     _syncPaceFlags();
     _updatePaceButton();
