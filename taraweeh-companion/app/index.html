@@ -1048,7 +1048,17 @@ html.standalone #settingsView, html.standalone #helpView { animation: qvt-push .
 html.standalone .settings-header { position: sticky; top: 0; z-index: 5; background: var(--bc-2); padding-top: max(6px, env(safe-area-inset-top)); }
 @keyframes qvt-push { from { transform: translateX(24px); opacity: .4; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { html.standalone * { animation: none !important; transition: none !important; } }
-#readerView[hidden] { display:none; }
+#readerView[hidden] { display:none !important; }
+#readerRemotePad { display:none; }
+#readerView[data-remote="true"][data-reading-theme] { --read-bg:#000;--read-fg:#94a99c;--read-muted:#82978a;--read-rule:#16231b;--read-accent:#94a99c;min-height:calc(100dvh - 12px);display:flex;flex-direction:column; }
+#readerView[data-remote="true"] #readerPaper,#readerView[data-remote="true"] #readerStatus { display:none; }
+#readerView[data-remote="true"] #readerRemotePad { display:flex;flex:1;min-height:180px;flex-direction:column;align-items:center;justify-content:space-evenly;gap:18px;touch-action:none;user-select:none;outline-offset:4px; }
+#readerRemotePad:focus { outline:none; }
+#readerRemotePad:focus-visible { outline:1px solid var(--read-rule); }
+.reader-remote-arrow { font-size:32px;color:var(--read-muted); }
+#readerRemotePad p { font-size:14px;color:var(--read-muted);text-align:center; }
+#readerRemotePad button { padding:8px 16px;border-radius:8px; }
+
 #readerView { --read-bg:#fff;--read-fg:#23332b;--read-muted:#52645a;--read-rule:#e4eae5;--read-accent:#287956;max-width:720px;margin:auto;background:var(--read-bg);color:var(--read-fg);padding-bottom:80px; }
 #readerView[data-reading-theme="dark"] { --read-bg:#141a17;--read-fg:#edf3ee;--read-muted:#adbbb1;--read-rule:#303b34;--read-accent:#88c6a0; }
 html.reader-open body { background:var(--reader-body,#fff);max-width:720px; }
@@ -1292,6 +1302,7 @@ html.reader-open #qvtDock { display:none !important; }
     <details id="readerDisplayOptions"><summary aria-label="Reading display settings">Aa</summary><div class="reader-options">
       <label>Translation<select id="readerLanguage" onchange="setReaderLanguage(this.value)"></select></label>
       <label>Glasses layout<select id="readerLayout" onchange="setReaderLayout(this.value)"><option value="maximum">Maximum ayahs</option><option value="single">Single ayah</option></select></label>
+      <label class="reader-check"><input id="readerRemoteToggle" type="checkbox" onchange="setReaderRemote(this.checked)" />Glasses controller</label>
       <label class="reader-check"><input id="readerAutoScroll" type="checkbox" onchange="setReaderAutoScroll(this.checked)" />Auto-scroll</label>
       <label>Seconds per page<select id="readerAutoSeconds" onchange="setReaderAutoSeconds(Number(this.value))"><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="30">30</option><option value="45">45</option><option value="60">60</option><option value="90">90</option><option value="120">120</option></select></label>
       <label>Arabic style<select id="readerScript" onchange="setReaderScript(this.value)"><option value="indopak">Indo-Pak</option><option value="madani">Madani</option></select></label>
@@ -1305,6 +1316,12 @@ html.reader-open #qvtDock { display:none !important; }
   <p id="readerAutoStatus" class="s-hint" hidden></p>
   <p id="readerStatus" class="s-hint" role="status"></p>
   <div id="readerPaper"><div id="readerSurahTitle" lang="ar" dir="rtl"></div><div id="readerText" translate="no"></div></div>
+  <div id="readerRemotePad" tabindex="0" role="region" aria-label="Glasses page controller. Swipe up for next page, down for previous page." onpointerdown="readerRemotePointer(event)" onpointerup="readerRemotePointer(event)" onpointercancel="readerRemotePointer(event)" onkeydown="if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();readerStep(event.key==='ArrowDown'?1:-1)}">
+    <span class="reader-remote-arrow" aria-hidden="true">↑</span>
+    <p>Swipe up for next page<br />Swipe down for previous page</p>
+    <button type="button" onclick="setReaderRemote(false)">Show verses</button>
+    <span class="reader-remote-arrow" aria-hidden="true">↓</span>
+  </div>
   <nav class="reader-nav" aria-label="Reading pages"><button type="button" id="readerPrev" class="nav-arrow-btn" onclick="readerStep(-1)">↑ Scroll up</button><span id="readerPage" aria-live="polite"></span><button type="button" id="readerNext" class="nav-arrow-btn" onclick="readerStep(1)">Scroll down ↓</button></nav>
 
   <button type="button" id="readerRetry" class="back-btn" hidden onclick="loadReaderSurah(Number(document.getElementById('readerSurah').value))">Try again</button>
@@ -1944,7 +1961,7 @@ html.reader-open #qvtDock { display:none !important; }
   }
   function applyReaderDisplay(){
     const view=document.getElementById('readerView'),choice=['light','dark'].includes(S.settings.readerTheme)?S.settings.readerTheme:'app',theme=choice==='app'?(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light'):choice;
-    view.dataset.readingTheme=theme;document.documentElement.style.setProperty('--reader-body',theme==='dark'?'#141a17':'#fff');
+    const remote=S.settings.readerRemote===true;view.dataset.remote=String(remote);view.dataset.readingTheme=theme;document.documentElement.style.setProperty('--reader-body',remote?'#000':theme==='dark'?'#141a17':'#fff');document.getElementById('readerRemoteToggle').checked=remote;
     view.dataset.translation=S.settings.readerShowTranslation===false?'hidden':'visible';view.dataset.transliteration=S.settings.readerShowTranslit===false?'hidden':'visible';
     document.getElementById('readerPaper').style.setProperty('--reader-size',(Number(S.settings.readerTextSize)||28)+'px');
     document.getElementById('readerAutoScroll').checked=_readerAutoEnabled;document.getElementById('readerAutoSeconds').value=String(Number(S.settings.readerAutoSeconds)||15);
@@ -1952,6 +1969,9 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('readerSize').value=String(Number(S.settings.readerTextSize)||28);document.getElementById('readerTheme').value=choice;
     document.getElementById('readerShowTranslation').checked=S.settings.readerShowTranslation!==false;document.getElementById('readerShowTranslit').checked=S.settings.readerShowTranslit!==false;
   }
+  window.setReaderRemote=function(enabled){S.settings.readerRemote=!!enabled;saveSettings();applyReaderDisplay();document.getElementById('readerDisplayOptions').open=false;window.scrollTo({top:0,behavior:'auto'});if(enabled)document.getElementById('readerRemotePad').focus({preventScroll:true});};
+  let _readerRemoteStart=null;
+  window.readerRemotePointer=function(event){if(event.target.closest('button'))return;const pad=document.getElementById('readerRemotePad');if(event.type==='pointerdown'){_readerRemoteStart={id:event.pointerId,y:event.clientY};pad.setPointerCapture(event.pointerId);}else if(event.type==='pointercancel'){_readerRemoteStart=null;}else if(event.type==='pointerup'&&_readerRemoteStart?.id===event.pointerId){const delta=_readerRemoteStart.y-event.clientY;_readerRemoteStart=null;if(Math.abs(delta)>=40)readerStep(delta>0?1:-1);}};
   window.setReaderDisplay=function(field,value){if(!['readerTheme','readerTextSize','readerShowTranslation','readerShowTranslit'].includes(field))return;S.settings[field]=value;if(field==='readerTheme')S.settings.readerThemeExplicit=true;saveSettings();applyReaderDisplay();};
   window.setReaderLanguage=async function(lang){const clean=sanitizeTranslationLang(lang);S.settings.lang=clean;document.getElementById('readerLanguage').value=clean||'en';document.getElementById('settingLang').value=clean;syncMainLang();saveSettings();await loadReaderSurah(Number(document.getElementById('readerSurah').value),_readerPage);};
   window.setReaderLayout=async function(value){S.settings.readerLayout=value==='single'?'single':'maximum';saveSettings();applyReaderDisplay();await loadReaderSurah(Number(document.getElementById('readerSurah').value),0,Number(document.getElementById('readerAyah').value)||1);};
@@ -1972,10 +1992,10 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   let _readerScrollAt=0;
-  window.addEventListener('wheel',event=>{if(!_readerActive||_readerLoading||S.settings.readerLayout==='single'||event.target.closest?.('select,details,#studyPanel'))return;const root=document.scrollingElement;const bottom=root.scrollTop+innerHeight>=root.scrollHeight-3;const top=root.scrollTop<=1;if((event.deltaY>0&&bottom)||(event.deltaY<0&&top)){event.preventDefault();if(Date.now()-_readerScrollAt>700){_readerScrollAt=Date.now();readerStep(event.deltaY>0?1:-1);}}},{passive:false});
+  window.addEventListener('wheel',event=>{if(!_readerActive||_readerLoading||S.settings.readerLayout==='single'||event.target.closest?.('select,details,#studyPanel,#readerRemotePad'))return;const root=document.scrollingElement;const bottom=root.scrollTop+innerHeight>=root.scrollHeight-3;const top=root.scrollTop<=1;if((event.deltaY>0&&bottom)||(event.deltaY<0&&top)){event.preventDefault();if(Date.now()-_readerScrollAt>700){_readerScrollAt=Date.now();readerStep(event.deltaY>0?1:-1);}}},{passive:false});
   let _readerTouchY=null;
   window.addEventListener('touchstart',event=>{_readerTouchY=event.touches[0]?.clientY??null;},{passive:true});
-  window.addEventListener('touchend',event=>{if(!_readerActive||_readerLoading||S.settings.readerLayout==='single'||_readerTouchY===null||event.target.closest?.('select,details,#studyPanel'))return;const delta=_readerTouchY-(event.changedTouches[0]?.clientY??_readerTouchY);_readerTouchY=null;const root=document.scrollingElement;if(Math.abs(delta)>40&&((delta>0&&root.scrollTop+innerHeight>=root.scrollHeight-3)||(delta<0&&root.scrollTop<=1))&&Date.now()-_readerScrollAt>700){_readerScrollAt=Date.now();readerStep(delta>0?1:-1);}},{passive:true});
+  window.addEventListener('touchend',event=>{if(!_readerActive||_readerLoading||S.settings.readerLayout==='single'||_readerTouchY===null||event.target.closest?.('select,details,#studyPanel,#readerRemotePad'))return;const delta=_readerTouchY-(event.changedTouches[0]?.clientY??_readerTouchY);_readerTouchY=null;const root=document.scrollingElement;if(Math.abs(delta)>40&&((delta>0&&root.scrollTop+innerHeight>=root.scrollHeight-3)||(delta<0&&root.scrollTop<=1))&&Date.now()-_readerScrollAt>700){_readerScrollAt=Date.now();readerStep(delta>0?1:-1);}},{passive:true});
   function readerFont(){return document.getElementById('readerScript').value==='madani'?'QuranBitmap':'QuranIndoPak';}
   async function ensureReaderFont(){const faces=await document.fonts.load('28px '+readerFont());if(!faces.length)throw Error('Reader font unavailable');}
   window.setReaderScript=async function(script){S.settings.readerScript=script==='madani'?'madani':'indopak';document.getElementById('readerScript').value=S.settings.readerScript;saveSettings();const ayah=Number(document.getElementById('readerAyah').value)||1;await loadReaderSurah(Number(document.getElementById('readerSurah').value),0,ayah);};
