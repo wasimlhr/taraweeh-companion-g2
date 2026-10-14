@@ -47,7 +47,7 @@ if (existsSync(sdkSrc)) {
   copyFileSync(sdkSrc, sdkDest);
   console.log('[build-evenhub-dist] Bundled SDK ->', sdkDest);
 } else {
-  console.warn('[build-evenhub-dist] WARN: SDK file not found at', sdkSrc, '— app will fall back to CDN import');
+  throw new Error('Required bundled SDK missing: '+sdkSrc);
 }
 
 if (pretextSrc) {
@@ -55,5 +55,5 @@ if (pretextSrc) {
   copyFileSync(pretextSrc, pretextDest);
   console.log('[build-evenhub-dist] Bundled pretext ->', pretextDest);
 } else {
-  console.warn('[build-evenhub-dist] WARN: @evenrealities/pretext not installed — glasses layout falls back to estimated character widths');
+  throw new Error('Required bundled font metrics missing');
 }

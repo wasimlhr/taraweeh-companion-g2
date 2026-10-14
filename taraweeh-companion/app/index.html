@@ -4,9 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Quran Verse Translator</title>
-  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <style>
+@font-face { font-family: 'Amiri'; src: url('./fonts/AmiriQuran.ttf') format('truetype'); font-display: swap; }
 @font-face { font-family: 'QuranBitmap'; src: url('./fonts/AmiriQuran.ttf') format('truetype'); font-display: block; }
 .reading-tools, .language-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
 .language-tools input { flex:1; min-width:140px; }
@@ -1053,7 +1052,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
-      <span class="version" id="versionEl">v3.4.24</span>
+      <span class="version" id="versionEl">v3.4.25</span>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1574,7 +1573,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.24';
+  const APP_VERSION = 'v3.4.25';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -3248,11 +3247,8 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
   }
 
   async function loadPretext() {
-    // Bundled copy first, then the backend route, then the CDN the packaged
-    // app is actually allowed to reach (app.json whitelists jsDelivr, the same
-    // origin the SDK falls back to).
-    var sources = ['./vendor/pretext.js', '/vendor/pretext.js',
-      'https://cdn.jsdelivr.net/npm/@evenrealities/pretext@0.1.4/dist/font_measure.js'];
+    // Use the bundled asset or our backend's local asset route.
+    var sources = ['./vendor/pretext.js', '/vendor/pretext.js'];
     for (var i = 0; i < sources.length; i++) {
       try {
         var m = await import(sources[i]);
@@ -5328,10 +5324,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
           loaded = true;
         } catch (_) {}
       }
-      if (!loaded) {
-        sdk = await import('https://cdn.jsdelivr.net/npm/@evenrealities/even_hub_sdk@0.0.16/dist/index.js');
-        log('Loaded SDK from CDN', 'ok');
-      }
+      if (!loaded) throw new Error('Bundled SDK unavailable');
       S.sdk = sdk;
       S.bridge = await new Promise(function (resolve, reject) {
         var t = setTimeout(function () { reject(new Error('timeout 8s')); }, 8000);

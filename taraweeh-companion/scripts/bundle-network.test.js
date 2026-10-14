@@ -16,3 +16,9 @@ test('all literal client URLs match the network manifest',()=>{
  const manifest=JSON.parse(readFileSync(new URL('../app.json',import.meta.url),'utf8'));
  assert.deepEqual(undeclaredOrigins(html,manifest.permissions.find(p=>p.name==='network').whitelist),[]);
 });
+
+test('runtime assets have no CDN or external font fallback',()=>{
+ const html=readFileSync(new URL('../app/index.html',import.meta.url),'utf8');
+ assert.doesNotMatch(html,/cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com|quran-json\.risanb\.com/);
+ assert.match(html,/src: url\('\.\/fonts\/AmiriQuran\.ttf'\)/);
+});
