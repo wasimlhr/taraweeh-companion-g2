@@ -1,0 +1,10 @@
+Quranic Arabic Corpus (Version 0.4)
+Copyright (C) 2011 Kais Dukes
+License: GNU General Public License
+
+Al-Fatihah English word glosses are transcribed verbatim from the Quranic Arabic Corpus word-by-word pages. The selected glosses are stored separately from the existing morphology corpus; original Quran text and annotations are not modified.
+
+Source: https://corpus.quran.com/wordbyword.jsp?chapter=1&verse=1
+Source: https://corpus.quran.com/wordbyword.jsp?chapter=1&verse=7
+Terms: https://corpus.quran.com/download/
+The annotation can be used in any website or application, provided its source (the Quranic Arabic Corpus) is clearly indicated, and a link is made to http://corpus.quran.com to enable users to keep track of changes. Permission is granted to copy and distribute verbatim copies of the source file; changing the source file is not allowed.
