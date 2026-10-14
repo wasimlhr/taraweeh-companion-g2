@@ -3683,7 +3683,7 @@ html.reader-open #qvtDock { display:none !important; }
 
   // Menu actions are separate from temple taps and survive every page rebuild.
   function glassesMenu() {
-    if(_readerActive)return {menuItems:[{itemID:6,itemName:'Read Quran'},{itemID:10,itemName:'Translate'},{itemID:11,itemName:'Practice'},{itemID:12,itemName:'Taraweeh'},{itemID:13,itemName:'Choose surah'},{itemID:8,itemName:'Previous page'},{itemID:7,itemName:'Next page'},{itemID:14,itemName:'Toggle auto-scroll'},{itemID:15,itemName:'Bookmark page'},...(S.settings.readerBookmark?[{itemID:16,itemName:'Resume bookmark'}]:[])]};
+    if(_readerActive)return {menuItems:[{itemID:7,itemName:'Next page'},{itemID:8,itemName:'Previous page'},{itemID:15,itemName:'Bookmark page'},{itemID:14,itemName:'Toggle auto-scroll'},{itemID:13,itemName:'Choose surah'},...(S.settings.readerBookmark?[{itemID:16,itemName:'Resume bookmark'}]:[]),{itemID:6,itemName:'Read Quran'},{itemID:10,itemName:'Translate'},{itemID:11,itemName:'Practice'},{itemID:12,itemName:'Taraweeh'}]};
     var items = [
       { itemID: 3, itemName: S.isRecording ? 'Stop listening' : 'Start listening' },
       { itemID: 4, itemName: _readingHeld ? 'Resume verse' : 'Hold verse' },
