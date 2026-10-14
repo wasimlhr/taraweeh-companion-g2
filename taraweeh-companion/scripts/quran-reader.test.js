@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readerChapter} from '../backend/quranReader.js';
-import {paginateReader,readerWindows} from '../app/readerPagination.js';
+import {paginateReader,readerWindows,readerVerseWindows} from '../app/readerPagination.js';
 import {validateEvenHubPageContainer} from '@evenrealities/even_hub_sdk';
 test('reader contains all 114 surahs and 6236 intact numbered ayahs',()=>{
  let count=0;for(let s=1;s<=114;s++){const c=readerChapter(s);assert.equal(c.surah,s);assert.equal(c.verses.length,c.totalAyahs);c.verses.forEach((v,i)=>{assert.equal(v.ayah,i+1);assert.ok(v.arabic.trim());});count+=c.totalAyahs;}
@@ -35,4 +35,14 @@ test('reader includes selected Uzbek translation and Latin transliteration for e
  const uz=readerChapter(1,'uz'),en=readerChapter(1,'en');
  assert.equal(uz.translationLang,'uz');assert.equal(uz.verses.length,7);
  for(let i=0;i<7;i++){assert.equal(uz.verses[i].arabic,en.verses[i].arabic);assert.ok(uz.verses[i].translation.trim());assert.ok(uz.verses[i].transliteration.trim());assert.notEqual(uz.verses[i].translation,en.verses[i].translation);}
+});
+
+test('glasses windows contain only the selected ayah, including long-ayah continuation',()=>{
+ const c=readerChapter(2),v=c.verses[281];const pages=readerVerseWindows([v,c.verses[282]],t=>t.length*8,200,4);
+ const long=pages.filter(p=>p.ayah===282);assert.ok(long.length>1);
+ long.forEach((p,i)=>{assert.deepEqual(p.ayahs,[282]);assert.equal(p.part,i+1);assert.equal(p.parts,long.length);});
+ assert.equal(pages[long.length].ayah,283);
+ const actual=[...long[0].lines,...long.slice(1).map(p=>p.lines.at(-1))].join(' ');
+ const expected=paginateReader([v],t=>t.length*8,200,1).map(p=>p.lines[0]).join(' ');
+ assert.equal(actual,expected);
 });

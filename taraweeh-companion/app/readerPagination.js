@@ -22,3 +22,8 @@ export function readerWindows(verses,measure,width=520,lineCount=4){
  }
  return windows;
 }
+
+// Each glasses window belongs to exactly one numbered ayah.
+export function readerVerseWindows(verses,measure,width=520,lineCount=4){
+ return verses.flatMap(verse=>{const windows=readerWindows([verse],measure,width,lineCount);return windows.map((window,index)=>({...window,ayah:verse.ayah,part:index+1,parts:windows.length}));});
+}

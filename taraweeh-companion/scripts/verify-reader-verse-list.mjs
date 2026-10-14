@@ -62,7 +62,7 @@ await phone.send('Debugger.removeBreakpoint',{breakpointId:bp.breakpointId});
 await phone.send('Debugger.resume'); await call; await phone.send('Debugger.disable');
 
 await phone.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
-await evaluate('window.__readerOldSettings=JSON.parse(JSON.stringify(__uiAudit.S.settings));__uiAudit.S.settings.backendUrl="http://localhost:3001";__uiAudit.S.settings.lang="uz";__uiAudit.S.settings.readerSurah=1;__uiAudit.S.settings.readerPage=0;__uiAudit.S.settings.readerTheme="light";__uiAudit.S.settings.readerShowTranslation=true;__uiAudit.S.settings.readerShowTranslit=true;openQuranReader()');
+await evaluate('window.__readerOldSettings=JSON.parse(JSON.stringify(__uiAudit.S.settings));__uiAudit.S.settings.backendUrl="http://localhost:3001";__uiAudit.S.settings.lang="uz";__uiAudit.S.settings.readerSurah=1;__uiAudit.S.settings.readerPage=0;__uiAudit.S.settings.readerTheme="light";__uiAudit.S.settings.readerThemeExplicit=true;__uiAudit.S.settings.readerShowTranslation=true;__uiAudit.S.settings.readerShowTranslit=true;openQuranReader()');
 await settle();assert.equal(await evaluate('document.querySelectorAll(".reader-verse").length'),7);
 assert.equal(await evaluate('document.getElementById("readerLanguage").value'),'uz');
 const uz=await (await fetch('http://localhost:3001/api/quran/1?lang=uz')).json();
