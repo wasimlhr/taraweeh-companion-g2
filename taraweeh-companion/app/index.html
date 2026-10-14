@@ -1077,9 +1077,12 @@ html.reader-open #qvtDock { display:none !important; }
 <body>
 
 <!-- Splash screen — shown for ~1.2s on app launch, then fades out -->
-<div id="splashScreen" style="position:fixed;inset:0;background:#fff;color:#172e23;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity 400ms ease">
-  <img src="./artwork/quran-splash.png" alt="القرآن الكريم" style="width:auto;height:min(62vh,420px);max-width:75vw;object-fit:contain" />
-  <div id="splashVersion" style="position:absolute;bottom:24px;font-size:11px;opacity:0.6"></div>
+<div id="splashScreen" style="position:fixed;inset:0;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity 400ms ease;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <div style="font-size:40px;line-height:1;margin-bottom:16px">☽</div>
+  <div style="font-size:22px;font-weight:600;letter-spacing:0.5px">Quran Verse Translator</div>
+  <div class="g2-only" style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">for Even Realities G2</div>
+  <div class="standalone-only" style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">Live Quran verse translation</div>
+  <div id="splashVersion" style="position:absolute;bottom:24px;font-size:11px;opacity:0.4;letter-spacing:0.5px"></div>
 </div>
 
 <!-- Main view -->
