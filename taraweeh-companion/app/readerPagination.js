@@ -27,3 +27,17 @@ export function readerWindows(verses,measure,width=520,lineCount=4){
 export function readerVerseWindows(verses,measure,width=520,lineCount=4){
  return verses.flatMap(verse=>{const windows=readerWindows([verse],measure,width,lineCount);return windows.map((window,index)=>({...window,ayah:verse.ayah,part:index+1,parts:windows.length}));});
 }
+
+// Dense, non-overlapping windows share exactly the same ayah range on both displays.
+export function readerPackedWindows(verses,measure,width=520,lineCount=4,opening=false,numberedBasmala=false){
+ const flow=numberedBasmala?[...paginateReader(verses.slice(0,1),measure,width,1),...paginateReader(verses.slice(1),measure,width,1)]:paginateReader(verses,measure,width,1);
+ const lines=flow.map(p=>({text:p.lines[0],ayahs:p.ayahs}));
+ const pages=[];
+ for(let start=0;start<lines.length;){
+  const count=start===0&&opening?lineCount-1:lineCount;
+  const slice=lines.slice(start,start+count);
+  pages.push({lines:slice.map(l=>l.text),ayahs:[...new Set(slice.flatMap(l=>l.ayahs))],startLine:start,totalLines:lines.length,opening:start===0});
+  start+=count;
+ }
+ return pages;
+}

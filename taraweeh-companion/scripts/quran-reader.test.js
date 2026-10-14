@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readerChapter} from '../backend/quranReader.js';
-import {paginateReader,readerWindows,readerVerseWindows} from '../app/readerPagination.js';
+import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows} from '../app/readerPagination.js';
 import {validateEvenHubPageContainer} from '@evenrealities/even_hub_sdk';
 test('reader contains all 114 surahs and 6236 intact numbered ayahs',()=>{
  let count=0;for(let s=1;s<=114;s++){const c=readerChapter(s);assert.equal(c.surah,s);assert.equal(c.verses.length,c.totalAyahs);c.verses.forEach((v,i)=>{assert.equal(v.ayah,i+1);assert.ok(v.arabic.trim());});count+=c.totalAyahs;}
@@ -45,4 +45,14 @@ test('glasses windows contain only the selected ayah, including long-ayah contin
  const actual=[...long[0].lines,...long.slice(1).map(p=>p.lines.at(-1))].join(' ');
  const expected=paginateReader([v],t=>t.length*8,200,1).map(p=>p.lines[0]).join(' ');
  assert.equal(actual,expected);
+});
+
+test('maximum-ayah pages preserve all text and reserve a separate opening line',()=>{
+ const verses=readerChapter(112).verses,measure=t=>t.length*8;
+ const pages=readerPackedWindows(verses,measure,520,4,true);
+ assert.ok(pages[0].ayahs.length>1);
+ assert.ok(pages[0].lines.length<=3);
+ assert.equal(pages[0].opening,true);
+ assert.ok(pages.slice(1).every(p=>!p.opening));
+ assert.deepEqual(pages.flatMap(p=>p.lines),paginateReader(verses,measure,520,1).flatMap(p=>p.lines));
 });
