@@ -1,6 +1,6 @@
 {
   "name": "quran-verse-translator",
-  "version": "3.4.32",
+  "version": "3.4.33",
   "description": "Quran Verse Translator — real-time Quran recitation recognition and translation",
   "type": "module",
   "scripts": {
