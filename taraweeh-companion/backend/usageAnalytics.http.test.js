@@ -142,7 +142,8 @@ test('analytics is token-gated and records connect/init/start/lang_pack', { time
 test('reader HTTP endpoint serves local chapter text and validates surah selection',async()=>{
  const child=await startServer();try {
   const r=await fetch(BASE+'/api/quran/2');assert.equal(r.status,200);assert.equal(r.headers.get('access-control-allow-origin'),'*');
-  const chapter=await r.json();assert.equal(chapter.surah,2);assert.equal(chapter.totalAyahs,286);assert.equal(chapter.verses.length,286);assert.ok(chapter.verses[254].arabic);
+  const chapter=await r.json();assert.equal(chapter.surah,2);assert.equal(chapter.totalAyahs,286);assert.equal(chapter.verses.length,286);assert.ok(chapter.verses[254].arabic);assert.ok(chapter.verses[254].translation);assert.ok(chapter.verses[254].transliteration);
+  const uz=await fetch(BASE+'/api/quran/1?lang=uz').then(r=>r.json());assert.equal(uz.translationLang,'uz');assert.ok(uz.verses[1].translation);assert.equal((await fetch(BASE+'/api/quran/1?lang=invalid')).status,400);
   for(const invalid of ['0','115','1.5','bad'])assert.equal((await fetch(BASE+'/api/quran/'+invalid)).status,400);
   const module=await fetch(BASE+'/readerPagination.js');assert.equal(module.status,200);assert.match(await module.text(),/export function paginateReader/);
  }finally{await stopServer(child);}

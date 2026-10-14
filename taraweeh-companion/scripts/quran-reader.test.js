@@ -30,3 +30,9 @@ test('line scrolling overlaps three lines and retains every line through the end
  assert.deepEqual([...windows[0].lines,...windows.slice(1).map(p=>p.lines.at(-1))],lines);
  assert.ok(windows.at(-1).ayahs.includes(110));
 });
+
+test('reader includes selected Uzbek translation and Latin transliteration for every verse',()=>{
+ const uz=readerChapter(1,'uz'),en=readerChapter(1,'en');
+ assert.equal(uz.translationLang,'uz');assert.equal(uz.verses.length,7);
+ for(let i=0;i<7;i++){assert.equal(uz.verses[i].arabic,en.verses[i].arabic);assert.ok(uz.verses[i].translation.trim());assert.ok(uz.verses[i].transliteration.trim());assert.notEqual(uz.verses[i].translation,en.verses[i].translation);}
+});

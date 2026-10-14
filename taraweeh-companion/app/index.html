@@ -1035,20 +1035,39 @@ html.standalone #settingsView, html.standalone #helpView { animation: qvt-push .
 html.standalone .settings-header { position: sticky; top: 0; z-index: 5; background: var(--bc-2); padding-top: max(6px, env(safe-area-inset-top)); }
 @keyframes qvt-push { from { transform: translateX(24px); opacity: .4; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { html.standalone * { animation: none !important; transition: none !important; } }
-  #readerView[hidden] { display:none; }
-#readerView { max-width:720px; margin:auto; }
-.reader-select { display:flex;gap:12px;margin:16px 0; }
-.reader-select label { display:flex;flex-direction:column;gap:6px;flex:1;font-size:13px; }
-.reader-select select { min-height:44px;max-width:100%;min-width:0; }
-#readerText { font-family:var(--reader-font,'QuranIndoPak'),serif;font-size:clamp(24px,6vw,32px);line-height:1.9;padding:8px 0 12px;min-height:220px;color:#172e23; }
-#readerText p { margin:0; }
-#readerPaper { background:#f8f3e3 url('./artwork/reader-frame.svg') center/100% 100% no-repeat;padding:30px 28px; }
-#readerSurahTitle { font:28px var(--reader-font,'QuranIndoPak');text-align:center;color:#174c3c;padding:8px 0 16px;border-bottom:1px solid #b69c50; }
-.reader-select label { min-width:0; }
-@media(prefers-reduced-motion:reduce){#readerText p { animation:none !important; }}
-.reader-nav { display:flex;align-items:center;gap:12px;padding:12px 0; }
-.reader-nav button { flex:1;min-height:44px; }
-#readerPage { font-size:12px;color:var(--tc-2);font-variant-numeric:tabular-nums; }
+#readerView[hidden] { display:none; }
+#readerView { --read-bg:#fff;--read-fg:#23332b;--read-muted:#52645a;--read-rule:#e4eae5;--read-accent:#287956;max-width:720px;margin:auto;background:var(--read-bg);color:var(--read-fg);padding-bottom:80px; }
+#readerView[data-reading-theme="dark"] { --read-bg:#141a17;--read-fg:#edf3ee;--read-muted:#adbbb1;--read-rule:#303b34;--read-accent:#88c6a0; }
+html.reader-open body { background:var(--reader-body,#fff);max-width:720px; }
+.reader-top { position:sticky;top:0;z-index:20;display:flex;gap:12px;align-items:center;background:var(--read-bg);border-bottom:1px solid var(--read-rule);padding:8px 0; }
+.reader-top #readerSurah { flex:1;min-width:0;font-size:15px;font-weight:600; }
+#readerView select,#readerView button { color:var(--read-fg);background:var(--read-bg);border:1px solid var(--read-rule);min-height:44px; }
+.reader-back { padding:8px;border:0 !important; }
+#readerDisplayOptions { position:relative; }
+#readerDisplayOptions summary { list-style:none;cursor:pointer;font-size:18px;padding:10px;min-height:44px;box-sizing:border-box; }
+#readerDisplayOptions summary::-webkit-details-marker { display:none; }
+.reader-options { position:absolute;right:0;top:48px;width:min(280px,calc(100vw - 40px));padding:18px;box-sizing:border-box;background:var(--read-bg);border:1px solid var(--read-rule);border-radius:12px;box-shadow:0 12px 28px #0002;display:grid;gap:14px; }
+.reader-options label { display:flex;flex-direction:column;gap:6px;font-size:13px; }
+.reader-options .reader-check { flex-direction:row;align-items:center;gap:10px;min-height:28px; }
+.reader-check input { accent-color:var(--read-accent); }
+.reader-jump { display:flex;align-items:center;gap:10px;color:var(--read-muted);font-size:12px;padding:8px 0; }
+.reader-jump select { min-height:32px !important;max-width:90px; }
+#readerStatus { color:var(--read-muted);font-size:12px;margin:0 0 12px; }
+#readerPaper { background:var(--read-bg);padding:0; }
+#readerSurahTitle { font:24px/1.6 var(--reader-font,'QuranIndoPak');color:var(--read-fg);text-align:center;padding:12px 0 16px;border-bottom:1px solid var(--read-rule); }
+.reader-basmala { font:28px var(--reader-font,'QuranIndoPak');direction:rtl;text-align:center;padding:24px 0 8px;color:var(--read-fg); }
+.reader-verse { padding:24px 0;border-bottom:1px solid var(--read-rule);scroll-margin-top:72px; }
+.reader-arabic { font-family:var(--reader-font,'QuranIndoPak');font-size:var(--reader-size,28px);line-height:2.05;text-align:right;direction:rtl;color:var(--read-fg);margin:0 0 14px; }
+.reader-mark { display:inline-flex;position:relative;align-items:center;justify-content:center;width:30px;height:30px;margin:0 4px;vertical-align:middle;font:14px 'QuranBitmap';color:var(--read-muted); }
+.reader-mark svg { position:absolute;inset:0;width:100%;height:100%;stroke:#ad9657;fill:none;stroke-width:1; }
+.reader-translit { font-weight:400;color:var(--read-muted);font-size:14px;line-height:1.7;font-style:italic;margin:0 0 8px;overflow-wrap:anywhere; }
+.reader-translation { font-weight:400;color:var(--read-fg);font-size:16px;line-height:1.65;margin:0;overflow-wrap:anywhere; }
+.reader-study { margin-top:12px;min-height:32px !important;padding:0;border:0 !important;color:var(--read-accent) !important;font-size:13px; }
+.reader-verse[aria-current="true"] .reader-mark { color:var(--read-accent); }
+#readerView[data-translation="hidden"] .reader-translation,#readerView[data-transliteration="hidden"] .reader-translit { display:none; }
+.reader-nav { position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(100%,720px);box-sizing:border-box;z-index:15;display:flex;align-items:center;gap:12px;padding:10px 16px max(10px,env(safe-area-inset-bottom));background:var(--read-bg);border-top:1px solid var(--read-rule); }
+.reader-nav button { flex:1;min-height:44px;white-space:nowrap;font-size:13px;padding:8px 10px; }
+#readerPage { font-size:12px;color:var(--read-muted); }
 html.reader-open #qvtDock { display:none !important; }
 </style>
 </head>
@@ -1248,12 +1267,23 @@ html.reader-open #qvtDock { display:none !important; }
 </div>
 
 <section id="readerView" hidden aria-label="Read Quran">
-  <div class="settings-header"><button type="button" class="back-btn" onclick="closeQuranReader()">← Back</button></div>
-  <div class="reader-select"><label>Surah<select id="readerSurah" onchange="loadReaderSurah(Number(this.value))"></select></label><label>Ayah<select id="readerAyah" onchange="jumpReaderAyah(Number(this.value))"></select></label><label>Script<select id="readerScript" onchange="setReaderScript(this.value)"><option value="indopak">Indo-Pak</option><option value="madani">Madani</option></select></label></div>
+  <header class="reader-top">
+    <button type="button" class="reader-back" onclick="closeQuranReader()" aria-label="Back to translator">← Back</button>
+    <select id="readerSurah" aria-label="Surah" onchange="loadReaderSurah(Number(this.value))"></select>
+    <details id="readerDisplayOptions"><summary aria-label="Reading display settings">Aa</summary><div class="reader-options">
+      <label>Translation<select id="readerLanguage" onchange="setReaderLanguage(this.value)"></select></label>
+      <label>Arabic style<select id="readerScript" onchange="setReaderScript(this.value)"><option value="indopak">Indo-Pak</option><option value="madani">Madani</option></select></label>
+      <label>Text size<input id="readerSize" type="range" min="24" max="40" step="2" oninput="setReaderDisplay('readerTextSize',Number(this.value))" /></label>
+      <label>Theme<select id="readerTheme" onchange="setReaderDisplay('readerTheme',this.value)"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      <label class="reader-check"><input id="readerShowTranslation" type="checkbox" onchange="setReaderDisplay('readerShowTranslation',this.checked)" />Translation</label>
+      <label class="reader-check"><input id="readerShowTranslit" type="checkbox" onchange="setReaderDisplay('readerShowTranslit',this.checked)" />Transliteration</label>
+    </div></details>
+  </header>
+  <div class="reader-jump"><label for="readerAyah">Go to ayah</label><select id="readerAyah" onchange="jumpReaderAyah(Number(this.value))"></select></div>
   <p id="readerStatus" class="s-hint" role="status"></p>
-  <div id="readerPaper"><div id="readerSurahTitle" lang="ar" dir="rtl"></div><div id="readerText" lang="ar" dir="rtl" translate="no"></div></div>
+  <div id="readerPaper"><div id="readerSurahTitle" lang="ar" dir="rtl"></div><div id="readerText" translate="no"></div></div>
   <nav class="reader-nav" aria-label="Reading pages"><button type="button" id="readerPrev" class="nav-arrow-btn" onclick="readerStep(-1)">↑ Scroll up</button><span id="readerPage" aria-live="polite"></span><button type="button" id="readerNext" class="nav-arrow-btn" onclick="readerStep(1)">Scroll down ↓</button></nav>
-  <p class="s-hint">Glasses: swipe to scroll. Use the menu to choose a surah.</p>
+
   <button type="button" id="readerRetry" class="back-btn" hidden onclick="loadReaderSurah(Number(document.getElementById('readerSurah').value))">Try again</button>
 </section>
 <!-- Phone app: bottom dock and "more" sheet. setupMobileShell() moves the
@@ -1774,7 +1804,7 @@ html.reader-open #qvtDock { display:none !important; }
 
 
   var _readerActive=false, _readerPicking=false, _readerPick=1, _readerData=null;
-  var _readerLoading=false;
+  var _readerLoading=false, _readerObserver=null, _readerScrollUntil=0, _readerStudyAyah=0;
   var _readerPages=[], _readerPage=0, _readerEpoch=0, _readerAbort=null, _readerModule=null, _readerArtworkModule=null, _readerDirection=0;
   window.openQuranReader=async function () {
     if(S.isRecording)stopListening();
@@ -1786,11 +1816,14 @@ html.reader-open #qvtDock { display:none !important; }
     const select=document.getElementById('readerSurah');
     if(!select.options.length)SURAHS.slice(1).forEach((name,i)=>select.add(new Option((i+1)+' · '+name,String(i+1))));
     document.getElementById('readerScript').value=S.settings.readerScript==='madani'?'madani':'indopak';
+    const languages=document.getElementById('readerLanguage');if(!languages.options.length)Object.entries(LANGUAGE_CATALOG).forEach(([key,info])=>languages.add(new Option(info.label,key)));languages.value=S.settings.lang||'en';
+    applyReaderDisplay();
+    for(const id of ['studyPanel','studyBackdrop'])document.body.appendChild(document.getElementById(id));
     if(S.isG2){glassesStartup();await showReaderSplash();}
     await loadReaderSurah(Number(S.settings.readerSurah)||1,Number(S.settings.readerPage)||0);
   };
   window.closeQuranReader=function () {
-    _readerActive=false;_readerPicking=false;_readerEpoch++;if(_readerAbort)_readerAbort.abort();
+    _readerActive=false;_readerPicking=false;_readerEpoch++;if(_readerObserver)_readerObserver.disconnect();closeStudy();document.documentElement.style.removeProperty('--reader-body');if(_readerAbort)_readerAbort.abort();
     document.documentElement.classList.remove('reader-open');document.getElementById('readerView').hidden=true;
     document.getElementById('mainView').style.display='';S.displayRebuilt=false;if(S.isG2)glassesStartup();
   };
@@ -1802,8 +1835,9 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('readerRetry').hidden=true;document.getElementById('readerPrev').disabled=true;document.getElementById('readerNext').disabled=true;
     const controller=_readerAbort;const timeout=setTimeout(()=>controller.abort(),20000);
     try {
-      const url=backendBase()+'/api/quran/'+surah+'?edition=framed-1';
-      let cache=null,response=null;try{cache=await caches.open('quran-reader-v2');response=await cache.match(url);}catch(_){}
+      const lang=S.settings.lang||'en';
+      const url=backendBase()+'/api/quran/'+surah+'?lang='+encodeURIComponent(lang)+'&edition=verse-list';
+      let cache=null,response=null;try{cache=await caches.open('quran-reader-translations');response=await cache.match(url);}catch(_){}
       if(!response){response=await fetch(url,{signal:_readerAbort.signal});if(!response.ok)throw Error('Surah unavailable');if(cache)try{await cache.put(url,response.clone());}catch(_){}}
       const data=await response.json();if(!data.verses?.length)throw Error('Empty surah');
       if(!_readerModule)_readerModule=await import('./readerPagination.js');
@@ -1816,29 +1850,30 @@ html.reader-open #qvtDock { display:none !important; }
       _readerPage=Math.max(0,Math.min(page,_readerPages.length-1));
       const ayah=document.getElementById('readerAyah');ayah.replaceChildren();data.verses.forEach(v=>ayah.add(new Option(String(v.ayah),String(v.ayah))));
       document.getElementById('readerStatus').textContent=data.name+' · '+data.totalAyahs+' ayahs';
-      _readerLoading=false;await renderReaderPage();
+      renderPhoneReaderChapter();_readerLoading=false;await renderReaderPage(0,true);
     }catch(error){trace('reader.load',String(error));if(!_readerActive||epoch!==_readerEpoch)return;_readerLoading=false;_readerData=null;_readerPages=[];document.getElementById('readerText').replaceChildren();document.getElementById('readerPage').textContent='';document.getElementById('readerStatus').textContent='Could not load this surah. Check your connection and try again.';document.getElementById('readerRetry').hidden=false;}
     finally{clearTimeout(timeout);}
   };
-  window.jumpReaderAyah=function(ayah){if(_readerLoading)return;const page=_readerPages.findIndex(p=>p.ayahs.includes(ayah));if(page>=0){_readerPage=page;renderReaderPage();document.getElementById('readerAyah').value=String(ayah);}};
+  window.jumpReaderAyah=function(ayah){if(_readerLoading)return;const page=_readerPages.findIndex(p=>p.ayahs.includes(ayah));if(page>=0){_readerPage=page;renderReaderPage(ayah,true);document.getElementById('readerAyah').value=String(ayah);}};
   window.readerStep=function(direction){
     if(!_readerActive||_readerLoading||!_readerData)return;
     const next=_readerPage+direction;
     if(next<0){if(_readerData.surah>1)loadReaderSurah(_readerData.surah-1,99999);return;}
     if(next>=_readerPages.length){if(_readerData.surah<114)loadReaderSurah(_readerData.surah+1);return;}
-    _readerDirection=direction;_readerPage=next;renderReaderPage();
+    _readerDirection=direction;_readerPage=next;renderReaderPage(0,true);
   };
-  async function renderReaderPage(){
+  async function renderReaderPage(phoneAyah=0,scrollPhone=false){
     if(!_readerActive||!_readerPages.length)return;
     _readerPicking=false;const epoch=++_readerEpoch, page=_readerPages[_readerPage];
     document.getElementById('readerPaper').style.setProperty('--reader-font',readerFont());
     document.getElementById('readerSurahTitle').textContent='سورة '+(_readerData.arabicName||_readerData.name);
-    const text=document.getElementById('readerText');text.replaceChildren();
-    const paragraph=document.createElement('p');paragraph.textContent=displayArabic(page.lines.join(' '));text.appendChild(paragraph);
-    if(_readerDirection&&!matchMedia('(prefers-reduced-motion: reduce)').matches)paragraph.animate([{transform:'translateY('+(_readerDirection*12)+'px)',opacity:.65},{transform:'translateY(0)',opacity:1}],{duration:180,easing:'ease-out'});
-    _readerDirection=0;
-    document.getElementById('readerPage').textContent='Line '+(_readerPage+1)+' / '+page.totalLines;
-    document.getElementById('readerAyah').value=String(page.ayahs.find(n=>n>0)||1);
+    const currentAyah=phoneAyah||page.ayahs.find(n=>n>0)||1;
+    document.querySelectorAll('.reader-verse[aria-current="true"]').forEach(row=>row.removeAttribute('aria-current'));
+    const current=document.getElementById('reader-ayah-'+currentAyah);if(current)current.setAttribute('aria-current','true');
+    if(scrollPhone&&current){_readerScrollUntil=Date.now()+900;if(currentAyah===1)window.scrollTo({top:0,behavior:'auto'});else current.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
+    document.getElementById('readerPage').textContent=_readerData.surah+':'+currentAyah;
+    document.getElementById('readerPage').dataset.lineIndex=String(_readerPage);
+    document.getElementById('readerAyah').value=String(currentAyah);
     document.getElementById('readerPrev').disabled=_readerData.surah===1&&_readerPage===0;
     document.getElementById('readerNext').disabled=_readerData.surah===114&&_readerPage===_readerPages.length-1;
     S.settings.readerSurah=_readerData.surah;S.settings.readerPage=_readerPage;saveSettings();
@@ -1850,6 +1885,37 @@ html.reader-open #qvtDock { display:none !important; }
     page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,108+i*46));
     await sendReaderCanvas(canvas,epoch);
   }
+  function applyReaderDisplay(){
+    const view=document.getElementById('readerView'),theme=S.settings.readerTheme==='dark'?'dark':'light';
+    view.dataset.readingTheme=theme;document.documentElement.style.setProperty('--reader-body',theme==='dark'?'#141a17':'#fff');
+    view.dataset.translation=S.settings.readerShowTranslation===false?'hidden':'visible';view.dataset.transliteration=S.settings.readerShowTranslit===false?'hidden':'visible';
+    document.getElementById('readerPaper').style.setProperty('--reader-size',(Number(S.settings.readerTextSize)||28)+'px');
+    document.getElementById('readerSize').value=String(Number(S.settings.readerTextSize)||28);document.getElementById('readerTheme').value=theme;
+    document.getElementById('readerShowTranslation').checked=S.settings.readerShowTranslation!==false;document.getElementById('readerShowTranslit').checked=S.settings.readerShowTranslit!==false;
+  }
+  window.setReaderDisplay=function(field,value){if(!['readerTheme','readerTextSize','readerShowTranslation','readerShowTranslit'].includes(field))return;S.settings[field]=value;saveSettings();applyReaderDisplay();};
+  window.setReaderLanguage=async function(lang){const clean=sanitizeTranslationLang(lang);S.settings.lang=clean;document.getElementById('readerLanguage').value=clean||'en';document.getElementById('settingLang').value=clean;syncMainLang();saveSettings();await loadReaderSurah(Number(document.getElementById('readerSurah').value),_readerPage);};
+  function renderPhoneReaderChapter(){
+    if(_readerObserver)_readerObserver.disconnect();
+    const host=document.getElementById('readerText');host.replaceChildren();
+    if(_readerData.basmala){const line=document.createElement('p');line.className='reader-basmala';line.lang='ar';line.textContent=displayArabic(_readerData.basmala);host.appendChild(line);}
+    for(const verse of _readerData.verses){
+      const row=document.createElement('article');row.className='reader-verse';row.id='reader-ayah-'+verse.ayah;row.dataset.ayah=String(verse.ayah);row.setAttribute('aria-label','Ayah '+verse.ayah);
+      const arabic=document.createElement('p');arabic.className='reader-arabic';arabic.lang='ar';arabic.dir='rtl';arabic.appendChild(document.createTextNode(displayArabic(verse.arabic)+' '));
+      const mark=document.createElement('span');mark.className='reader-mark';mark.setAttribute('aria-label','Ayah '+verse.ayah);mark.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 1L20 5L26 6L27 12L31 16L27 20L26 26L20 27L16 31L12 27L6 26L5 20L1 16L5 12L6 6L12 5Z"/><circle cx="16" cy="16" r="11"/></svg>';mark.appendChild(document.createTextNode(String(verse.ayah).replace(/[0-9]/g,d=>String.fromCharCode(0x660+Number(d)))));arabic.appendChild(mark);row.appendChild(arabic);
+      if(verse.transliteration){const latin=document.createElement('p');latin.className='reader-translit';latin.dir='ltr';latin.textContent=verse.transliteration;row.appendChild(latin);}
+      const translation=document.createElement('p');translation.className='reader-translation';translation.dir='auto';translation.textContent=verse.translation||'';row.appendChild(translation);
+      const study=document.createElement('button');study.type='button';study.className='reader-study';study.textContent='Tafsir';study.setAttribute('aria-label','Tafsir for ayah '+verse.ayah);study.onclick=()=>{_readerStudyAyah=verse.ayah;openStudy('tafsir');};row.appendChild(study);host.appendChild(row);
+    }
+    _readerObserver=new IntersectionObserver(entries=>{
+      if(!_readerActive||_readerLoading||Date.now()<_readerScrollUntil)return;
+      const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>Math.abs(a.boundingClientRect.top-110)-Math.abs(b.boundingClientRect.top-110));
+      if(!visible.length)return;const ayah=Number(visible[0].target.dataset.ayah);const page=_readerPages.findIndex(p=>p.ayahs.includes(ayah));
+      if(page>=0&&document.getElementById('readerAyah').value!==String(ayah)){_readerPage=page;renderReaderPage(ayah,false);}
+    },{rootMargin:'-80px 0px -60% 0px',threshold:0});
+    host.querySelectorAll('.reader-verse').forEach(row=>_readerObserver.observe(row));
+  }
+
   function readerFont(){return document.getElementById('readerScript').value==='madani'?'QuranBitmap':'QuranIndoPak';}
   async function ensureReaderFont(){const faces=await document.fonts.load('28px '+readerFont());if(!faces.length)throw Error('Reader font unavailable');}
   window.setReaderScript=async function(script){S.settings.readerScript=script==='madani'?'madani':'indopak';document.getElementById('readerScript').value=S.settings.readerScript;saveSettings();const ayah=Number(document.getElementById('readerAyah').value)||1;await loadReaderSurah(Number(document.getElementById('readerSurah').value));jumpReaderAyah(ayah);};
@@ -4113,6 +4179,7 @@ html.reader-open #qvtDock { display:none !important; }
   window.setStudyPreference=function(field,value){if(!['studyTafsir','studyHadithLanguage','studyHadithEdition'].includes(field))return;S.settings[field]=value;if(field==='studyTafsir')document.getElementById('studyTafsir').value=value;saveSettings();};
   async function populateStudySettings(){try{if(!_studyEditions)_studyEditions=(await studyFetch({surah:1,ayah:1},'hadith')).editions;var tafsir=document.getElementById('settingStudyTafsir');tafsir.innerHTML=document.getElementById('studyTafsir').innerHTML;tafsir.value=S.settings.studyTafsir||266;var language=document.getElementById('settingHadithLanguage');language.replaceChildren();Array.from(new Set(_studyEditions.map(function(e){return e.language;}))).sort().forEach(function(name){var option=document.createElement('option');option.textContent=name;language.appendChild(option);});language.value=S.settings.studyHadithLanguage||'English';var edition=document.getElementById('settingHadithEdition');edition.replaceChildren();_studyEditions.filter(function(e){return e.language===language.value;}).forEach(function(e){var option=document.createElement('option');option.value=e.name;option.textContent=e.collection;edition.appendChild(option);});edition.value=S.settings.studyHadithEdition||'eng-bukhari';if(!edition.value){edition.selectedIndex=0;setStudyPreference('studyHadithEdition',edition.value);}}catch{}}
   function studyState() {
+    if(_readerActive&&_readerData)return {surah:_readerData.surah,ayah:_readerStudyAyah||Number(document.getElementById('readerAyah').value)||1,index:0,words:null};
     var state = _lastVerseState;
     if (!state || !state.surah || !state.ayah) return null;
     return {surah:state.surah,ayah:state.ayah,index:0,words:null};

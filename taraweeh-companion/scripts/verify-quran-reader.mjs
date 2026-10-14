@@ -72,12 +72,12 @@ async function capture(name){await evaluate('__uiAudit.S.bridgeCallQueue');await
 await capture('read-quran-fatiha');
 assert.match(await evaluate('document.getElementById("readerSurahTitle").textContent'),/الفاتحة/);
 assert.equal(await evaluate('document.getElementById("readerScript").value'),'indopak');
-const initial=await evaluate('document.getElementById("readerPage").textContent');
-await evaluate('readerStep(1)');await settle();assert.notEqual(await evaluate('document.getElementById("readerPage").textContent'),initial);
-await evaluate('readerStep(-1)');await settle();assert.equal(await evaluate('document.getElementById("readerPage").textContent'),initial);
+const initial=await evaluate('document.getElementById("readerPage").dataset.lineIndex');
+await evaluate('readerStep(1)');await settle();assert.notEqual(await evaluate('document.getElementById("readerPage").dataset.lineIndex'),initial);
+await evaluate('readerStep(-1)');await settle();assert.equal(await evaluate('document.getElementById("readerPage").dataset.lineIndex'),initial);
 await evaluate('loadReaderSurah(2)');await evaluate('jumpReaderAyah(255)');await capture('read-quran-baqarah');
 assert.equal(await evaluate('document.getElementById("readerSurah").value'),'2');
-const before=await evaluate('document.getElementById("readerPage").textContent');await evaluate('__uiAudit.onG2Event({textEvent:{eventType:2}})');await settle();assert.notEqual(await evaluate('document.getElementById("readerPage").textContent'),before);
+const before=await evaluate('document.getElementById("readerPage").dataset.lineIndex');await evaluate('__uiAudit.onG2Event({textEvent:{eventType:2}})');await settle();assert.notEqual(await evaluate('document.getElementById("readerPage").dataset.lineIndex'),before);
 await evaluate('pickReaderSurah()');await capture('read-quran-surah-picker');
 await evaluate('__uiAudit.onG2Event({textEvent:{eventType:2}});__uiAudit.onG2Event({textEvent:{eventType:0}})');await new Promise(r=>setTimeout(r,1200));assert.equal(await evaluate('document.getElementById("readerSurah").value'),'3');
 await evaluate('window.__readerFetch=window.fetch;window.fetch=()=>Promise.reject(new Error("offline"))');await evaluate('loadReaderSurah(1)');assert.match(await evaluate('document.getElementById("readerStatus").textContent'),/Al-Fatihah/);

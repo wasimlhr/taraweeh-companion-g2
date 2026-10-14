@@ -76,7 +76,9 @@ const app = express();
 app.use(express.json({ limit: '4mb' }));
 app.get('/api/quran/:surah', (req,res)=>{
  res.set('Access-Control-Allow-Origin','*');
- const chapter=readerChapter(Number(req.params.surah));
+ const lang=String(req.query.lang||'').trim();
+ if(!LOCAL_TRANSLATION_LANGS.has(lang))return res.status(400).json({error:'Invalid translation language'});
+ const chapter=readerChapter(Number(req.params.surah),lang);
  if(!chapter)return res.status(400).json({error:'Invalid surah'});
  res.set('Cache-Control','public, max-age=86400').json(chapter);
 });
