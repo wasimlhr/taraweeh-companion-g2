@@ -1034,7 +1034,18 @@ html.standalone #settingsView, html.standalone #helpView { animation: qvt-push .
 html.standalone .settings-header { position: sticky; top: 0; z-index: 5; background: var(--bc-2); padding-top: max(6px, env(safe-area-inset-top)); }
 @keyframes qvt-push { from { transform: translateX(24px); opacity: .4; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { html.standalone * { animation: none !important; transition: none !important; } }
-  </style>
+  #readerView[hidden] { display:none; }
+#readerView { max-width:720px; margin:auto; }
+.reader-select { display:flex;gap:12px;margin:16px 0; }
+.reader-select label { display:flex;flex-direction:column;gap:6px;flex:1;font-size:13px; }
+.reader-select select { min-height:44px;max-width:100%; }
+#readerText { font-family:'QuranBitmap',serif;font-size:clamp(24px,6vw,32px);line-height:1.9;padding:16px 0;min-height:240px;color:var(--tc-1); }
+#readerText p { margin:0; }
+.reader-nav { display:flex;align-items:center;gap:12px;padding:12px 0; }
+.reader-nav button { flex:1;min-height:44px; }
+#readerPage { font-size:12px;color:var(--tc-2);font-variant-numeric:tabular-nums; }
+html.reader-open #qvtDock { display:none !important; }
+</style>
 </head>
 <body>
 
@@ -1219,6 +1230,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
     <div class="mv-toggle-group" role="group" aria-label="Recitation mode" style="margin-bottom:8px">
       <button type="button" class="mv-toggle-btn active" id="btnModeListen" onclick="setReciteMode('listen')">🌐 Translate</button>
       <button type="button" class="mv-toggle-btn" id="btnModePractice" onclick="setReciteMode('practice')">📖 Practice</button>
+      <button type="button" class="mv-toggle-btn" onclick="openQuranReader()">Read Quran</button>
       <button type="button" class="mv-toggle-btn" id="btnModeTaraweeh" onclick="setReciteMode('taraweeh')">🌙 Taraweeh</button>
     </div>
     <div id="practiceSurahRow" class="s-row" style="display:none;margin-bottom:8px">
@@ -1230,9 +1242,18 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
     <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" role="switch" aria-checked="false" aria-label="Slow reciter" title="Tap to switch between fast and slow reciter">🐇 Fast reciter</button></div>
   </div>
 
-  <footer class="version" id="versionEl" style="text-align:center;padding:16px 0 8px">v3.4.27</footer>
+  <footer class="version" id="versionEl" style="text-align:center;padding:16px 0 8px">v3.4.28</footer>
 </div>
 
+<section id="readerView" hidden aria-label="Read Quran">
+  <div class="settings-header"><button type="button" class="back-btn" onclick="closeQuranReader()">← Back</button><h2>Read Quran</h2></div>
+  <div class="reader-select"><label>Surah<select id="readerSurah" onchange="loadReaderSurah(Number(this.value))"></select></label><label>Ayah<select id="readerAyah" onchange="jumpReaderAyah(Number(this.value))"></select></label></div>
+  <p id="readerStatus" class="s-hint" role="status"></p>
+  <div id="readerText" lang="ar" dir="rtl" translate="no"></div>
+  <nav class="reader-nav" aria-label="Reading pages"><button type="button" id="readerPrev" class="nav-arrow-btn" onclick="readerStep(-1)">← Previous</button><span id="readerPage" aria-live="polite"></span><button type="button" id="readerNext" class="nav-arrow-btn" onclick="readerStep(1)">Next →</button></nav>
+  <p class="s-hint">Glasses: swipe to turn pages. Use the menu to choose a surah.</p>
+  <button type="button" id="readerRetry" class="back-btn" hidden onclick="loadReaderSurah(Number(document.getElementById('readerSurah').value))">Try again</button>
+</section>
 <!-- Phone app: bottom dock and "more" sheet. setupMobileShell() moves the
      existing controls in here, so their ids and handlers stay the same. -->
 <div id="qvtDock">
@@ -1573,7 +1594,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.27';
+  const APP_VERSION = 'v3.4.28';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -1748,6 +1769,104 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
     btn.classList.add('active');
   }
   _updatePaceButton();
+
+
+  var _readerActive=false, _readerPicking=false, _readerPick=1, _readerData=null;
+  var _readerLoading=false;
+  var _readerPages=[], _readerPage=0, _readerEpoch=0, _readerAbort=null, _readerModule=null;
+  window.openQuranReader=async function () {
+    if(S.isRecording)stopListening();
+    closeMoreSheet();if(getComputedStyle(document.getElementById('settingsView')).display!=='none')hideSettings();_manualBrowse=false;resetVerseHold();
+    stopPageFlip();stopCountdown();stopSearchingDots();stopLockingDots();
+    _readerActive=true;_readerPicking=false;
+    document.documentElement.classList.add('reader-open');
+    document.getElementById('mainView').style.display='none';document.getElementById('readerView').hidden=false;
+    const select=document.getElementById('readerSurah');
+    if(!select.options.length)SURAHS.slice(1).forEach((name,i)=>select.add(new Option((i+1)+' · '+name,String(i+1))));
+    if(S.isG2)glassesStartup();
+    await loadReaderSurah(Number(S.settings.readerSurah)||1,Number(S.settings.readerPage)||0);
+  };
+  window.closeQuranReader=function () {
+    _readerActive=false;_readerPicking=false;_readerEpoch++;if(_readerAbort)_readerAbort.abort();
+    document.documentElement.classList.remove('reader-open');document.getElementById('readerView').hidden=true;
+    document.getElementById('mainView').style.display='';S.displayRebuilt=false;if(S.isG2)glassesStartup();
+  };
+  window.loadReaderSurah=async function (surah,page=0) {
+    if(!_readerActive||!Number.isInteger(surah)||surah<1||surah>114)return;
+    const epoch=++_readerEpoch;_readerLoading=true;if(_readerAbort)_readerAbort.abort();_readerAbort=new AbortController();
+    document.getElementById('readerSurah').value=String(surah);
+    document.getElementById('readerStatus').textContent='Loading '+SURAHS[surah]+'…';
+    document.getElementById('readerRetry').hidden=true;document.getElementById('readerPrev').disabled=true;document.getElementById('readerNext').disabled=true;
+    const controller=_readerAbort;const timeout=setTimeout(()=>controller.abort(),20000);
+    try {
+      const url=backendBase()+'/api/quran/'+surah;
+      let cache=null,response=null;try{cache=await caches.open('quran-reader-v1');response=await cache.match(url);}catch(_){}
+      if(!response){response=await fetch(url,{signal:_readerAbort.signal});if(!response.ok)throw Error('Surah unavailable');if(cache)try{await cache.put(url,response.clone());}catch(_){}}
+      const data=await response.json();if(!data.verses?.length)throw Error('Empty surah');
+      if(!_readerModule)_readerModule=await import('./readerPagination.js');
+      await ensureArabicFont();if(!_readerActive||epoch!==_readerEpoch)return;
+      _readerData=data;
+      const ctx=document.createElement('canvas').getContext('2d');ctx.font='32px QuranBitmap';
+      const verses=data.basmala?[{ayah:0,arabic:data.basmala},...data.verses]:data.verses;
+      _readerPages=_readerModule.paginateReader(verses,t=>ctx.measureText(displayArabic(t)).width);
+      _readerPage=Math.max(0,Math.min(page,_readerPages.length-1));
+      const ayah=document.getElementById('readerAyah');ayah.replaceChildren();data.verses.forEach(v=>ayah.add(new Option(String(v.ayah),String(v.ayah))));
+      document.getElementById('readerStatus').textContent=data.name+' · '+data.totalAyahs+' ayahs';
+      _readerLoading=false;await renderReaderPage();
+    }catch(error){trace('reader.load',String(error));if(!_readerActive||epoch!==_readerEpoch)return;_readerLoading=false;_readerData=null;_readerPages=[];document.getElementById('readerText').replaceChildren();document.getElementById('readerPage').textContent='';document.getElementById('readerStatus').textContent='Could not load this surah. Check your connection and try again.';document.getElementById('readerRetry').hidden=false;}
+    finally{clearTimeout(timeout);}
+  };
+  window.jumpReaderAyah=function(ayah){if(_readerLoading)return;const page=_readerPages.findIndex(p=>p.ayahs.includes(ayah));if(page>=0){_readerPage=page;renderReaderPage();document.getElementById('readerAyah').value=String(ayah);}};
+  window.readerStep=function(direction){
+    if(!_readerActive||_readerLoading||!_readerData)return;
+    const next=_readerPage+direction;
+    if(next<0){if(_readerData.surah>1)loadReaderSurah(_readerData.surah-1,99999);return;}
+    if(next>=_readerPages.length){if(_readerData.surah<114)loadReaderSurah(_readerData.surah+1);return;}
+    _readerPage=next;renderReaderPage();
+  };
+  async function renderReaderPage(){
+    if(!_readerActive||!_readerPages.length)return;
+    _readerPicking=false;const epoch=++_readerEpoch, page=_readerPages[_readerPage];
+    const text=document.getElementById('readerText');text.replaceChildren();
+    const paragraph=document.createElement('p');paragraph.textContent=displayArabic(page.lines.join(' '));text.appendChild(paragraph);
+    document.getElementById('readerPage').textContent=(_readerPage+1)+' / '+_readerPages.length;
+    document.getElementById('readerAyah').value=String(page.ayahs.find(n=>n>0)||1);
+    document.getElementById('readerPrev').disabled=_readerData.surah===1&&_readerPage===0;
+    document.getElementById('readerNext').disabled=_readerData.surah===114&&_readerPage===_readerPages.length-1;
+    S.settings.readerSurah=_readerData.surah;S.settings.readerPage=_readerPage;saveSettings();
+    if(!S.isG2||!S.bridge)return;
+    const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,576,288);
+    ctx.fillStyle='#fff';ctx.font='32px QuranBitmap';ctx.direction='rtl';ctx.textAlign='right';
+    page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),562,50+i*52));
+    await queueBridgeCall('readerPage',async()=>{
+      if(!_readerActive||epoch!==_readerEpoch)return;
+      const images=Array.from({length:6},(_,i)=>({containerID:20+i,containerName:'reader'+i,xPosition:i%2*288,yPosition:Math.floor(i/2)*96,width:288,height:96,zOrderIndex:i+1}));
+      const ok=await S.bridge.rebuildPageContainer({containerTotalNum:7,textObject:[{containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:1,height:1,content:' ',isEventCapture:1,zOrderIndex:0}],imageObject:images,menuObject:glassesMenu()});
+      if(ok===false)throw Error('Reader layout rejected');
+      for(let i=0;i<6;i++){
+        if(!_readerActive||epoch!==_readerEpoch)return;
+        const rgba=ctx.getImageData(i%2*288,Math.floor(i/2)*96,288,96).data;
+        const gray=new Uint8Array(288*96);for(let n=0;n<gray.length;n++)gray[n]=rgba[n*4];
+        const result=await S.bridge.updateImageRawData({containerID:20+i,containerName:'reader'+i,imageData:gray});
+        if(result!==0&&result!=='success')throw Error('Reader image transfer failed');
+      }
+    });
+  }
+  window.pickReaderSurah=function(){
+    if(!_readerActive)return;_readerPicking=true;_readerPick=_readerData?.surah||1;renderReaderPicker();
+  };
+  function renderReaderPicker(){
+    const lines=['Choose surah',''];for(let n=Math.max(1,_readerPick-2);n<=Math.min(114,_readerPick+2);n++)lines.push((n===_readerPick?'› ':'  ')+n+' '+SURAHS[n]);lines.push('','Tap to read · Double-tap back');
+    queueBridgeCall('readerSurahPicker',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'surahPicker',xPosition:8,yPosition:4,width:560,height:280,content:lines.join('\n'),isEventCapture:1,paddingLength:2}],menuObject:glassesMenu()}));
+  }
+  function readerEvent(event){
+    if(event.menuItemClickEvent){const id=event.menuItemClickEvent.itemID;if(id===6)pickReaderSurah();else if(id===7)readerStep(1);else if(id===8)readerStep(-1);else if(id===9)closeQuranReader();return;}
+    const e=event.textEvent||event.listEvent||event.sysEvent;if(!e)return;const t=e.eventType;
+    if(event.sysEvent&&(t===6||t===7)){_readerActive=false;_readerEpoch++;if(_readerAbort)_readerAbort.abort();_cleanupBridgeResources();return;}
+    if(_readerPicking){if(t===1||t===2){_readerPick=Math.max(1,Math.min(114,_readerPick+(t===1?-1:1)));renderReaderPicker();}else if(t===0)loadReaderSurah(_readerPick);else if(t===3)renderReaderPage();return;}
+    if(t===1||t===2)readerStep(t===1?-1:1);else if(t===0)pickReaderSurah();else if(t===3)requestSystemExit();
+  }
 
   // ── Recitation mode ─────────────────────────────────────────────────────────
   // Translate: follow any Quran recitation with auto-advance; no prayer tracking.
@@ -3388,10 +3507,12 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
 
   // Menu actions are separate from temple taps and survive every page rebuild.
   function glassesMenu() {
+    if(_readerActive)return {menuItems:[{itemID:6,itemName:'Choose surah'},{itemID:8,itemName:'Previous page'},{itemID:7,itemName:'Next page'},{itemID:9,itemName:'Back to translator'}]};
     var items = [
       { itemID: 3, itemName: S.isRecording ? 'Stop listening' : 'Start listening' },
       { itemID: 4, itemName: _readingHeld ? 'Resume verse' : 'Hold verse' },
       { itemID: 5, itemName: S.settings && S.settings.arabicImage ? 'Show translation' : S.settings && S.settings.glassesBottom === 'translation-only' ? 'Show pronunciation' : 'Hide pronunciation' },
+      { itemID: 6, itemName: 'Read Quran' },
     ];
     if (_taraweehMode) items.push({ itemID: 1, itemName: 'Rakat -' }, { itemID: 2, itemName: 'Rakat +' });
     return { menuItems: items };
@@ -3473,6 +3594,7 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
   var _glassesDraining = false;
 
   function glassesUpdate(display) {
+    if(_readerActive)return;
     if (!S.bridge) return;
     if (typeof display === 'string') display = { hdr: '', body: display };
     _pendingGlasses = display;
@@ -4996,9 +5118,11 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
   }
 
   function onG2Event(event) {
+    if(_readerActive){readerEvent(event);return;}
     if (event.menuItemClickEvent) {
       var itemID = event.menuItemClickEvent.itemID;
       trace('g2.menu', String(itemID));
+      if(itemID===6){openQuranReader();return;}
       if (_taraweehMode && (itemID === 1 || itemID === 2)) window.adjustRakat(itemID === 1 ? -1 : 1);
       else if (itemID === 3) { if (S.isRecording) stopListening(); else startListening(); }
       else if (itemID === 4) toggleVerseHold();

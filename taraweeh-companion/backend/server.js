@@ -1,8 +1,9 @@
+import {readerChapter} from './quranReader.js';
 import {LANGUAGE_CODES, PACK_CODES} from './languageCatalog.js';
 /**
  * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.27 — on-device language packs + DIAG_TOKEN usage analytics
+ * v3.4.28 — on-device language packs + DIAG_TOKEN usage analytics
  *   Translate mode: general Quran follow-along translator; Taraweeh adds rak'ah tracking
  */
 import 'dotenv/config';
@@ -73,6 +74,13 @@ const APP_VERSION = (() => {
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
+app.get('/api/quran/:surah', (req,res)=>{
+ res.set('Access-Control-Allow-Origin','*');
+ const chapter=readerChapter(Number(req.params.surah));
+ if(!chapter)return res.status(400).json({error:'Invalid surah'});
+ res.set('Cache-Control','public, max-age=86400').json(chapter);
+});
+app.get('/readerPagination.js', (req,res)=>res.sendFile(join(rootDir,'app','readerPagination.js')));
 const usageStats = new UsageStats();
 const usageJournal = new UsageJournal({path:process.env.USAGE_STATS_PATH || join(__dirname,'data','usage','sessions.json')});
 setInterval(()=>usageJournal.flush(),30000).unref();

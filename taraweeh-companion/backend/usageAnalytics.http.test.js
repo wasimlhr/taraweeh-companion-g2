@@ -61,7 +61,7 @@ test('analytics is token-gated and records connect/init/start/lang_pack', { time
 
     const status = await fetch(`${BASE}/api/status`).then((r) => r.json());
     assert.equal(status.liveConnections, 0);
-    assert.equal(status.version, '3.4.27');
+    assert.equal(status.version, '3.4.28');
     assert.equal(status.translationSource, 'on-device-packs');
     const invalidStudy = await fetch(`${BASE}/api/study/999/1/words`);
     assert.equal(invalidStudy.status,400);
@@ -137,4 +137,13 @@ test('analytics is token-gated and records connect/init/start/lang_pack', { time
     await stopServer(child);
     rmSync(statsDir,{recursive:true,force:true});
   }
+});
+
+test('reader HTTP endpoint serves local chapter text and validates surah selection',async()=>{
+ const child=await startServer();try {
+  const r=await fetch(BASE+'/api/quran/2');assert.equal(r.status,200);assert.equal(r.headers.get('access-control-allow-origin'),'*');
+  const chapter=await r.json();assert.equal(chapter.surah,2);assert.equal(chapter.totalAyahs,286);assert.equal(chapter.verses.length,286);assert.ok(chapter.verses[254].arabic);
+  for(const invalid of ['0','115','1.5','bad'])assert.equal((await fetch(BASE+'/api/quran/'+invalid)).status,400);
+  const module=await fetch(BASE+'/readerPagination.js');assert.equal(module.status,200);assert.match(await module.text(),/export function paginateReader/);
+ }finally{await stopServer(child);}
 });

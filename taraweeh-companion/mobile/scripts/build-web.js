@@ -45,6 +45,7 @@ export function build() {
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, 'index.html'), transformHtml(readFileSync(srcHtml, 'utf8')));
+  copyFileSync(join(dirname(srcHtml), 'readerPagination.js'), join(outDir, 'readerPagination.js'));
   // Settings links to the privacy policy, so it ships inside the app too.
   copyFileSync(join(dirname(srcHtml), 'privacy.html'), join(outDir, 'privacy.html'));
   mkdirSync(join(outDir, 'fonts'), { recursive: true });
