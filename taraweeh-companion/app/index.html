@@ -1885,9 +1885,16 @@ html.reader-open #qvtDock { display:none !important; }
     const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,576,288);
     const number=String(currentAyah).replace(/[0-9]/g,d=>String.fromCharCode(0x660+Number(d)));
     _readerArtworkModule.drawReaderFrame(ctx,'سورة '+(_readerData.arabicName||_readerData.name)+' · '+number,readerFont());
-    ctx.fillStyle='#fff';ctx.font=(page.lines.length===1?'32px ':'28px ')+readerFont();ctx.direction='rtl';ctx.textAlign='right';
+    // The opening invocation is a separate heading, never part of an ayah's flow.
+    const opening=currentAyah===1&&page.part===1;
+    const basmala=opening?_readerData.basmala:'';
+    ctx.fillStyle='#fff';ctx.direction='rtl';
+    if(basmala){ctx.font='24px '+readerFont();ctx.textAlign='center';ctx.fillText(displayArabic(basmala),288,91);}
+    ctx.font=(page.lines.length===1?'32px ':'28px ')+readerFont();ctx.textAlign='right';
     if(page.lines.length===1&&ctx.measureText(displayArabic(page.lines[0])).width>520)ctx.font='28px '+readerFont();
-    page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,108+(4-page.lines.length)*23+i*46));
+    // Al-Fatihah's Bismillah remains its numbered first ayah, displayed once below the title.
+    if(opening&&_readerData.surah===1){ctx.textAlign='center';page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),288,112+i*46));}
+    else page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,basmala?126+(4-page.lines.length)*20+i*40:108+(4-page.lines.length)*23+i*46));
     await sendReaderCanvas(canvas,epoch);
   }
   function applyReaderDisplay(){
