@@ -16,8 +16,10 @@ test('multi-page reading preserves every word and every ayah marker',()=>{
  assert.deepEqual(actual,expected);for(let a=1;a<=286;a++)assert.ok(pages.some(p=>p.ayahs.includes(a)));
 });
 test('full-screen image layout is accepted by the Even SDK',()=>{
- const imageObject=Array.from({length:6},(_,i)=>({containerID:20+i,containerName:'reader'+i,xPosition:i%2*288,yPosition:Math.floor(i/2)*96,width:288,height:96,zOrderIndex:i+1}));
- const payload={containerTotalNum:7,textObject:[{containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:1,height:1,content:' ',isEventCapture:1,zOrderIndex:0}],imageObject,menuObject:{menuItems:[{itemID:6,itemName:'Choose surah'},{itemID:9,itemName:'Back to translator'}]}};
+ const imageObject=Array.from({length:4},(_,i)=>({containerID:20+i,containerName:'reader'+i,xPosition:i%2*288,yPosition:Math.floor(i/2)*144,width:288,height:144,zOrderIndex:i+1}));
+ const payload={containerTotalNum:5,textObject:[{containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:1,height:1,content:' ',isEventCapture:1,zOrderIndex:0}],imageObject,menuObject:{menuItems:[{itemID:6,itemName:'Choose surah'},{itemID:9,itemName:'Back to translator'}]}};
+ assert.equal(payload.imageObject.length,4,'hardware supports at most four image containers');
+ assert.equal(payload.imageObject.reduce((area,t)=>area+t.width*t.height,0),576*288);
  const result=validateEvenHubPageContainer(payload);assert.equal(result.valid,true,JSON.stringify(result));
 });
 
