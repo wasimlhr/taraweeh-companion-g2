@@ -127,7 +127,7 @@ test('glasses menu is valid and preserved by startup, recovery, and verse rebuil
   assert.ok(pages.filter((w) => w.type === 'rebuild').length >= 2);
   for (const { page } of pages) {
     assert.equal(validateEvenHubPageContainer(page).valid, true);
-    assert.deepEqual(Array.from(page.menuObject.menuItems, (item) => item.itemID), [3, 4, 5, 6]);
+    assert.deepEqual(Array.from(page.menuObject.menuItems, (item) => item.itemID), [3, 4, 5, 6, 10, 11, 12]);
   }
 });
 
@@ -395,9 +395,9 @@ test('secondary brightness preserves bright translation and dims pronunciation s
 test('Taraweeh exposes Rakat corrections; other modes hide them and keep reading actions', () => {
   const h = harness();
   h.ui.setMode('taraweeh');
-  assert.deepEqual(Array.from(h.ui.glassesMenu().menuItems,item=>item.itemName),['Stop listening','Hold verse','Hide pronunciation','Read Quran','Rakat -','Rakat +']);
+  assert.deepEqual(Array.from(h.ui.glassesMenu().menuItems,item=>item.itemName),['Stop listening','Hold verse','Hide pronunciation','Read Quran','Translate','Practice','Taraweeh','Rakat -','Rakat +']);
   h.ui.setMode('practice');
-  assert.equal(h.ui.glassesMenu().menuItems.length,4);
+  assert.equal(h.ui.glassesMenu().menuItems.length,7);
 });
 
 test('Arabic image uses four bounded tiles and accepts the SDK string success result', async () => {

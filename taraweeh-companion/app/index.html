@@ -1992,7 +1992,7 @@ html.reader-open #qvtDock { display:none !important; }
     queueBridgeCall('readerSurahPicker',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'surahPicker',xPosition:8,yPosition:4,width:560,height:280,content:lines.join('\n'),isEventCapture:1,paddingLength:2}],menuObject:glassesMenu()}));
   }
   function readerEvent(event){
-    if(event.menuItemClickEvent){const id=event.menuItemClickEvent.itemID;if(id===6)pickReaderSurah();else if(id===7)readerStep(1);else if(id===8)readerStep(-1);else if(id===9)closeQuranReader();return;}
+    if(event.menuItemClickEvent){const id=event.menuItemClickEvent.itemID;if(id===10||id===11||id===12){closeQuranReader();setReciteMode(id===10?'listen':id===11?'practice':'taraweeh');}else if(id===13)pickReaderSurah();else if(id===6)renderReaderPage();else if(id===7)readerStep(1);else if(id===8)readerStep(-1);else if(id===9)closeQuranReader();return;}
     const e=event.textEvent||event.listEvent||event.sysEvent;if(!e)return;const t=e.eventType;
     if(event.sysEvent&&(t===6||t===7)){_readerActive=false;_readerEpoch++;if(_readerAbort)_readerAbort.abort();_cleanupBridgeResources();return;}
     if(_readerPicking){if(t===1||t===2){_readerPick=Math.max(1,Math.min(114,_readerPick+(t===1?-1:1)));renderReaderPicker();}else if(t===0)loadReaderSurah(_readerPick);else if(t===3)renderReaderPage();return;}
@@ -3639,12 +3639,15 @@ html.reader-open #qvtDock { display:none !important; }
 
   // Menu actions are separate from temple taps and survive every page rebuild.
   function glassesMenu() {
-    if(_readerActive)return {menuItems:[{itemID:6,itemName:'Choose surah'},{itemID:8,itemName:'Previous page'},{itemID:7,itemName:'Next page'},{itemID:9,itemName:'Back to translator'}]};
+    if(_readerActive)return {menuItems:[{itemID:6,itemName:'Read Quran'},{itemID:10,itemName:'Translate'},{itemID:11,itemName:'Practice'},{itemID:12,itemName:'Taraweeh'},{itemID:13,itemName:'Choose surah'},{itemID:8,itemName:'Previous page'},{itemID:7,itemName:'Next page'}]};
     var items = [
       { itemID: 3, itemName: S.isRecording ? 'Stop listening' : 'Start listening' },
       { itemID: 4, itemName: _readingHeld ? 'Resume verse' : 'Hold verse' },
       { itemID: 5, itemName: S.settings && S.settings.arabicImage ? 'Show translation' : S.settings && S.settings.glassesBottom === 'translation-only' ? 'Show pronunciation' : 'Hide pronunciation' },
       { itemID: 6, itemName: 'Read Quran' },
+      { itemID: 10, itemName: 'Translate' },
+      { itemID: 11, itemName: 'Practice' },
+      { itemID: 12, itemName: 'Taraweeh' },
     ];
     if (_taraweehMode) items.push({ itemID: 1, itemName: 'Rakat -' }, { itemID: 2, itemName: 'Rakat +' });
     return { menuItems: items };
@@ -5257,6 +5260,7 @@ html.reader-open #qvtDock { display:none !important; }
       var itemID = event.menuItemClickEvent.itemID;
       trace('g2.menu', String(itemID));
       if(itemID===6){openQuranReader();return;}
+      if(itemID===10||itemID===11||itemID===12){setReciteMode(itemID===10?'listen':itemID===11?'practice':'taraweeh');return;}
       if (_taraweehMode && (itemID === 1 || itemID === 2)) window.adjustRakat(itemID === 1 ? -1 : 1);
       else if (itemID === 3) { if (S.isRecording) stopListening(); else startListening(); }
       else if (itemID === 4) toggleVerseHold();
