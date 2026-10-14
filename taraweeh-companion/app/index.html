@@ -6,6 +6,7 @@
   <title>Quran Verse Translator</title>
   <style>
 @font-face { font-family: 'Amiri'; src: url('./fonts/AmiriQuran.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'QuranIndoPak'; src: url('./fonts/DigitalKhattIndoPak.otf') format('opentype'); font-display: block; }
 @font-face { font-family: 'QuranBitmap'; src: url('./fonts/AmiriQuran.ttf') format('truetype'); font-display: block; }
 .reading-tools, .language-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
 .language-tools input { flex:1; min-width:140px; }
@@ -1038,9 +1039,13 @@ html.standalone .settings-header { position: sticky; top: 0; z-index: 5; backgro
 #readerView { max-width:720px; margin:auto; }
 .reader-select { display:flex;gap:12px;margin:16px 0; }
 .reader-select label { display:flex;flex-direction:column;gap:6px;flex:1;font-size:13px; }
-.reader-select select { min-height:44px;max-width:100%; }
-#readerText { font-family:'QuranBitmap',serif;font-size:clamp(24px,6vw,32px);line-height:1.9;padding:16px 0;min-height:240px;color:var(--tc-1); }
+.reader-select select { min-height:44px;max-width:100%;min-width:0; }
+#readerText { font-family:var(--reader-font,'QuranIndoPak'),serif;font-size:clamp(24px,6vw,32px);line-height:1.9;padding:8px 0 12px;min-height:220px;color:#172e23; }
 #readerText p { margin:0; }
+#readerPaper { background:#f8f3e3 url('./artwork/reader-frame.svg') center/100% 100% no-repeat;padding:30px 28px; }
+#readerSurahTitle { font:28px var(--reader-font,'QuranIndoPak');text-align:center;color:#174c3c;padding:8px 0 16px;border-bottom:1px solid #b69c50; }
+.reader-select label { min-width:0; }
+@media(prefers-reduced-motion:reduce){#readerText p { animation:none !important; }}
 .reader-nav { display:flex;align-items:center;gap:12px;padding:12px 0; }
 .reader-nav button { flex:1;min-height:44px; }
 #readerPage { font-size:12px;color:var(--tc-2);font-variant-numeric:tabular-nums; }
@@ -1050,12 +1055,9 @@ html.reader-open #qvtDock { display:none !important; }
 <body>
 
 <!-- Splash screen — shown for ~1.2s on app launch, then fades out -->
-<div id="splashScreen" style="position:fixed;inset:0;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity 400ms ease;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-  <div style="font-size:40px;line-height:1;margin-bottom:16px">☽</div>
-  <div style="font-size:22px;font-weight:600;letter-spacing:0.5px">Quran Verse Translator</div>
-  <div class="g2-only" style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">for Even Realities G2</div>
-  <div class="standalone-only" style="font-size:12px;margin-top:8px;opacity:0.6;letter-spacing:1px;text-transform:uppercase">Live Quran verse translation</div>
-  <div id="splashVersion" style="position:absolute;bottom:24px;font-size:11px;opacity:0.4;letter-spacing:0.5px"></div>
+<div id="splashScreen" style="position:fixed;inset:0;background:#fff;color:#172e23;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity 400ms ease">
+  <img src="./artwork/quran-splash.png" alt="القرآن الكريم" style="width:auto;height:min(62vh,420px);max-width:75vw;object-fit:contain" />
+  <div id="splashVersion" style="position:absolute;bottom:24px;font-size:11px;opacity:0.6"></div>
 </div>
 
 <!-- Main view -->
@@ -1242,16 +1244,16 @@ html.reader-open #qvtDock { display:none !important; }
     <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" role="switch" aria-checked="false" aria-label="Slow reciter" title="Tap to switch between fast and slow reciter">🐇 Fast reciter</button></div>
   </div>
 
-  <footer class="version" id="versionEl" style="text-align:center;padding:16px 0 8px">v3.4.28</footer>
+  <footer class="version" id="versionEl" style="text-align:center;padding:16px 0 8px">v3.4.29</footer>
 </div>
 
 <section id="readerView" hidden aria-label="Read Quran">
-  <div class="settings-header"><button type="button" class="back-btn" onclick="closeQuranReader()">← Back</button><h2>Read Quran</h2></div>
-  <div class="reader-select"><label>Surah<select id="readerSurah" onchange="loadReaderSurah(Number(this.value))"></select></label><label>Ayah<select id="readerAyah" onchange="jumpReaderAyah(Number(this.value))"></select></label></div>
+  <div class="settings-header"><button type="button" class="back-btn" onclick="closeQuranReader()">← Back</button></div>
+  <div class="reader-select"><label>Surah<select id="readerSurah" onchange="loadReaderSurah(Number(this.value))"></select></label><label>Ayah<select id="readerAyah" onchange="jumpReaderAyah(Number(this.value))"></select></label><label>Script<select id="readerScript" onchange="setReaderScript(this.value)"><option value="indopak">Indo-Pak</option><option value="madani">Madani</option></select></label></div>
   <p id="readerStatus" class="s-hint" role="status"></p>
-  <div id="readerText" lang="ar" dir="rtl" translate="no"></div>
-  <nav class="reader-nav" aria-label="Reading pages"><button type="button" id="readerPrev" class="nav-arrow-btn" onclick="readerStep(-1)">← Previous</button><span id="readerPage" aria-live="polite"></span><button type="button" id="readerNext" class="nav-arrow-btn" onclick="readerStep(1)">Next →</button></nav>
-  <p class="s-hint">Glasses: swipe to turn pages. Use the menu to choose a surah.</p>
+  <div id="readerPaper"><div id="readerSurahTitle" lang="ar" dir="rtl"></div><div id="readerText" lang="ar" dir="rtl" translate="no"></div></div>
+  <nav class="reader-nav" aria-label="Reading pages"><button type="button" id="readerPrev" class="nav-arrow-btn" onclick="readerStep(-1)">↑ Scroll up</button><span id="readerPage" aria-live="polite"></span><button type="button" id="readerNext" class="nav-arrow-btn" onclick="readerStep(1)">Scroll down ↓</button></nav>
+  <p class="s-hint">Glasses: swipe to scroll. Use the menu to choose a surah.</p>
   <button type="button" id="readerRetry" class="back-btn" hidden onclick="loadReaderSurah(Number(document.getElementById('readerSurah').value))">Try again</button>
 </section>
 <!-- Phone app: bottom dock and "more" sheet. setupMobileShell() moves the
@@ -1461,7 +1463,7 @@ html.reader-open #qvtDock { display:none !important; }
       <label class="s-label" for="settingHadithEdition">Default Hadith collection</label>
       <select id="settingHadithEdition" onchange="setStudyPreference('studyHadithEdition',this.value)"><option value="eng-bukhari">Sahih al-Bukhari · English</option></select>
       <span class="s-hint">These defaults are saved.</span>
-      <details><summary>Content credits</summary><p>Tafsir: <a href="https://tafsir.net" target="_blank" rel="noopener">Tafsir Center for Quranic Studies</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. Hadith editions: hadith-api. Arabic font: Amiri Quran, OFL.</p></details>
+      <details><summary>Content credits</summary><p>Tafsir: <a href="https://tafsir.net" target="_blank" rel="noopener">Tafsir Center for Quranic Studies</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. Hadith editions: hadith-api. Arabic fonts: Amiri Quran and DigitalKhatt IndoPak (Amine Anane / Tarteel), SIL OFL 1.1.</p></details>
       <label class="s-label" for="settingPhoneTextSize">Phone reading text size</label>
       <div class="reading-tools">
         <button type="button" class="toggle-btn" aria-label="Decrease reading text size" onclick="setPhoneTextSize(Number(document.getElementById('settingPhoneTextSize').value)-2)">A−</button>
@@ -1594,7 +1596,7 @@ html.reader-open #qvtDock { display:none !important; }
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.28';
+  const APP_VERSION = 'v3.4.29';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -1773,7 +1775,7 @@ html.reader-open #qvtDock { display:none !important; }
 
   var _readerActive=false, _readerPicking=false, _readerPick=1, _readerData=null;
   var _readerLoading=false;
-  var _readerPages=[], _readerPage=0, _readerEpoch=0, _readerAbort=null, _readerModule=null;
+  var _readerPages=[], _readerPage=0, _readerEpoch=0, _readerAbort=null, _readerModule=null, _readerArtworkModule=null, _readerDirection=0;
   window.openQuranReader=async function () {
     if(S.isRecording)stopListening();
     closeMoreSheet();if(getComputedStyle(document.getElementById('settingsView')).display!=='none')hideSettings();_manualBrowse=false;resetVerseHold();
@@ -1783,7 +1785,8 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('mainView').style.display='none';document.getElementById('readerView').hidden=false;
     const select=document.getElementById('readerSurah');
     if(!select.options.length)SURAHS.slice(1).forEach((name,i)=>select.add(new Option((i+1)+' · '+name,String(i+1))));
-    if(S.isG2)glassesStartup();
+    document.getElementById('readerScript').value=S.settings.readerScript==='madani'?'madani':'indopak';
+    if(S.isG2){glassesStartup();await showReaderSplash();}
     await loadReaderSurah(Number(S.settings.readerSurah)||1,Number(S.settings.readerPage)||0);
   };
   window.closeQuranReader=function () {
@@ -1799,16 +1802,17 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('readerRetry').hidden=true;document.getElementById('readerPrev').disabled=true;document.getElementById('readerNext').disabled=true;
     const controller=_readerAbort;const timeout=setTimeout(()=>controller.abort(),20000);
     try {
-      const url=backendBase()+'/api/quran/'+surah;
-      let cache=null,response=null;try{cache=await caches.open('quran-reader-v1');response=await cache.match(url);}catch(_){}
+      const url=backendBase()+'/api/quran/'+surah+'?edition=framed-1';
+      let cache=null,response=null;try{cache=await caches.open('quran-reader-v2');response=await cache.match(url);}catch(_){}
       if(!response){response=await fetch(url,{signal:_readerAbort.signal});if(!response.ok)throw Error('Surah unavailable');if(cache)try{await cache.put(url,response.clone());}catch(_){}}
       const data=await response.json();if(!data.verses?.length)throw Error('Empty surah');
       if(!_readerModule)_readerModule=await import('./readerPagination.js');
-      await ensureArabicFont();if(!_readerActive||epoch!==_readerEpoch)return;
+      if(!_readerArtworkModule)_readerArtworkModule=await import('./readerArtwork.js');
+      await ensureReaderFont();if(!_readerActive||epoch!==_readerEpoch)return;
       _readerData=data;
-      const ctx=document.createElement('canvas').getContext('2d');ctx.font='32px QuranBitmap';
+      const ctx=document.createElement('canvas').getContext('2d');ctx.font='28px '+readerFont();
       const verses=data.basmala?[{ayah:0,arabic:data.basmala},...data.verses]:data.verses;
-      _readerPages=_readerModule.paginateReader(verses,t=>ctx.measureText(displayArabic(t)).width);
+      _readerPages=_readerModule.readerWindows(verses,t=>ctx.measureText(displayArabic(t)).width);
       _readerPage=Math.max(0,Math.min(page,_readerPages.length-1));
       const ayah=document.getElementById('readerAyah');ayah.replaceChildren();data.verses.forEach(v=>ayah.add(new Option(String(v.ayah),String(v.ayah))));
       document.getElementById('readerStatus').textContent=data.name+' · '+data.totalAyahs+' ayahs';
@@ -1822,14 +1826,18 @@ html.reader-open #qvtDock { display:none !important; }
     const next=_readerPage+direction;
     if(next<0){if(_readerData.surah>1)loadReaderSurah(_readerData.surah-1,99999);return;}
     if(next>=_readerPages.length){if(_readerData.surah<114)loadReaderSurah(_readerData.surah+1);return;}
-    _readerPage=next;renderReaderPage();
+    _readerDirection=direction;_readerPage=next;renderReaderPage();
   };
   async function renderReaderPage(){
     if(!_readerActive||!_readerPages.length)return;
     _readerPicking=false;const epoch=++_readerEpoch, page=_readerPages[_readerPage];
+    document.getElementById('readerPaper').style.setProperty('--reader-font',readerFont());
+    document.getElementById('readerSurahTitle').textContent='سورة '+(_readerData.arabicName||_readerData.name);
     const text=document.getElementById('readerText');text.replaceChildren();
     const paragraph=document.createElement('p');paragraph.textContent=displayArabic(page.lines.join(' '));text.appendChild(paragraph);
-    document.getElementById('readerPage').textContent=(_readerPage+1)+' / '+_readerPages.length;
+    if(_readerDirection&&!matchMedia('(prefers-reduced-motion: reduce)').matches)paragraph.animate([{transform:'translateY('+(_readerDirection*12)+'px)',opacity:.65},{transform:'translateY(0)',opacity:1}],{duration:180,easing:'ease-out'});
+    _readerDirection=0;
+    document.getElementById('readerPage').textContent='Line '+(_readerPage+1)+' / '+page.totalLines;
     document.getElementById('readerAyah').value=String(page.ayahs.find(n=>n>0)||1);
     document.getElementById('readerPrev').disabled=_readerData.surah===1&&_readerPage===0;
     document.getElementById('readerNext').disabled=_readerData.surah===114&&_readerPage===_readerPages.length-1;
@@ -1837,8 +1845,20 @@ html.reader-open #qvtDock { display:none !important; }
     if(!S.isG2||!S.bridge)return;
     const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;
     const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,576,288);
-    ctx.fillStyle='#fff';ctx.font='32px QuranBitmap';ctx.direction='rtl';ctx.textAlign='right';
-    page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),562,50+i*52));
+    _readerArtworkModule.drawReaderFrame(ctx,'سورة '+(_readerData.arabicName||_readerData.name),readerFont());
+    ctx.fillStyle='#fff';ctx.font='28px '+readerFont();ctx.direction='rtl';ctx.textAlign='right';
+    page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,108+i*46));
+    await sendReaderCanvas(canvas,epoch);
+  }
+  function readerFont(){return document.getElementById('readerScript').value==='madani'?'QuranBitmap':'QuranIndoPak';}
+  async function ensureReaderFont(){const faces=await document.fonts.load('28px '+readerFont());if(!faces.length)throw Error('Reader font unavailable');}
+  window.setReaderScript=async function(script){S.settings.readerScript=script==='madani'?'madani':'indopak';document.getElementById('readerScript').value=S.settings.readerScript;saveSettings();const ayah=Number(document.getElementById('readerAyah').value)||1;await loadReaderSurah(Number(document.getElementById('readerSurah').value));jumpReaderAyah(ayah);};
+  async function showReaderSplash(){
+    const epoch=++_readerEpoch, image=new Image();image.src='./artwork/quran-splash.png';
+    try{await image.decode();const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,576,288);ctx.drawImage(image,214,12,148,264);const data=ctx.getImageData(0,0,576,288);for(let i=0;i<data.data.length;i+=4){const ink=255-(data.data[i]*.2126+data.data[i+1]*.7152+data.data[i+2]*.0722);data.data[i]=data.data[i+1]=data.data[i+2]=ink;}ctx.putImageData(data,0,0);await sendReaderCanvas(canvas,epoch);await new Promise(resolve=>setTimeout(resolve,650));}catch(error){trace('reader.splash',String(error));}
+  }
+  async function sendReaderCanvas(canvas,epoch){
+    const ctx=canvas.getContext('2d');
     await queueBridgeCall('readerPage',async()=>{
       if(!_readerActive||epoch!==_readerEpoch)return;
       const images=Array.from({length:6},(_,i)=>({containerID:20+i,containerName:'reader'+i,xPosition:i%2*288,yPosition:Math.floor(i/2)*96,width:288,height:96,zOrderIndex:i+1}));

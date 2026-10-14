@@ -3,7 +3,7 @@ import {LANGUAGE_CODES, PACK_CODES} from './languageCatalog.js';
 /**
  * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.28 — on-device language packs + DIAG_TOKEN usage analytics
+ * v3.4.29 — on-device language packs + DIAG_TOKEN usage analytics
  *   Translate mode: general Quran follow-along translator; Taraweeh adds rak'ah tracking
  */
 import 'dotenv/config';
@@ -80,6 +80,8 @@ app.get('/api/quran/:surah', (req,res)=>{
  if(!chapter)return res.status(400).json({error:'Invalid surah'});
  res.set('Cache-Control','public, max-age=86400').json(chapter);
 });
+app.use('/artwork',express.static(join(rootDir,'app','artwork')));
+app.get('/readerArtwork.js',(req,res)=>res.sendFile(join(rootDir,'app','readerArtwork.js')));
 app.get('/readerPagination.js', (req,res)=>res.sendFile(join(rootDir,'app','readerPagination.js')));
 const usageStats = new UsageStats();
 const usageJournal = new UsageJournal({path:process.env.USAGE_STATS_PATH || join(__dirname,'data','usage','sessions.json')});

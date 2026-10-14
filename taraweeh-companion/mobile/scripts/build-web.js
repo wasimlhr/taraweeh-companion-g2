@@ -5,7 +5,7 @@
  * standalone translator mode (phone mic in, phone screen out) when it sees the flag
  * injected here, or a native Capacitor runtime.
  */
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
@@ -46,11 +46,14 @@ export function build() {
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, 'index.html'), transformHtml(readFileSync(srcHtml, 'utf8')));
   copyFileSync(join(dirname(srcHtml), 'readerPagination.js'), join(outDir, 'readerPagination.js'));
+  copyFileSync(join(dirname(srcHtml), 'readerArtwork.js'), join(outDir, 'readerArtwork.js'));
+  cpSync(join(dirname(srcHtml),'artwork'),join(outDir,'artwork'),{recursive:true});
   // Settings links to the privacy policy, so it ships inside the app too.
   copyFileSync(join(dirname(srcHtml), 'privacy.html'), join(outDir, 'privacy.html'));
   mkdirSync(join(outDir, 'fonts'), { recursive: true });
   copyFileSync(join(dirname(srcHtml), 'fonts', 'AmiriQuran.ttf'), join(outDir, 'fonts', 'AmiriQuran.ttf'));
   copyFileSync(join(dirname(srcHtml), 'fonts', 'OFL.txt'), join(outDir, 'fonts', 'OFL.txt'));
+  for(const file of ['DigitalKhattIndoPak.otf','IndoPak-OFL.txt'])copyFileSync(join(dirname(srcHtml),'fonts',file),join(outDir,'fonts',file));
   copyFileSync(join(dirname(srcHtml), 'privacy.html'), join(outDir, 'privacy.html'));
   // IIFE build of @capacitor/core: gives the plain <script> page registerPlugin.
   const require = createRequire(import.meta.url);

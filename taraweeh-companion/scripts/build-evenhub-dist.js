@@ -6,7 +6,7 @@
  *
  * @see https://hub.evenrealities.com/docs/reference/packaging
  */
-import { mkdirSync, copyFileSync, existsSync, rmSync } from 'fs';
+import { mkdirSync, copyFileSync, existsSync, rmSync, cpSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -38,9 +38,12 @@ rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 copyFileSync(src, dest);
 copyFileSync(join(root,'app','readerPagination.js'),join(outDir,'readerPagination.js'));
+copyFileSync(join(root,'app','readerArtwork.js'),join(outDir,'readerArtwork.js'));
+cpSync(join(root,'app','artwork'),join(outDir,'artwork'),{recursive:true});
 mkdirSync(join(outDir, 'fonts'), { recursive: true });
 copyFileSync(join(root, 'app', 'fonts', 'AmiriQuran.ttf'), join(outDir, 'fonts', 'AmiriQuran.ttf'));
 copyFileSync(join(root, 'app', 'fonts', 'OFL.txt'), join(outDir, 'fonts', 'OFL.txt'));
+for(const file of ['DigitalKhattIndoPak.otf','IndoPak-OFL.txt'])copyFileSync(join(root,'app','fonts',file),join(outDir,'fonts',file));
 console.log('[build-evenhub-dist] Wrote', dest);
 
 if (existsSync(sdkSrc)) {

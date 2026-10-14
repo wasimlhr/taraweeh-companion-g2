@@ -56,7 +56,7 @@ const paused=phone.waitPause();
 const call=phone.send('Runtime.evaluate',{expression:'window.applyLocalTranslation(null)'});
 const frame=(await paused).callFrames[0];
 const injection=await phone.send('Debugger.evaluateOnCallFrame',{callFrameId:frame.callFrameId,expression:
-  'window.__uiAudit={S,loadSettings,handleServerMsg,stopPageFlip,stopCountdown,glassesMenu,onG2Event,ensureLangPack,glassesStartup,ensureArabicFont,arabicImageCanvas,stopListening,buildGlassesText,getHeld:function(){return _readingHeld;},getHeldPage:function(){return _heldPage;}}; __uiAudit.imageResults=[]; __uiAudit.originalImage=S.bridge.updateImageRawData.bind(S.bridge); S.bridge.updateImageRawData=async function(data){var result=await __uiAudit.originalImage(data);__uiAudit.imageResults.push({id:data.containerID,length:data.imageData.length,result:result});return result;};'});
+  'window.__uiAudit={S,showReaderSplash,loadSettings,handleServerMsg,stopPageFlip,stopCountdown,glassesMenu,onG2Event,ensureLangPack,glassesStartup,ensureArabicFont,arabicImageCanvas,stopListening,buildGlassesText,getHeld:function(){return _readingHeld;},getHeldPage:function(){return _heldPage;}}; __uiAudit.imageResults=[]; __uiAudit.originalImage=S.bridge.updateImageRawData.bind(S.bridge); S.bridge.updateImageRawData=async function(data){var result=await __uiAudit.originalImage(data);__uiAudit.imageResults.push({id:data.containerID,length:data.imageData.length,result:result});return result;};'});
 if(injection.exceptionDetails)throw Error(JSON.stringify(injection.exceptionDetails));
 await phone.send('Debugger.removeBreakpoint',{breakpointId:bp.breakpointId});
 await phone.send('Debugger.resume'); await call; await phone.send('Debugger.disable');
@@ -70,6 +70,8 @@ assert.equal(await evaluate('document.getElementById("readerView").hidden'),fals
 console.log(await evaluate('({status:document.getElementById("readerStatus").textContent,results:__uiAudit.imageResults,logs:window.dumpDiag().split(String.fromCharCode(10)).filter(l=>l.includes("reader"))})'));assert.ok(await evaluate('__uiAudit.imageResults.filter(r=>r.id>=20&&r.result==="success").length>=6'));
 async function capture(name){await evaluate('__uiAudit.S.bridgeCallQueue');await settle();for(const [suffix,client] of [['phone',phone],['glasses',glasses]]){const shot=await client.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL(name+'-'+suffix+'.png',out),Buffer.from(shot.data,'base64'));}}
 await capture('read-quran-fatiha');
+assert.match(await evaluate('document.getElementById("readerSurahTitle").textContent'),/الفاتحة/);
+assert.equal(await evaluate('document.getElementById("readerScript").value'),'indopak');
 const initial=await evaluate('document.getElementById("readerPage").textContent');
 await evaluate('readerStep(1)');await settle();assert.notEqual(await evaluate('document.getElementById("readerPage").textContent'),initial);
 await evaluate('readerStep(-1)');await settle();assert.equal(await evaluate('document.getElementById("readerPage").textContent'),initial);
@@ -79,5 +81,11 @@ const before=await evaluate('document.getElementById("readerPage").textContent')
 await evaluate('pickReaderSurah()');await capture('read-quran-surah-picker');
 await evaluate('__uiAudit.onG2Event({textEvent:{eventType:2}});__uiAudit.onG2Event({textEvent:{eventType:0}})');await new Promise(r=>setTimeout(r,1200));assert.equal(await evaluate('document.getElementById("readerSurah").value'),'3');
 await evaluate('window.__readerFetch=window.fetch;window.fetch=()=>Promise.reject(new Error("offline"))');await evaluate('loadReaderSurah(1)');assert.match(await evaluate('document.getElementById("readerStatus").textContent'),/Al-Fatihah/);
-await evaluate('window.fetch=window.__readerFetch;closeQuranReader();__uiAudit.S.settings.backendUrl='+JSON.stringify(savedBackend)+';');assert.equal(await evaluate('document.getElementById("readerView").hidden'),true);
+await evaluate('window.fetch=window.__readerFetch;loadReaderSurah(18)');await capture('read-quran-kahf');
+await evaluate('setReaderScript("madani")');assert.equal(await evaluate('document.getElementById("readerScript").value'),'madani');
+await evaluate('setReaderScript("indopak")');assert.equal(await evaluate('document.getElementById("readerScript").value'),'indopak');
+await evaluate('__uiAudit.showReaderSplash()');await capture('quran-medallion-splash');
+await evaluate('document.getElementById("splashScreen").style.display="flex";document.getElementById("splashScreen").style.opacity="1"');
+const splash=await phone.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('quran-artwork-splash-phone.png',out),Buffer.from(splash.data,'base64'));
+await evaluate('document.getElementById("splashScreen").style.display="none";closeQuranReader();__uiAudit.S.settings.backendUrl='+JSON.stringify(savedBackend)+';');assert.equal(await evaluate('document.getElementById("readerView").hidden'),true);
 console.log('Reader: 114 surahs, six successful full-screen tiles, next/previous, ayah jump, glasses swipe and picker, cached offline chapter, clean exit verified');phone.close();glasses.close();
