@@ -44,6 +44,7 @@ for(const height of [844,640]){
  }
  assert.deepEqual(states[0],states[1]);assert.deepEqual(states[1],states[2]);
  const shot=await phone.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('v3.4.31-stable-'+height+'.png',out),Buffer.from(shot.data,'base64'));
- console.log('PASS stable short/long/short verse layout at 390x'+height,states[0]);
+ for(const mode of ['taraweeh','practice','listen']){await evaluate(`setReciteMode('${mode}')`);await settle();assert.ok(await evaluate('document.getElementById("recordBtn").getBoundingClientRect().bottom<=innerHeight'),'Start stays visible in '+mode+' at '+height);}
+ console.log('PASS stable verses and visible Start in all modes at 390x'+height,states[0]);
 }
 phone.close();glasses.close();

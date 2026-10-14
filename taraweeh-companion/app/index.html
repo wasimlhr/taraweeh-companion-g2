@@ -1005,8 +1005,8 @@ html.standalone #swipeHint:not([hidden]) { display: block; }
 html.standalone #swipeHint { text-align: center; font-size: 11px; color: var(--tc-3); padding-top: 2px; }
 html.standalone .study-tools .mode-btn { min-height: 40px; border-radius: 999px; }
 /* Keep live verse changes inside a stable region; navigation never follows text height. */
-#verseCard { height:clamp(340px,calc(100dvh - 310px),620px);min-height:0; }
-html.standalone #verseCard { flex:0 0 auto;height:calc(100dvh - 238px - var(--ad-h,0px));min-height:300px; }
+#verseCard { height:var(--verse-region-height,340px);min-height:0; }
+html.standalone #verseCard { flex:0 0 auto;height:var(--verse-region-height,340px);min-height:0; }
 #lockedContent { flex:1 1 0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;overflow-anchor:none; }
 #lockedContent::-webkit-scrollbar { display:none; }
 #verseNavRow { flex:0 0 auto;margin-top:auto; }
@@ -5422,6 +5422,7 @@ html.reader-open #qvtDock { display:none !important; }
     _pcmChunkCount = 0;
     _pcmBytesSent  = 0;
     initWave();
+    setupFlexibleVerseRegion();
     // Clear any stale "Stopped" text from the last session immediately — state
     // updates will refine this once audio starts flowing.
     setStatus('Listening\u2026' + (_practiceMode ? ' (Practice)' : _taraweehMode ? ' (Taraweeh)' : ' (Translate)'));
@@ -6293,6 +6294,24 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('languageSearchStatus').textContent = matches.length ? matches.length + ' matching options' : 'No matches. Current language remains selected.';
   };
 
+  function setupFlexibleVerseRegion(){
+    const card=document.getElementById('verseCard'),button=document.getElementById('recordBtn'),main=document.getElementById('mainView');
+    let pending=false;
+    function schedule(){if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;if(_readerActive||!card.getClientRects().length||!button.getClientRects().length)return;
+      const rect=card.getBoundingClientRect(),action=button.getBoundingClientRect();
+      const viewport=window.visualViewport?.height||innerHeight;
+      const fixed=document.documentElement.classList.contains('standalone');
+      const tail=fixed?0:Math.max(0,action.bottom-rect.bottom);
+      const dock=document.getElementById('qvtDock');
+      const bottom=fixed&&dock?.getClientRects().length?dock.getBoundingClientRect().top:viewport;
+      const height=Math.max(160,Math.floor(bottom-(rect.top+window.scrollY)-tail-12));
+      if(card.style.getPropertyValue('--verse-region-height')!==height+'px')card.style.setProperty('--verse-region-height',height+'px');
+    });}
+    new ResizeObserver(schedule).observe(main);
+    new ResizeObserver(schedule).observe(button);
+    new MutationObserver(schedule).observe(main,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class','hidden']});
+    window.addEventListener('resize',schedule);window.visualViewport?.addEventListener('resize',schedule);schedule();
+  }
   function setupReadingUI() {
     var searching = document.getElementById('searchingContent');
     if (searching) {
@@ -6856,6 +6875,7 @@ html.reader-open #qvtDock { display:none !important; }
     setGlassesBottom(savedGlasses);
     populateSurahs();
     initWave();
+    setupFlexibleVerseRegion();
 
     document.getElementById('recordBtn').addEventListener('click', function () {
       if (S.isRecording) stopListening();
