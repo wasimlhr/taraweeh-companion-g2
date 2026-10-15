@@ -46,10 +46,13 @@ test('explicit surah names are recognized across all 114 chapters without keywor
  assert.deepEqual(match('A cow stood in the sun. Mary and Joseph were mentioned.'),{verses:[],surahs:[]});
  const numbered=match('Sura 2 ayat 255');assert.ok(numbered.verses.some(v=>v.key==='2:255'));assert.equal(numbered.surahs.length,0);
  assert.ok(match('Ayat al-Kursi').verses.some(v=>v.key==='2:255'));
+ assert.deepEqual(match("Recite Mu'awwidhatan after every prayer").surahs.map(s=>s.surah),[113,114]);
+ assert.deepEqual(match("Ar-Rubayyi daughter of Mu'awwidh narrated").surahs,[]);
 });
 test('related Hadith extends beyond Fatihah, preserves languages and distinguishes scopes',async()=>{
  const q=new QuranStudy();for(const key of ['2:255','18:10','36:1','112:1','113:1','114:1']){const data=await q.hadith(key);assert.ok(data.references.length,key);assert.ok(data.references.every(h=>h.language==='English'&&h.text&&h.basis&&h.scope));assert.equal(new Set(data.references.map(h=>h.edition+':'+h.hadithnumber)).size,data.references.length);}
  const index=JSON.parse(readFileSync(new URL('./data/study/related-hadith.json',import.meta.url),'utf8'));assert.ok(Object.keys(index.surahs).length>80);assert.ok(Object.keys(index.verses).length>600);
+ for(const key of ['113:1','114:6'])assert.ok((await q.hadith(key)).references.some(h=>h.edition==='eng-abudawud'&&h.hadithnumber===1523));
  const arabic=await q.hadith('112:1','Arabic','ara-bukhari');assert.ok(arabic.references.length);assert.ok(arabic.references.every(h=>h.language==='Arabic'));
  assert.ok(!(await q.hadith('112:1')).references.some(h=>h.edition==='eng-bukhari'&&h.hadithnumber===1));
 });
