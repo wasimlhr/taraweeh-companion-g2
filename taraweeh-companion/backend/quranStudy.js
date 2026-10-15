@@ -9,12 +9,12 @@ export class QuranStudy {
  read(file){if(!/^[a-zA-Z0-9-]+\.json\.gz$/.test(file))throw Error('Invalid content file');if(this.cache.has(file))return this.cache.get(file);const value=JSON.parse(gunzipSync(readFileSync(new URL(file,this.directory))));if(this.cache.size>=8)this.cache.delete(this.cache.keys().next().value);this.cache.set(file,value);return value;}
  async words(key){
   this.corpus||=JSON.parse(readFileSync(new URL('./data/corpus/quran-words.json',import.meta.url),'utf8'));
-  this.glosses||=JSON.parse(readFileSync(new URL('fatiha-word-glosses.json',this.directory),'utf8'));
+  this.glosses||=this.read('quran-word-glosses.json.gz');
   const verse=this.corpus[key];if(!verse)throw Error('Unknown ayah');
   const meanings=this.glosses.verses[key]||[];
-  return {key,source:'Quranic Arabic Corpus',meaningAvailable:meanings.length===verse.words.length,words:verse.words.map((word,index)=>{
+  return {key,source:'Quranic Arabic Corpus',sourceUrl:'https://corpus.quran.com',license:'GNU GPL',revision:this.glosses.revision,meaningAvailable:meanings.length===verse.words.length,words:verse.words.map((word,index)=>{
    const root=word.root||'';
-   return {position:index+1,arabic:word.ar,root,rootStatus:root?'assigned':'unassigned',rootNote:root?'':'No lexical root is assigned to this word in the morphology corpus.',meaning:meanings[index]||'',transliteration:''};
+   return {position:index+1,arabic:word.ar,root,rootStatus:root?'assigned':'unassigned',rootNote:root?'':'No lexical root is assigned to this word in the morphology corpus.',meaning:meanings[index]?.meaning||'',meaningScope:meanings[index]?.scope||'word',sourcePositions:meanings[index]?.sourcePositions||[],transliteration:''};
   })};
  }
  async tafsir(key,id=266){if(!TAFSIRS[id])throw Error('Unknown tafsir');const [surah,ayah]=key.split(':').map(Number);const edition=this.catalog().tafsirs.find(e=>e.id===id);if(!edition)throw Error('Tafsir not installed');const chapter=edition.chapters.find(c=>c.surah===surah);const verse=this.read(chapter.file).find(v=>v.ayah===ayah);return {key,id,name:edition.name,source:id===266?'Tafsir Center for Quranic Studies (https://tafsir.net) · CC BY 4.0':'Locally hosted classical Arabic tafsir',language:id===266?'en':'ar',text:verse?.text||''};}
@@ -24,7 +24,7 @@ export class QuranStudy {
   const references=[];
   const surah=key.split(':')[0];const seen=new Set();
   const links=[...(this.related.verses[key]||[]).map(link=>({...link,scope:'ayah'})),...(this.related.surahs?.[surah]||[]).map(link=>({...link,scope:'surah'}))];
-  for(const link of links){const identity=link.edition+':'+link.number;if(seen.has(identity))continue;seen.add(identity);const edition=editions.find(e=>e.name===link.edition);if(edition?.language!==language)continue;references.push({...await this.hadithText(link.edition,link.number),basis:link.basis,scope:link.scope});}
+  for(const link of links){const identity=link.edition+':'+link.number;if(seen.has(identity))continue;seen.add(identity);const edition=editions.find(e=>e.name===link.edition);if(edition?.language!==language)continue;references.push({...await this.hadithText(link.edition,link.number),basis:link.basis,evidence:link.evidence||'',scope:link.scope});}
   references.sort((a,b)=>Number(b.edition===preferred)-Number(a.edition===preferred)||a.collection.localeCompare(b.collection)||a.hadithnumber-b.hadithnumber);
   return {key,available:true,references,editions:editions.map(e=>({name:e.name,collection:e.collectionName,language:e.language,count:e.count}))};
  }

@@ -1,10 +1,16 @@
-Quranic Arabic Corpus (Version 0.4)
-Copyright (C) 2011 Kais Dukes
-License: GNU General Public License
+Quranic Arabic Corpus — English word-by-word meanings
+Copyright Kais Dukes / University of Leeds. GNU GPL.
+https://corpus.quran.com
+https://corpus.quran.com/download/
 
-Al-Fatihah English word glosses are transcribed verbatim from the Quranic Arabic Corpus word-by-word pages. The selected glosses are stored separately from the existing morphology corpus; original Quran text and annotations are not modified.
+Source: kaisdukes/quranic-corpus-api
+Revision: 17a9062416eccc332111ef3e84f74072d709e187
+Path: src/main/resources/data/translation/word-by-word.txt
+The original source file is included verbatim in qac-word-by-word-source.txt.gz. No source gloss text has been rewritten.
 
-Source: https://corpus.quran.com/wordbyword.jsp?chapter=1&verse=1
-Source: https://corpus.quran.com/wordbyword.jsp?chapter=1&verse=7
-Terms: https://corpus.quran.com/download/
-The annotation can be used in any website or application, provided its source (the Quranic Arabic Corpus) is clearly indicated, and a link is made to http://corpus.quran.com to enable users to keep track of changes. Permission is granted to copy and distribute verbatim copies of the source file; changing the source file is not allowed.
+Alignment uses the upstream quran-uthmani.xml (Tanzil Uthmani 1.0.2); its complete original copyright block and bytes are preserved in qac-uthmani-alignment-source.xml.gz. This alignment file does not replace the app Quran text.
+Tanzil: http://tanzil.info — CC BY-ND 3.0, unchanged source text.
+
+Derived quran-word-glosses.json.gz maps the source meanings to the app word positions. Ten joined/split token groups are marked as phrase meanings, not individual word translations. Harakat and orthographic variants are normalized only for matching; Arabic display text is not modified. Original source hashes, positions, and mappings are included in the derived dataset.
+
+Corpus terms: Permission is granted to copy and distribute verbatim copies of the original data, but changing the source file is not allowed. The annotation may be used in websites or applications with source attribution and a link to http://corpus.quran.com; this notice must accompany copies.
