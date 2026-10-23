@@ -12,6 +12,15 @@ test('interleaved pages retain Arabic above every translation segment',()=>{
  assert.equal(translated,verse.translation);
 });
 import {validateEvenHubPageContainer} from '@evenrealities/even_hub_sdk';
+import {audioClock,audioProgress} from '../app/glassesAudioPlayer.js';
+
+test('audio mini player clamps progress and reader pages reserve its height',()=>{
+ assert.equal(audioClock(65000),'1:05');assert.equal(audioProgress({positionMs:3000,durationMs:2000}),1);assert.equal(audioProgress({positionMs:-1000,durationMs:2000}),0);assert.equal(audioProgress({positionMs:0,durationMs:0}),0);
+ const verse={ayah:1,arabic:'بسم الله الرحمن الرحيم',translation:Array.from({length:140},(_,i)=>'word'+i).join(' ')};
+ const pages=readerInterleavedPages([verse],t=>t.length*10,t=>t.length*10,520,false,4);
+ assert.ok(pages.length>1);assert.ok(pages.every(p=>p.lines.length&&p.translationLines.length<=4));
+ assert.equal(pages.flatMap(p=>p.translationLines).join(' ').replace(/\s+/g,' ').trim(),verse.translation);
+});
 test('reader contains all 114 surahs and 6236 intact numbered ayahs',()=>{
  let count=0;for(let s=1;s<=114;s++){const c=readerChapter(s);assert.equal(c.surah,s);assert.equal(c.verses.length,c.totalAyahs);c.verses.forEach((v,i)=>{assert.equal(v.ayah,i+1);assert.ok(v.arabic.trim());});count+=c.totalAyahs;}
  assert.equal(count,6236);assert.equal(readerChapter(9).basmala,'');assert.ok(readerChapter(2).basmala);assert.equal(readerChapter(0),null);assert.equal(readerChapter(115),null);assert.equal(readerChapter(1.5),null);

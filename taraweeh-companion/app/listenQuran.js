@@ -4,7 +4,7 @@ import {ReaderAudioCache} from './readerAudioCache.js';
 const reciters=[{id:'alafasy',name:'Mishary Rashid Alafasy'},{id:'husary',name:'Mahmoud Khalil Al-Husary'},{id:'abdul-basit-murattal',name:'Abdul Basit — Murattal'}];
 const time=ms=>{const s=Math.floor(Math.max(0,ms||0)/1000);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
 const bytes=n=>n<1048576?Math.ceil(n/1024)+' KB':(n/1048576).toFixed(1)+' MB';
-export function mountListenQuran({host,baseUrl,onAyah=()=>{},onExit=()=>{},language='en',surahs=[]}={}){
+export function mountListenQuran({host,baseUrl,onAyah=()=>{},onChange=()=>{},onExit=()=>{},language='en',surahs=[]}={}){
  if(!host)throw Error('Listen Quran needs a host');
  async function audioJSON(path,signal){
   const url=new URL(path,baseUrl),key='quranAudioManifest:'+url.href;
@@ -20,6 +20,7 @@ export function mountListenQuran({host,baseUrl,onAyah=()=>{},onExit=()=>{},langu
  const cache=new ReaderAudioCache({baseUrl});
  const player=new ReaderPlayback({resolveTrack:t=>cache.resolveTrack(t),onChange:s=>{
   if(disposed)return;
+  onChange(s);
   const playable=!!manifest&&s.state!=='loading';el('play').disabled=!playable;el('play').textContent=s.state==='playing'?'Pause':s.state==='loading'?'Loading…':'Play';
   el('prev').disabled=!playable||player.index===0;el('next').disabled=!playable||player.index>=manifest.tracks.length-1;
   el('seek').disabled=!playable;el('seek').max=String(Math.max(1,s.durationMs));el('seek').value=String(s.positionMs);el('elapsed').textContent=time(s.positionMs);el('duration').textContent=time(s.durationMs);
@@ -40,5 +41,5 @@ export function mountListenQuran({host,baseUrl,onAyah=()=>{},onExit=()=>{},langu
  el('cancel').onclick=()=>{cancelDownload();el('downloadStatus').textContent='Download canceled';el('download').disabled=!manifest;};el('remove').onclick=async()=>{if(!manifest)return;try{await cache.remove(manifest);await offlineState();}catch{el('downloadStatus').textContent='Could not remove download. Try again.';}};
  async function open(){root.hidden=false;try{catalog=(await audioJSON('/api/recitations')).reciters||[];for(const option of el('reciter').options){const r=catalog.find(r=>r.id===option.value);if(r)option.textContent=r.name;}await load();}catch{el('status').textContent='Could not load audio. Check your connection and try again.';}}
  function close(){++epoch;request?.abort();cancelDownload();player.pause();root.hidden=true;}
- return {open,close,toggle(){if(manifest)return player.state==='playing'?player.pause():player.play();},step(direction){if(manifest)return player.step(direction);},dispose(){close();disposed=true;player.dispose();root.remove();style.remove();}};
+ return {open,close,toggle(){if(manifest)return player.state==='playing'?player.pause():player.play();},step(direction){if(manifest)return player.step(direction);},seekBy(ms){if(manifest)player.seek(player.snapshot().positionMs+ms);},dispose(){close();disposed=true;player.dispose();root.remove();style.remove();}};
 }

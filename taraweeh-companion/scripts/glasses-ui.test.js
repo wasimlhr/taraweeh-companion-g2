@@ -47,6 +47,7 @@ function harness() {
   context.addEventListener = () => {};
   const exported = `
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
+      setAudioControls: controls=>{_audioMode=true;_audioUI=controls;},
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       showModeHome, leaveModeHome, getHome:()=>({active:_homeActive,index:_homeIndex}),
       setReaderPicker:(kind,value,max)=>{_readerActive=true;_readerPicking=kind;_readerPick=value;_readerData={surah:2,verses:Array(max).fill({})};},
@@ -585,4 +586,14 @@ test('phone text sizing applies to all reading text and bounds invalid preferenc
  assert.equal(h.nodes.get('phoneTextSizePreview').style.fontSize,'24px');
  h.context.setPhoneTextSize(1000);assert.equal(h.ui.S.settings.phoneTextSize,28);
  h.context.setPhoneTextSize('invalid');assert.equal(h.ui.S.settings.phoneTextSize,16);
+});
+
+test('Listen Quran handles omitted zero sys taps and seek menu commands',()=>{
+ const h=harness();let taps=0;const seeks=[];
+ h.ui.setAudioControls({toggle(){taps++;},seekBy(ms){seeks.push(ms);}});
+ h.ui.onG2Event({sysEvent:{eventSource:1}});
+ h.ui.onG2Event({textEvent:{eventType:0}});
+ assert.equal(taps,2);
+ h.ui.onG2Event({sysEvent:{eventType:4}});h.ui.onG2Event({sysEvent:{eventType:5}});assert.equal(taps,2);
+ h.ui.onG2Event({menuItemClickEvent:{itemID:36}});h.ui.onG2Event({menuItemClickEvent:{itemID:37}});assert.deepEqual(seeks,[-10000,10000]);
 });

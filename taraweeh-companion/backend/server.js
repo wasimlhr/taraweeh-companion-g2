@@ -76,6 +76,7 @@ const APP_VERSION = (() => {
 const app = express();
 app.use(express.json({ limit: '4mb' }));
 installRecitationRoutes(app,new RecitationStore(process.env.RECITATION_PATH||(process.env.RAILWAY_VOLUME_MOUNT_PATH?join(process.env.RAILWAY_VOLUME_MOUNT_PATH,'recitations'):join(__dirname,'data','recitations'))));
+app.get('/glassesAudioPlayer.js',(req,res)=>res.sendFile(join(rootDir,'app','glassesAudioPlayer.js')));
 app.get('/listenQuran.js',(req,res)=>res.sendFile(join(rootDir,'app','listenQuran.js')));
 app.get('/readerPlayback.js',(req,res)=>res.sendFile(join(rootDir,'app','readerPlayback.js')));
 app.get('/readerAudioCache.js',(req,res)=>res.sendFile(join(rootDir,'app','readerAudioCache.js')));

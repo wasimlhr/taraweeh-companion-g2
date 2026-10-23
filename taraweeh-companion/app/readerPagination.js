@@ -43,7 +43,7 @@ export function readerPackedWindows(verses,measure,width=520,lineCount=4,opening
 }
 
 // Complete one ayah (Arabic and translation) before advancing to the next.
-export function readerInterleavedPages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false){
+export function readerInterleavedPages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false,translationLineCount=5){
  return verses.flatMap(verse=>{
   const arabic=paginateReader([verse],measureArabic,width,1).flatMap(p=>p.lines);
   const translated=[];let line='';
@@ -54,8 +54,8 @@ export function readerInterleavedPages(verses,measureArabic,measureTranslation,w
   }
   if(line.trim())translated.push(line.trim());
   const chunks=[];for(let n=0;n<arabic.length;){const count=n===0&&verse.ayah===1&&hasBasmala?1:2;chunks.push(arabic.slice(n,n+count));n+=count;}
-  const parts=Math.max(chunks.length,Math.ceil(translated.length/5),1);
-  return Array.from({length:parts},(_,i)=>({kind:'interleaved',lines:chunks[Math.min(i,chunks.length-1)]||[],translationLines:translated.slice(Math.min(i,Math.max(0,Math.ceil(translated.length/5)-1))*5,Math.min(i,Math.max(0,Math.ceil(translated.length/5)-1))*5+5),translationY:164,opening:i===0&&verse.ayah===1&&hasBasmala,ayah:verse.ayah,ayahs:[verse.ayah],part:i+1,parts}));
+  const parts=Math.max(chunks.length,Math.ceil(translated.length/translationLineCount),1);
+  return Array.from({length:parts},(_,i)=>({kind:'interleaved',lines:chunks[Math.min(i,chunks.length-1)]||[],translationLines:translated.slice(Math.min(i,Math.max(0,Math.ceil(translated.length/translationLineCount)-1))*translationLineCount,Math.min(i,Math.max(0,Math.ceil(translated.length/translationLineCount)-1))*translationLineCount+translationLineCount),translationY:164,opening:i===0&&verse.ayah===1&&hasBasmala,ayah:verse.ayah,ayahs:[verse.ayah],part:i+1,parts}));
  });
 }
 
