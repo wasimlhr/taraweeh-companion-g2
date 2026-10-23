@@ -1,3 +1,6 @@
+export const READER_TRANSLATION_INSET=24;
+export const READER_TRANSLATION_WIDTH=576-2*READER_TRANSLATION_INSET;
+
 // Flow complete ayahs into five full-screen lines without dropping words.
 export function paginateReader(verses, measure, width=548, linesPerPage=5) {
  const lines=[];let text='',ayahs=new Set();
@@ -69,8 +72,8 @@ export function readerInterleavedPages(verses,measureArabic,measureTranslation,w
   const arabic=paginateReader([verse],measureArabic,width,1).flatMap(p=>p.lines);
   const translated=[];let line='';
   for(const word of String(verse.translation||'').trim().split(/\s+/).filter(Boolean)){
-   if(line&&measureTranslation(line+' '+word)>544){translated.push(line);line='';}
-   for(const character of word){if(line&&measureTranslation(line+character)>544){translated.push(line);line='';}line+=character;}
+   if(line&&measureTranslation(line+' '+word)>READER_TRANSLATION_WIDTH){translated.push(line);line='';}
+   for(const character of word){if(line&&measureTranslation(line+character)>READER_TRANSLATION_WIDTH){translated.push(line);line='';}line+=character;}
    line+=' ';
   }
   if(line.trim())translated.push(line.trim());
