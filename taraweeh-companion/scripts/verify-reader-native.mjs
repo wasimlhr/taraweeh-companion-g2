@@ -1,3 +1,4 @@
+import {validateEvenHubPageContainer} from '@evenrealities/even_hub_sdk';
 import WebSocket from '../backend/node_modules/ws/wrapper.mjs';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
@@ -22,7 +23,7 @@ try{
  const bp=await phone.send('Debugger.setBreakpointOnFunctionCall',{objectId:fn.result.objectId});const paused=phone.pause();
  const call=phone.send('Runtime.evaluate',{expression:'window.applyLocalTranslation(null)'});
  const frame=(await paused).callFrames[0];
- await phone.send('Debugger.evaluateOnCallFrame',{callFrameId:frame.callFrameId,expression:'window.__homeAudit={S,showModeHome,glassesTopBarUpdate,refreshGlassesWelcomeText,home:()=>({active:_homeActive,index:_homeIndex,layout:_homeLayout}),reader:()=>_readerActive,picker:()=>({kind:_readerPicking,value:_readerPick,surah:_readerData?.surah,loading:_readerLoading,layout:_readerImageLayout}),recent:()=>_diagLog.slice(-8),glassesMenu};'});
+ await phone.send('Debugger.evaluateOnCallFrame',{callFrameId:frame.callFrameId,expression:'window.__readerLayouts=[];const readerRebuild=S.bridge.rebuildPageContainer.bind(S.bridge);window.__restoreReaderBridge=()=>{S.bridge.rebuildPageContainer=readerRebuild;};S.bridge.rebuildPageContainer=payload=>{if(payload.imageObject?.some(image=>image.containerName.startsWith("reader")))window.__readerLayouts.push(payload);return readerRebuild(payload);};window.__homeAudit={S,showModeHome,glassesTopBarUpdate,refreshGlassesWelcomeText,home:()=>({active:_homeActive,index:_homeIndex,layout:_homeLayout}),reader:()=>_readerActive,picker:()=>({kind:_readerPicking,value:_readerPick,surah:_readerData?.surah,loading:_readerLoading,layout:_readerImageLayout}),recent:()=>_diagLog.slice(-8),glassesMenu};'});
  await phone.send('Debugger.removeBreakpoint',{breakpointId:bp.breakpointId});await phone.send('Debugger.resume');await call;await phone.send('Debugger.disable');
  await evaluate('__homeAudit.showModeHome();__homeAudit.S.bridgeCallQueue');await settle();
  assert.deepEqual(await evaluate('__homeAudit.home()'),{active:true,index:0,layout:true});
@@ -46,7 +47,16 @@ try{
  assert.ok((await evaluate('__homeAudit.recent()')).some(s=>s.includes('bridge.done readerCountdown')));
  assert.ok(!(await evaluate('__homeAudit.recent()')).some(s=>s.includes('bridge.err')));
  await screenshot('translation-countdown');
- console.log('PASS: reader translation and lightweight countdown transfers');
-}finally{phone.close();glasses.close();}
+ await evaluate('setReaderAutoScroll(false)');
+ for(const translated of [true,false,true]){
+  await evaluate('closeQuranReader();__homeAudit.S.settings.readerSurah=2;__homeAudit.S.settings.readerAyah=144;__homeAudit.S.settings.readerGlassesTranslation='+translated+';openQuranReader()');await settle();
+  assert.equal(await evaluate('__homeAudit.picker().layout'),true,'Reading layout replaces splash');assert.equal(await evaluate('__homeAudit.picker().loading'),false);
+  const payload=await evaluate('__readerLayouts.at(-1)');assert.equal(payload.imageObject.length,translated?2:4);assert.equal(payload.textObject.length,translated?2:1);
+  const orders=[...payload.imageObject,...payload.textObject].map(c=>c.zOrderIndex);assert.equal(new Set(orders).size,orders.length,'Every layer has a unique order');
+  assert.equal(validateEvenHubPageContainer(payload).valid,true);await screenshot(translated?'reader-144-translation':'reader-144-arabic');
+ }
+ const layouts=await evaluate('__readerLayouts');for(const layout of layouts)assert.equal(validateEvenHubPageContainer(layout).valid,true,JSON.stringify(validateEvenHubPageContainer(layout)));
+ console.log('PASS reader splash transition with translation on/off; all real reader payloads pass SDK validation with unique layers; countdown transfers.');
+}finally{await evaluate('window.__restoreReaderBridge?.()');phone.close();glasses.close();}
 
 

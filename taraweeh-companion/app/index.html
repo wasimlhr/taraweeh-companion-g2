@@ -2296,8 +2296,8 @@ html.reader-open #qvtDock { display:none !important; }
       if(!_readerImageLayout){
       const images=tiles.map((tile,i)=>({containerID:20+i,containerName:'reader'+i,xPosition:tile.x,yPosition:tile.y,width:288,height:tile.height,zOrderIndex:i+1}));
       const content=readerNativeContent(Number(S.settings.readerAutoSeconds)||15);_readerCountdownLast=content;
-      const textObject=miniPlayer||splash?[]:[{containerID:1,containerName:'readerInput',xPosition:360,yPosition:27,width:44,height:24,content,isEventCapture:1,zOrderIndex:5,paddingLength:0}];
-      if(interleaved)textObject.push({containerID:miniPlayer?1:2,containerName:miniPlayer?'readerInput':'readerTranslation',xPosition:_readerModule.READER_TRANSLATION_INSET,yPosition:_readerNativeY,width:_readerModule.READER_TRANSLATION_WIDTH,height:(miniPlayer?252:288)-_readerNativeY,content:_readerNativeText,isEventCapture:miniPlayer?1:0,zOrderIndex:5,paddingLength:0});
+      const textObject=miniPlayer||splash?[]:[{containerID:1,containerName:'readerInput',xPosition:360,yPosition:27,width:44,height:24,content,isEventCapture:1,zOrderIndex:interleaved?3:5,paddingLength:0}];
+      if(interleaved)textObject.push({containerID:miniPlayer?1:2,containerName:miniPlayer?'readerInput':'readerTranslation',xPosition:_readerModule.READER_TRANSLATION_INSET,yPosition:_readerNativeY,width:_readerModule.READER_TRANSLATION_WIDTH,height:(miniPlayer?252:288)-_readerNativeY,content:_readerNativeText,isEventCapture:miniPlayer?1:0,zOrderIndex:miniPlayer?5:4,paddingLength:0});
       else if(miniPlayer||splash)textObject.push({containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:576,height:288,content:' ',isEventCapture:1,zOrderIndex:0,paddingLength:0});
       const ok=await S.bridge.rebuildPageContainer({containerTotalNum:images.length+textObject.length,textObject,imageObject:images,menuObject:glassesMenu()});
       if(ok===false){failure=Error('Reader layout rejected');throw failure;}
