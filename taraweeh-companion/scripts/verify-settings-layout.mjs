@@ -17,7 +17,7 @@ try{
  await send('Page.reload',{ignoreCache:true});await wait(2000);await run('showSettings()');
  const old=execFileSync('git',['show','HEAD:taraweeh-companion/app/index.html'],{encoding:'utf8'}),current=readFileSync(new URL('../app/index.html',import.meta.url),'utf8');
  const inventory=html=>`(()=>{const d=new DOMParser().parseFromString(${JSON.stringify(html)},'text/html');return [...d.querySelectorAll('#settingsView input[id],#settingsView select[id],#settingsView button[id]')].map(e=>({id:e.id,onchange:e.getAttribute('onchange'),oninput:e.getAttribute('oninput'),onclick:e.getAttribute('onclick')})).sort((a,b)=>a.id.localeCompare(b.id));})()`;
- const before=(await run(inventory(old))).filter(e=>e.id!=='settingsCategory'),after=(await run(inventory(current))).filter(e=>e.id!=='settingsCategory');assert.deepEqual(after,before,'Existing controls and handlers retained');
+ const before=(await run(inventory(old))).filter(e=>e.id!=='settingsCategory'),after=(await run(inventory(current))).filter(e=>e.id!=='settingsCategory');for(const control of before)assert.deepEqual(after.find(e=>e.id===control.id),control,'Existing control retained: '+control.id);
  assert.deepEqual(await run(`[...document.querySelectorAll('[id]')].map(e=>e.id).filter((id,i,a)=>a.indexOf(id)!==i)`),[],'No duplicate control IDs');
  const membership={settingLang:'reading',settingPhoneTextSize:'reading',settingStudyTafsir:'study',settingHadithLanguage:'study',settingGroqKey:'live',settingTranscribeModel:'live',settingMicTest:'live',audioPackLabel:'audio',settingBackendUrl:'support'};
  for(const[id,category]of Object.entries(membership))assert.equal(await run(`document.getElementById('${id}').closest('[data-settings-panel]').dataset.settingsPanel`),category);

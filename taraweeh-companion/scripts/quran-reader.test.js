@@ -1,7 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readerChapter} from '../backend/quranReader.js';
-import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows,readerSinglePages,readerInterleavedPages,readerAudioPage} from '../app/readerPagination.js';
+import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows,readerSinglePages,readerInterleavedPages,readerAudioPage,readerTranslationPages,READER_TRANSLATION_WIDTH} from '../app/readerPagination.js';
+
+test('translation-only audio pages preserve complete text and fit the native viewport',()=>{
+ const verses=[1,2].map(ayah=>({ayah,arabic:'بسم الله',translation:Array.from({length:300},(_,i)=>'word'+i).join(' ')}));
+ const measure=t=>t.length*12,pages=readerTranslationPages(verses,measure);
+ assert.ok(pages.length>2);assert.equal(pages[0].header,true);assert.ok(pages.slice(1).every(p=>!p.header));
+ for(const verse of verses){
+  const own=pages.filter(p=>p.ayah===verse.ayah);
+  assert.equal(own.flatMap(p=>p.translationLines).join(' '),verse.translation);
+  for(const page of own){assert.deepEqual(page.lines,[]);assert.ok(page.translationLines.every(line=>measure(line)<=READER_TRANSLATION_WIDTH));assert.ok(page.translationY+page.translationLines.length*26<=252);}
+  assert.equal(readerAudioPage(pages,verse.ayah,0,60000),pages.indexOf(own[0]));
+  assert.equal(readerAudioPage(pages,verse.ayah,60000,60000),pages.indexOf(own.at(-1)));
+ }
+ const continuous='這是一段很長的經文翻譯'.repeat(100);
+ assert.equal(readerTranslationPages([{ayah:9,translation:continuous}],measure).flatMap(p=>p.translationLines).join(''),continuous);
+});
 
 test('audio pages follow media progress within the current ayah, including backwards seeks',()=>{
  const pages=[{ayahs:[1],lines:['other']},{ayahs:[2],lines:['one two three four five six'],translationLines:['first']},{ayahs:[2],lines:['seven eight nine'],translationLines:['next']},{ayahs:[2],lines:['seven eight nine'],translationLines:['the remaining translation also needs its own page']},{ayahs:[3],lines:['next ayah']}];

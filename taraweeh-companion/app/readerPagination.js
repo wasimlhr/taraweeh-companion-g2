@@ -1,6 +1,29 @@
 export const READER_TRANSLATION_INSET=24;
 export const READER_TRANSLATION_WIDTH=576-2*READER_TRANSLATION_INSET;
 
+function translationLines(text,measure){
+ const lines=[];let line='';
+ for(const word of String(text||'').trim().split(/\s+/).filter(Boolean)){
+  if(line&&measure(line+' '+word)>READER_TRANSLATION_WIDTH){lines.push(line);line='';}
+  if(measure(word)>READER_TRANSLATION_WIDTH){for(const ch of word){if(line&&measure(line+ch)>READER_TRANSLATION_WIDTH){lines.push(line);line='';}line+=ch;}}
+  else line=line?line+' '+word:word;
+ }
+ if(line)lines.push(line);return lines;
+}
+
+// Native translation fills the area above the audio controls, without Arabic.
+export function readerTranslationPages(verses,measure){
+ return verses.flatMap(verse=>{
+  const lines=translationLines(verse.translation,measure),pages=[];
+  for(let start=0;start<Math.max(1,lines.length);){
+   const header=verse.ayah===1&&start===0,count=header?6:8;
+   pages.push({kind:'translation-only',header,lines:[],translationLines:lines.slice(start,start+count),translationY:header?72:24,ayah:verse.ayah,ayahs:[verse.ayah]});
+   start+=count;
+  }
+  return pages.map((page,i)=>({...page,part:i+1,parts:pages.length}));
+ });
+}
+
 // Flow complete ayahs into five full-screen lines without dropping words.
 export function paginateReader(verses, measure, width=548, linesPerPage=5) {
  const lines=[];let text='',ayahs=new Set();

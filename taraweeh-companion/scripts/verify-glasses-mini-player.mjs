@@ -24,7 +24,7 @@ try{
  const frame=(await paused).callFrames[0];
  await phone.send('Debugger.evaluateOnCallFrame',{callFrameId:frame.callFrameId,expression:'window.__homeAudit={S,showModeHome,glassesTopBarUpdate,refreshGlassesWelcomeText,audio:()=>({state:_audioVisual,footer:_audioFooterLayout,tiles:_readerLastTiles.map(t=>t?.length)}),home:()=>({active:_homeActive,index:_homeIndex,layout:_homeLayout}),reader:()=>_readerActive,picker:()=>({kind:_readerPicking,value:_readerPick,surah:_readerData?.surah,loading:_readerLoading,layout:_readerImageLayout}),recent:()=>_diagLog.slice(-8),glassesMenu};'});
  await phone.send('Debugger.removeBreakpoint',{breakpointId:bp.breakpointId});await phone.send('Debugger.resume');await call;await phone.send('Debugger.disable');
- await evaluate(`__homeAudit.S.settings.readerGlassesTranslation=true;window.__NativeAudio=window.Audio;window.Audio=function(...args){const a=new window.__NativeAudio(...args);a.muted=true;window.__miniAudio=a;return a;};`);
+ await evaluate(`__homeAudit.S.settings.readerGlassesTranslation=true;__homeAudit.S.settings.listenGlassesDisplay="arabic-translation";__homeAudit.S.settings.listenTranslationLang="en";window.__NativeAudio=window.Audio;window.Audio=function(...args){const a=new window.__NativeAudio(...args);a.muted=true;window.__miniAudio=a;return a;};`);
  await evaluate('openListenQuran()');await settle();
  await evaluate(`const sel=document.querySelector('.lq [data-el="ayah"]');sel.value='7';sel.dispatchEvent(new Event('change'));`);await settle();
  await evaluate(`document.querySelector('.lq [data-el="play"]').click()`);await new Promise(r=>setTimeout(r,1200));
