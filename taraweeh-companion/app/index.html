@@ -695,6 +695,40 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 #settingsView {
   display: none;
 }
+#settingsView [data-settings-panel][hidden] { display:none; }
+#settingsView .settings-header { position:sticky;top:0;z-index:5;background:var(--bc-2);min-height:64px;padding:8px 0 12px; }
+.settings-navigation { display:grid;gap:6px;padding:8px 0 16px;border-bottom:1px solid var(--bc-4); }
+.settings-navigation label { font-size:12px;color:var(--tc-2); }
+.settings-navigation select { width:100%;min-height:44px;padding:10px 12px;background:var(--bc-1);color:var(--tc-highlight);border:1px solid var(--bc-4);border-radius:8px;font:inherit;font-size:14px; }
+.settings-panel-title { font-size:18px;font-weight:500;margin:20px 0 6px; }
+.settings-panel-hint { font-size:12px;line-height:1.6;color:var(--tc-2);margin:0 0 16px; }
+.settings-group { margin:12px 0;border:1px solid var(--bc-4);border-radius:10px;background:var(--bc-1); }
+.settings-group > summary { display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;cursor:pointer;min-height:52px;padding:14px 16px;font-size:14px;font-weight:500; }
+.settings-group > summary::-webkit-details-marker { display:none; }
+.settings-group > summary::after { content:'';width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin-right:3px; }
+.settings-group[open] > summary { border-bottom:1px solid var(--bc-3); }
+.settings-group[open] > summary::after { transform:rotate(225deg); }
+#settingsView .settings-group > .s-card { border:0;border-radius:0;background:transparent;margin:0; }
+#settingsView .s-label { font-size:14px;line-height:1.5; }
+#settingsView .s-hint { font-size:12px!important;line-height:1.6; }
+#settingsView .s-row { gap:8px; }
+#settingsView .s-card input:not([type="range"]):not([type="checkbox"]),#settingsView .s-card select { min-height:44px;margin-top:0; }
+#settingsView .s-card input[type="checkbox"] { width:18px;height:18px;padding:0;margin:0;flex:0 0 18px; }
+#settingsView button { min-height:44px; }
+#settingsView .toggle-group { border-radius:8px; }
+#settingsView .toggle-btn { border-radius:6px; }
+#settingsView .reading-presets .mv-toggle-group { display:grid;gap:6px;background:transparent;border-radius:0;padding:0; }
+#settingsView .reading-presets .mv-toggle-btn { display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:44px;text-align:left;white-space:normal;border:1px solid var(--bc-4);border-radius:8px;padding:10px 12px; }
+#settingsView .reading-presets .mv-toggle-btn.active { background:var(--bc-3);border-color:var(--tc-highlight); }
+#settingsView .reading-presets .mv-toggle-btn.active::after { content:'\2713'; }
+.settings-search > summary,.settings-credits > summary { cursor:pointer;min-height:36px;display:flex;align-items:center;font-size:12px;color:var(--tc-highlight);text-decoration:underline;text-underline-offset:3px; }
+.settings-credits p { font-size:12px;line-height:1.7;color:var(--tc-2); }
+#settingsView .rk-controls { flex-wrap:wrap; }
+#settingsView .s-section { font-size:14px;font-weight:500;text-transform:none;letter-spacing:normal;margin:18px 0 8px;color:var(--tc-highlight); }
+#settingsView .audio-download-card { margin-top:12px; }
+#settingsView .settings-about { display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;padding:16px 0;font-size:11px; }
+#settingsView .settings-about a { color:inherit; }
+#settingsView .settings-about span:last-child { flex-basis:100%; }
 .settings-header {
   display: flex;
   align-items: center;
@@ -1171,9 +1205,9 @@ html.reader-open body { background:var(--reader-body,#fff);max-width:720px; }
 .reader-nav { position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(100%,720px);box-sizing:border-box;z-index:15;display:grid;grid-template-columns:minmax(0,1fr) minmax(60px,auto) minmax(0,1fr);align-items:center;gap:8px;padding:8px 12px max(8px,env(safe-area-inset-bottom));background:var(--read-bg);border-top:1px solid var(--read-rule); }
 .reader-nav button { width:100%;max-width:none;min-width:0;height:44px;min-height:44px;margin:0;white-space:nowrap;font-size:13px;padding:8px 6px;display:flex;align-items:center;justify-content:center;gap:5px; }
 #readerPage { min-width:0;max-width:140px;text-align:center;font-size:12px;line-height:1.35;font-variant-numeric:tabular-nums;color:var(--read-muted);overflow-wrap:anywhere; }
-#modeSettings #readingOptions { margin:0;padding:12px var(--card-margin); }
-#modeSettings #readingOptions > summary { display:none; }
-#modeSettings .reading-presets { margin-top:0 !important; }
+#settingsView #readingOptions { margin:0; }
+#settingsView #readingOptions > summary { display:none; }
+#settingsView .reading-presets { margin-top:0 !important; }
 #modeSettings .reading-tools { display:flex; }
 #modeSettings #paceModeBtn { width:100%;min-height:44px;margin:0; }
 #modePaceSettings[hidden] { display:none; }
@@ -1412,315 +1446,394 @@ html.reader-open #qvtDock { display:none !important; }
 <!-- Settings view -->
 <div id="settingsView">
   <div class="settings-header">
-    <button class="back-btn" onclick="hideSettings()">← Back</button>
+    <button class="back-btn" onclick="hideSettings()" aria-label="Back to Quran Companion">← Back</button>
     <h2>Settings</h2>
     <div style="width:60px"></div>
   </div>
-
-  <div class="s-card">
-    <div class="s-status" id="backendStatus">Checking...</div>
+  <div class="settings-navigation">
+    <label for="settingsCategory">Settings for</label>
+    <select id="settingsCategory" onchange="selectSettingsSection(this.value)">
+      <option value="reading">Reading &amp; display</option>
+      <option value="live">Live recitation</option>
+      <option value="audio">Listen Quran</option>
+      <option value="study">Study</option>
+      <option value="support">Support &amp; advanced</option>
+    </select>
   </div>
-
-  <section id="modeSettings" aria-labelledby="modeSettingsTitle">
-    <h3 id="modeSettingsTitle" class="s-section">Translate settings</h3>
-    <div class="s-card">
-  <details id="readingOptions" open>
-    <summary>Reading layout</summary>
-  <!-- Reading layout shortcuts -->
-  <span class="s-label">Reading layout</span>
-  <div class="reading-presets" style="margin-top:12px">
-    <div class="mv-toggle-group" role="group">
-      <button type="button" class="mv-toggle-btn active" id="btnGlassesTranslit" onclick="setReadingPreset('arabic-translation')">Arabic + translation</button>
-      <button type="button" class="mv-toggle-btn" id="btnGlassesEnOnly" onclick="setReadingPreset('translation-pronunciation')">Translation + transliteration</button>
-      <button type="button" class="mv-toggle-btn" id="btnReadingCustom" onclick="setReadingPreset('custom')">Custom</button>
-    </div>
-  </div>
-
-  </details>
-    <div id="modePaceSettings" class="s-row"><span class="s-label">Reciter speed</span><div class="reading-tools">
-    <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" aria-label="Reciter speed" title="Normal, Fast, Slow">Normal · Follow Mode</button></div></div>
-    </div>
-  </section>
-
-  <section aria-labelledby="audioDownloadTitle">
-    <h3 id="audioDownloadTitle" class="s-section">Listen Quran · Downloads</h3>
-    <div class="s-card audio-download-card">
-      <p id="audioPackLabel" class="s-label">Choose a reciter and surah in Listen Quran to manage its download here.</p>
-      <div id="listenDownloadControls" class="lq lq-downloads"></div>
-    </div>
-  </section>
-
-  <div class="s-section">Microphone</div>
-  <div class="s-card">
-    <div class="s-row">
-      <div class="toggle-group g2-only" role="group">
-        <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">G2 mic</button>
-        <button type="button" class="toggle-btn" id="btnPhoneMic" onclick="setMicSource('phone')">Phone mic</button>
-      </div>
-      <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">&mdash;</span>
-      <button type="button" id="settingMicTest" class="back-btn btn-arrow" style="margin-top:6px;font-size:13px">Request mic permission</button>
-    </div>
-    <div class="s-row" id="mobileOnlyHintRow" style="display:none">
-      <span class="s-label">Mobile-only mode</span>
-      <span class="s-hint">Phone mic is enforced for this deployment.</span>
-    </div>
-  </div>
-
-  <div class="s-section">Transcription engine</div>
-  <div class="s-card">
-    <div class="s-row">
-      <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
-        <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
-        <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
-      </div>
-      <span class="s-hint" id="engineHint" style="font-size:11px;display:block;margin-top:8px;line-height:1.5"></span>
-
-      <div id="groqKeyRow" style="margin-top:10px">
-        <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" />
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
-          <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testSttKey('groq')" style="font-size:13px">Test key</button>
-          <span id="groqTestResult" style="font-size:12px;color:var(--tc-2)">&mdash;</span>
-          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key &rarr;</a>
+  <section id="settings-reading" data-settings-panel="reading" aria-labelledby="settings-reading-title">
+    <h3 id="settings-reading-title" class="settings-panel-title">Reading &amp; display</h3>
+    <p class="settings-panel-hint">Shared language and appearance preferences.</p>
+    <details class="settings-group" open="">
+      <summary>Translation language</summary>
+      <div class="s-card">
+        <div class="s-row">
+          <label class="s-label" for="settingLang">Language</label>
+          <select id="settingLang" onchange="onTranslationLangChange()">
+            <option value="" title="Built-in English translation on phone and glasses.">English (built-in)</option>
+            <option value="aa" title="Afar Translation - Mahmoud Abdulqader Hamza · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Afar — English on glasses</option>
+            <option value="sq" title="Albanian Translation - Rowwad Translation Center · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Albanian — English on glasses</option>
+            <option value="am" title="Amharic Translation - Africa Academy · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Amharic — English on glasses</option>
+            <option value="ak" title="Akan Translation (Asante) - Harun Ismail · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Asante Twi — English on glasses</option>
+            <option value="as" title="Assamese Translation - Rafiqul Islam Habibur-Rahman · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Assamese — English on glasses</option>
+            <option value="az" title="Azerbaijani Translation - Ali Khan Musayev · version 1.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Azerbaijani — English on glasses</option>
+            <option value="be" title="Belarusian Translation - Krivtsov · version 1.0.0. Selected language on phone and glasses.">Belarusian</option>
+            <option value="bn" title="Native text on phone; English on glasses because this edition contains unsupported font characters.">Bengali — English on glasses</option>
+            <option value="bs" title="Bosnian Translation - Rowwad Translation Centre · version 2.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Bosnian — English on glasses</option>
+            <option value="bg" title="Bulgarian Translation · version 1.0.0. Selected language on phone and glasses.">Bulgarian</option>
+            <option value="ceb" title="Filipino Translation (Bisayan) - Rowwad Translation Center · version 1.1.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Cebuano — English on glasses</option>
+            <option value="zh" title="Selected language on phone and glasses.">Chinese</option>
+            <option value="hr" title="Croatian Translation - Rowwad Translation Center · version 1.0.1. Selected language on phone and glasses.">Croatian</option>
+            <option value="dag" title="Dagbani Translation - Muhammad Baba Ghutubo · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Dagbani — English on glasses</option>
+            <option value="prs" title="Dari Translation - Muhammad Anwar Badakhshani · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Dari — English on glasses</option>
+            <option value="nl" title="Dutch Translation - Rowwad Translation Center · version 2.0.10. Selected language on phone and glasses.">Dutch</option>
+            <option value="en" title="Selected language on phone and glasses.">English</option>
+            <option value="tl" title="Filipino Translation (Tagalog) - Rowwad Translation Center · version 1.1.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Filipino — English on glasses</option>
+            <option value="fr" title="Selected language on phone and glasses.">French</option>
+            <option value="ff" title="Fulani Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Fulani — English on glasses</option>
+            <option value="lg" title="Luganda Translation - African Development Foundation · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Ganda — English on glasses</option>
+            <option value="ka" title="Georgian Translation · version 1.0.7. Native text on phone; English on glasses because this edition contains unsupported font characters.">Georgian — English on glasses</option>
+            <option value="de" title="German Translation - Rowwad Translation Center · version 1.0.15. Selected language on phone and glasses.">German</option>
+            <option value="el" title="Greek Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Greek — English on glasses</option>
+            <option value="gu" title="Gujarati Translation - Rabella Al-Omari · version 1.1.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Gujarati — English on glasses</option>
+            <option value="ha" title="Hausa Translation - Abu Bakr Jumi · version 1.2.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Hausa — English on glasses</option>
+            <option value="he" title="Hebrew Translation - Darussalam Association · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Hebrew — English on glasses</option>
+            <option value="hi" title="Hindi Translation - Azizul Haq Al-Omari · version 1.1.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Hindi — English on glasses</option>
+            <option value="id" title="Selected language on phone and glasses.">Indonesian</option>
+            <option value="ilp" title="Filipino Translation (Iranun) · version 1.0.1. Selected language on phone and glasses.">Iranun</option>
+            <option value="it" title="Italian Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Italian — English on glasses</option>
+            <option value="ja" title="Japanese Translation - Saeed Sato · version 1.0.13. Selected language on phone and glasses.">Japanese</option>
+            <option value="kn" title="Kannada Translation - Hamza Butur · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kannada — English on glasses</option>
+            <option value="kk" title="Kazakh Translation - Khalifa Altai · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kazakh — English on glasses</option>
+            <option value="km" title="Khmer Translation - Rowwad Translation Center · version 1.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Khmer — English on glasses</option>
+            <option value="rw" title="Kinyarwanda Translation - Rwanda Muslim Association · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kinyarwanda — English on glasses</option>
+            <option value="rn" title="Kirundi Translation - Yusuf Gahiti · version 1.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kirundi — English on glasses</option>
+            <option value="ko" title="Korean Translation - Hamid Choi · version 1.0.4. Selected language on phone and glasses.">Korean</option>
+            <option value="ku" title="Kurdish Translation - Muhammad Salih Bamoki · version 1.1.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kurdish — English on glasses</option>
+            <option value="kmr" title="Kurdish (Kurmanji) Translation - Ismail Sageri · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kurmanji Kurdish — English on glasses</option>
+            <option value="ky" title="Kyrgyz Translation - Shamsuddin Hakimov · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kyrgyz — English on glasses</option>
+            <option value="ln" title="Lingala Translation - Mohammed Balangogo · version 1.0.2. Selected language on phone and glasses.">Lingala</option>
+            <option value="lt" title="Lithuanian Translation - Rowwad Translation Center · version 1.0.8. Native text on phone; English on glasses because this edition contains unsupported font characters.">Lithuanian — English on glasses</option>
+            <option value="luy" title="Luhya Translation - International Association for Science and Culture · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Luhya — English on glasses</option>
+            <option value="mk" title="Macedonian Translation - a group of Macedonian scholars · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Macedonian — English on glasses</option>
+            <option value="mdh" title="Filipino Translation (Maguindanaon) - Rowwad Translation Center · version 1.0.4. Selected language on phone and glasses.">Maguindanao</option>
+            <option value="mg" title="Malagasy Translation - Rowwad Translation Center · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Malagasy — English on glasses</option>
+            <option value="ms" title="Malay Translation - Abdullah Basumayyah · version 1.0.0. Selected language on phone and glasses.">Malay</option>
+            <option value="ml" title="Malayalam Translation - Abdul Hamid Haidar and Kunhi Muhammad · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Malayalam — English on glasses</option>
+            <option value="mr" title="Marathi Translation - Muhammad Shafee‘ Ansari · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Marathi — English on glasses</option>
+            <option value="mos" title="Moore Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Mooré — English on glasses</option>
+            <option value="nqo" title="N'ko Translation - Baba Mamadi · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">N’Ko — English on glasses</option>
+            <option value="ne" title="Nepali Translation - Ahlul-Hadith Association · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Nepali — English on glasses</option>
+            <option value="ny" title="Chichewa Translation - Khalid Ibrahim Batyala · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Nyanja — English on glasses</option>
+            <option value="om" title="Oromo Translation - Gali Ababor · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Oromo — English on glasses</option>
+            <option value="ps" title="Pashto Translation - Rowwad Translation Center · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Pashto — English on glasses</option>
+            <option value="fa" title="Persian Translation - Rowwad Translation Center · version 1.1.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Persian — English on glasses</option>
+            <option value="pt" title="Portuguese Translation - Helmi Nasr · version 1.4.1. Selected language on phone and glasses.">Portuguese</option>
+            <option value="pa" title="Punjabi Translation - Arif Haleem · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Punjabi — English on glasses</option>
+            <option value="ro" title="Romanian Translation - Islam4ro.com · version 1.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Romanian — English on glasses</option>
+            <option value="ru" title="Selected language on phone and glasses.">Russian</option>
+            <option value="sr" title="Serbian Translation - Rowwad Translation Center · version 1.0.4. Selected language on phone and glasses.">Serbian</option>
+            <option value="sn" title="Shona Translation - Dar al-Ilm Institute · version 1.0.0. Selected language on phone and glasses.">Shona</option>
+            <option value="si" title="Sinhalese Translation - Rowwad Translation Center · version 1.0.6. Native text on phone; English on glasses because this edition contains unsupported font characters.">Sinhala — English on glasses</option>
+            <option value="so" title="Somali Translation - Abdullah Hasan Yaqoub · version 1.0.26. Selected language on phone and glasses.">Somali</option>
+            <option value="es" title="Selected language on phone and glasses.">Spanish</option>
+            <option value="sw" title="Swahili Translation - Rowad Translation Center · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Swahili — English on glasses</option>
+            <option value="sv" title="Selected language on phone and glasses.">Swedish</option>
+            <option value="tg" title="Tajiki Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Tajik — English on glasses</option>
+            <option value="ta" title="Tamil Translation - Omar Sharif - Abridged Version · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Tamil — English on glasses</option>
+            <option value="te" title="Telugu Translation - Abdurrahim ibn Muhammad · version 1.0.7. Native text on phone; English on glasses because this edition contains unsupported font characters.">Telugu — English on glasses</option>
+            <option value="th" title="Thai Translation - Rowwad Translation Center · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Thai — English on glasses</option>
+            <option value="tr" title="Selected language on phone and glasses.">Turkish</option>
+            <option value="uk" title="Ukrainian Translation - Mikhailo Yakubovych · version 1.0.2. Selected language on phone and glasses.">Ukrainian</option>
+            <option value="ur" title="Native text on phone; English on glasses because this edition contains unsupported font characters.">Urdu — English on glasses</option>
+            <option value="ug" title="Uyghur Translation - Muhammad Saleh · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Uyghur — English on glasses</option>
+            <option value="uzc" title="Cyrillic on phone; Latin Uzbek on glasses.">Uzbek (Cyrillic)</option>
+            <option value="uz" title="Selected language on phone and glasses.">Uzbek (Latin)</option>
+            <option value="vi" title="Vietnamese Translation - Rowwad Translation Center · version 1.0.9. Native text on phone; English on glasses because this edition contains unsupported font characters.">Vietnamese — English on glasses</option>
+            <option value="yao" title="Yaw Translation - Muhammad ibn Abdulhamid Silika · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Yao — English on glasses</option>
+            <option value="yo" title="Yoruba Translation - Abu Rahimah Mikael · version 1.0.9. Native text on phone; English on glasses because this edition contains unsupported font characters.">Yoruba — English on glasses</option>
+            <option value="zu" title="Zulu Translation - Adel Jaafar Moltsho · version 1.0.0. Selected language on phone and glasses.">Zulu</option>
+          </select>
+          <details class="settings-search">
+            <summary>Search languages &amp; favourites</summary>
+            <div class="language-tools">
+              <input type="search" id="languageSearch" aria-label="Search languages" placeholder="Search languages" oninput="filterLanguages()">
+              <button type="button" class="toggle-btn" id="favoritesOnly" onclick="toggleFavoritesOnly()" aria-pressed="false">Favourites</button>
+              <button type="button" class="toggle-btn" id="favoriteLanguage" onclick="toggleLanguageFavorite()" aria-pressed="false">Save favourite</button>
+            </div>
+            <span id="languageSearchStatus" class="s-hint" role="status"></span>
+          </details>
+          <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;min-height:1.4em"></span>
+          <a id="translationSource" target="_blank" rel="noopener noreferrer" style="display:none;font-size:11px">Translation source and credits</a>
+          <span class="s-hint" id="langPackStatus" style="font-size:11px;display:block;margin-top:4px"></span>
+          <button type="button" class="toggle-btn" id="langPackBtn" style="display:none;margin-top:8px" onclick="downloadSelectedLangPack()">Download language pack</button>
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">English is built in. Other languages download once for offline use. Glasses support is listed with each language.</span>
         </div>
       </div>
-      <div id="openaiKeyRow" style="margin-top:10px;display:none">
-        <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false" />
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
-          <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testSttKey('openai')" style="font-size:13px">Test key</button>
-          <span id="openaiTestResult" style="font-size:12px;color:var(--tc-2)">&mdash;</span>
-          <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key &rarr;</a>
+    </details>
+    <details class="settings-group">
+      <summary>Phone appearance</summary>
+      <div class="s-card">
+        <div class="s-row">
+          <label class="s-label" for="settingPhoneTextSize">Phone reading text size</label>
+          <div class="reading-tools">
+            <button type="button" class="toggle-btn" aria-label="Decrease reading text size" onclick="setPhoneTextSize(Number(document.getElementById('settingPhoneTextSize').value)-2)">A−</button>
+            <input type="range" id="settingPhoneTextSize" min="14" max="28" step="2" oninput="setPhoneTextSize(this.value)" style="flex:1;min-width:100px">
+            <button type="button" class="toggle-btn" aria-label="Increase reading text size" onclick="setPhoneTextSize(Number(document.getElementById('settingPhoneTextSize').value)+2)">A+</button>
+            <output id="phoneTextSizeValue" for="settingPhoneTextSize">16 px</output>
+          </div>
+          <p id="phoneTextSizePreview" style="line-height:1.6;overflow-wrap:anywhere;margin:8px 0">Translation and transliteration preview</p>
+          <span class="s-hint">Changes Arabic, translation and transliteration on your phone. Your choice is saved.</span>
+        </div>
+        <div class="s-row">
+          <span class="s-label">Quranic marks (tashkeel)</span>
+          <div class="toggle-group" role="group">
+            <button type="button" class="toggle-btn active" id="btnTashkeelOn" onclick="setTashkeel(true)">Full marks</button>
+            <button type="button" class="toggle-btn" id="btnTashkeelOff" onclick="setTashkeel(false)">Plain text</button>
+          </div>
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Madd, zabar, zer and the other marks on the verse text — and on the live hearing preview for recognized words.</span>
         </div>
       </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
+    </details>
+    <details class="settings-group">
+      <summary>Glasses display</summary>
+      <div class="s-card">
+        <details id="readingOptions" open="">
+          <summary>Reading layout</summary>
+          <div class="s-row">
+            <!-- Reading layout shortcuts -->
+            <div class="reading-presets" style="margin-top:12px">
+              <div class="mv-toggle-group" role="group">
+                <button type="button" class="mv-toggle-btn active" id="btnGlassesTranslit" onclick="setReadingPreset('arabic-translation')">Arabic + translation</button>
+                <button type="button" class="mv-toggle-btn" id="btnGlassesEnOnly" onclick="setReadingPreset('translation-pronunciation')">Translation + transliteration</button>
+                <button type="button" class="mv-toggle-btn" id="btnReadingCustom" onclick="setReadingPreset('custom')">Custom</button>
+              </div>
+            </div>
+          </div>
+        </details>
+        <div class="s-row">
+          <label class="s-label" for="settingGlassesLayout">Custom reading layout</label>
+          <select id="settingGlassesLayout" onchange="setCustomReadingLayout(this.value)">
+            <option value="arabic">Arabic only</option>
+            <option value="translation">Translation only</option>
+            <option value="pronunciation">Transliteration only (Latin letters)</option>
+            <option value="arabic-translation">Arabic above translation (default)</option>
+            <option value="arabic-pronunciation">Arabic above transliteration</option>
+            <option value="translation-pronunciation">Translation + transliteration</option>
+          </select>
+          <div class="toggle-group" style="display:none">
+            <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Translation + pronunciation</button>
+            <button type="button" class="toggle-btn" id="btnBottomTranslationOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
+          </div>
+          <span class="s-hint standalone-only" style="font-size:11px;display:block;margin-top:4px">Choose what appears on screen. Transliteration is Arabic pronunciation written in Latin letters.</span>
+          <span class="s-hint g2-only" style="font-size:11px;display:block;margin-top:4px">Choose what appears on glasses. Transliteration is Arabic pronunciation written in Latin letters. Long verses continue on additional pages.</span>
+          <label class="reading-tools g2-only"><input type="checkbox" id="settingDimSecondary" onchange="setDimSecondary(this.checked)"> Dim secondary text on glasses</label>
+          <label class="reading-tools" style="display:none"><input type="checkbox" id="settingArabicImage" onchange="setArabicImage(this.checked)"> Arabic verse image (experimental)</label>
+          <span class="s-hint g2-only">Arabic uses shaped text images. Translation underneath uses the glasses font, with English fallback for unsupported languages. Physical-glasses readability is not yet verified.</span>
+          <div id="previewLanguages" class="device-language g2-only"></div>
+          <canvas id="glassesPreview" class="glasses-preview g2-only" width="576" height="288" aria-label="Glasses layout preview"></canvas>
+          <div id="previewCaption" class="preview-caption g2-only" role="status">Layout preview</div>
+        </div>
+      </div>
+    </details>
+    <p class="settings-panel-hint">Read Quran has its own page layout, Arabic style and auto-scroll options in the Aa menu while reading.</p>
+  </section>
+  <section id="settings-live" data-settings-panel="live" aria-labelledby="settings-live-title" hidden="">
+    <h3 id="settings-live-title" class="settings-panel-title">Live recitation</h3>
+    <p class="settings-panel-hint">Microphone and tracking settings for Translate, Practice and Taraweeh.</p>
+    <section id="modeSettings" aria-labelledby="modeSettingsTitle">
+      <h3 id="modeSettingsTitle" class="s-section">Translate settings</h3>
+      <div class="s-card">
+        <div class="s-row">
+          <label class="s-label" for="settingSurah">Default Surah</label>
+          <select id="settingSurah" onchange="updateSurahScope()">
+            <option value="0">Any Surah</option>
+          </select>
+          <div id="surahScopeRow" style="display:none;margin-top:8px">
+            <div class="toggle-group" role="group">
+              <button type="button" class="toggle-btn" id="btnSurahOnly" onclick="setSurahScope(true)">Only this surah</button>
+              <button type="button" class="toggle-btn" id="btnSurahAny" onclick="setSurahScope(false)">Allow any surah</button>
+            </div>
+            <span class="s-hint" id="surahScopeHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
+          </div>
+        </div>
+        <div id="modePaceSettings" class="s-row">
+          <span class="s-label">Reciter speed</span>
+          <div class="reading-tools">
+            <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" aria-label="Reciter speed" title="Normal, Fast, Slow">Normal · Follow Mode</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <details class="settings-group">
+      <summary>Microphone</summary>
+      <div class="s-card">
+        <div class="s-row">
+          <div class="toggle-group g2-only" role="group">
+            <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">G2 mic</button>
+            <button type="button" class="toggle-btn" id="btnPhoneMic" onclick="setMicSource('phone')">Phone mic</button>
+          </div>
+          <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">—</span>
+          <button type="button" id="settingMicTest" class="back-btn btn-arrow" style="margin-top:6px;font-size:13px">Request mic permission</button>
+        </div>
+        <div class="s-row" id="mobileOnlyHintRow" style="display:none">
+          <span class="s-label">Mobile-only mode</span>
+          <span class="s-hint">Phone mic is enforced for this deployment.</span>
+        </div>
+      </div>
+    </details>
+    <details class="settings-group">
+      <summary>Transcription engine</summary>
+      <div class="s-card">
+        <div class="s-row">
+          <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
+            <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
+            <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
+          </div>
+          <span class="s-hint" id="engineHint" style="font-size:11px;display:block;margin-top:8px;line-height:1.5"></span>
+          <div id="groqKeyRow" style="margin-top:10px">
+            <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false">
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+              <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testSttKey('groq')" style="font-size:13px">Test key</button>
+              <span id="groqTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
+              <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
+            </div>
+          </div>
+          <div id="openaiKeyRow" style="margin-top:10px;display:none">
+            <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false">
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+              <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testSttKey('openai')" style="font-size:13px">Test key</button>
+              <span id="openaiTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
+            </div>
+          </div>
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
         Your key stays on this device and is sent to the server only while listening.
       </span>
-    </div>
-  </div>
-
-  <div class="s-card" id="adPrivacyRow" style="display:none">
-    <div class="s-row">
-      <span class="s-label">Ad privacy</span>
-      <button type="button" class="back-btn btn-arrow" onclick="showAdPrivacyOptions()" style="font-size:13px">Ad privacy choices</button>
-    </div>
-  </div>
-
-  <div class="s-section">Reading</div>
-  <div class="s-card">
-    <div class="s-row">
-      <span class="s-label">Default Surah</span>
-      <select id="settingSurah" onchange="updateSurahScope()"><option value="0">Any Surah</option></select>
-      <div id="surahScopeRow" style="display:none;margin-top:8px">
-        <div class="toggle-group" role="group">
-          <button type="button" class="toggle-btn" id="btnSurahOnly" onclick="setSurahScope(true)">Only this surah</button>
-          <button type="button" class="toggle-btn" id="btnSurahAny" onclick="setSurahScope(false)">Allow any surah</button>
         </div>
-        <span class="s-hint" id="surahScopeHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
+        <div class="s-row" id="transcribeModelRow">
+          <label class="s-label" for="settingTranscribeModel">Model</label>
+          <select id="settingTranscribeModel" onchange="setTranscribeModel(this.value)"></select>
+          <span class="s-hint" id="modelHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
+        </div>
       </div>
-    </div>
+    </details>
+  </section>
+  <section id="settings-audio" data-settings-panel="audio" aria-labelledby="audioDownloadTitle" hidden="">
+    <h3 id="audioDownloadTitle" class="settings-panel-title">Listen Quran</h3>
+    <p class="settings-panel-hint">Manage the recording selected in Listen Quran. Playback continues while you browse settings.</p>
+    <section aria-labelledby="audioDownloadTitle">
+      <div class="s-card audio-download-card">
+        <p id="audioPackLabel" class="s-label">Choose a reciter and surah in Listen Quran to manage its download here.</p>
+        <div id="listenDownloadControls" class="lq lq-downloads"></div>
+      </div>
+    </section>
+  </section>
+  <section id="settings-study" data-settings-panel="study" aria-labelledby="settings-study-title" hidden="">
+    <h3 id="settings-study-title" class="settings-panel-title">Study</h3>
+    <p class="settings-panel-hint">Default sources for tafsir and related Hadith.</p>
+    <details class="settings-group" open="">
+      <summary>Tafsir &amp; Hadith</summary>
+      <div class="s-card">
+        <div class="s-row">
+          <label class="s-label" for="settingStudyTafsir">Default tafsir</label>
+          <select id="settingStudyTafsir" onchange="setStudyPreference('studyTafsir',Number(this.value))">
+            <option value="266">Al-Mukhtasar · English</option>
+          </select>
+        </div>
+        <div class="s-row">
+          <label class="s-label" for="settingHadithLanguage">Default Hadith language</label>
+          <select id="settingHadithLanguage" onchange="setStudyPreference('studyHadithLanguage',this.value);populateStudySettings()">
+            <option>English</option>
+          </select>
+        </div>
+        <div class="s-row">
+          <label class="s-label" for="settingHadithEdition">Default Hadith collection</label>
+          <select id="settingHadithEdition" onchange="setStudyPreference('studyHadithEdition',this.value)">
+            <option value="eng-bukhari">Sahih al-Bukhari · English</option>
+          </select>
+        </div>
+      </div>
+    </details>
     <div class="s-row">
-      <span class="s-label">Translation</span>
-      <div class="language-tools">
-        <input type="search" id="languageSearch" aria-label="Search languages" placeholder="Search languages" oninput="filterLanguages()" />
-        <button type="button" class="toggle-btn" id="favoritesOnly" onclick="toggleFavoritesOnly()" aria-pressed="false">Favourites</button>
-        <button type="button" class="toggle-btn" id="favoriteLanguage" onclick="toggleLanguageFavorite()" aria-pressed="false">Save favourite</button>
-      </div>
-      <span id="languageSearchStatus" class="s-hint" role="status"></span>
-      <select id="settingLang" onchange="onTranslationLangChange()">
-        <option value="" title="Built-in English translation on phone and glasses.">English (built-in)</option>
-        <option value="aa" title="Afar Translation - Mahmoud Abdulqader Hamza · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Afar — English on glasses</option>
-        <option value="sq" title="Albanian Translation - Rowwad Translation Center · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Albanian — English on glasses</option>
-        <option value="am" title="Amharic Translation - Africa Academy · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Amharic — English on glasses</option>
-        <option value="ak" title="Akan Translation (Asante) - Harun Ismail · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Asante Twi — English on glasses</option>
-        <option value="as" title="Assamese Translation - Rafiqul Islam Habibur-Rahman · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Assamese — English on glasses</option>
-        <option value="az" title="Azerbaijani Translation - Ali Khan Musayev · version 1.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Azerbaijani — English on glasses</option>
-        <option value="be" title="Belarusian Translation - Krivtsov · version 1.0.0. Selected language on phone and glasses.">Belarusian</option>
-        <option value="bn" title="Native text on phone; English on glasses because this edition contains unsupported font characters.">Bengali — English on glasses</option>
-        <option value="bs" title="Bosnian Translation - Rowwad Translation Centre · version 2.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Bosnian — English on glasses</option>
-        <option value="bg" title="Bulgarian Translation · version 1.0.0. Selected language on phone and glasses.">Bulgarian</option>
-        <option value="ceb" title="Filipino Translation (Bisayan) - Rowwad Translation Center · version 1.1.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Cebuano — English on glasses</option>
-        <option value="zh" title="Selected language on phone and glasses.">Chinese</option>
-        <option value="hr" title="Croatian Translation - Rowwad Translation Center · version 1.0.1. Selected language on phone and glasses.">Croatian</option>
-        <option value="dag" title="Dagbani Translation - Muhammad Baba Ghutubo · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Dagbani — English on glasses</option>
-        <option value="prs" title="Dari Translation - Muhammad Anwar Badakhshani · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Dari — English on glasses</option>
-        <option value="nl" title="Dutch Translation - Rowwad Translation Center · version 2.0.10. Selected language on phone and glasses.">Dutch</option>
-        <option value="en" title="Selected language on phone and glasses.">English</option>
-        <option value="tl" title="Filipino Translation (Tagalog) - Rowwad Translation Center · version 1.1.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Filipino — English on glasses</option>
-        <option value="fr" title="Selected language on phone and glasses.">French</option>
-        <option value="ff" title="Fulani Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Fulani — English on glasses</option>
-        <option value="lg" title="Luganda Translation - African Development Foundation · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Ganda — English on glasses</option>
-        <option value="ka" title="Georgian Translation · version 1.0.7. Native text on phone; English on glasses because this edition contains unsupported font characters.">Georgian — English on glasses</option>
-        <option value="de" title="German Translation - Rowwad Translation Center · version 1.0.15. Selected language on phone and glasses.">German</option>
-        <option value="el" title="Greek Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Greek — English on glasses</option>
-        <option value="gu" title="Gujarati Translation - Rabella Al-Omari · version 1.1.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Gujarati — English on glasses</option>
-        <option value="ha" title="Hausa Translation - Abu Bakr Jumi · version 1.2.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Hausa — English on glasses</option>
-        <option value="he" title="Hebrew Translation - Darussalam Association · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Hebrew — English on glasses</option>
-        <option value="hi" title="Hindi Translation - Azizul Haq Al-Omari · version 1.1.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Hindi — English on glasses</option>
-        <option value="id" title="Selected language on phone and glasses.">Indonesian</option>
-        <option value="ilp" title="Filipino Translation (Iranun) · version 1.0.1. Selected language on phone and glasses.">Iranun</option>
-        <option value="it" title="Italian Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Italian — English on glasses</option>
-        <option value="ja" title="Japanese Translation - Saeed Sato · version 1.0.13. Selected language on phone and glasses.">Japanese</option>
-        <option value="kn" title="Kannada Translation - Hamza Butur · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kannada — English on glasses</option>
-        <option value="kk" title="Kazakh Translation - Khalifa Altai · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kazakh — English on glasses</option>
-        <option value="km" title="Khmer Translation - Rowwad Translation Center · version 1.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Khmer — English on glasses</option>
-        <option value="rw" title="Kinyarwanda Translation - Rwanda Muslim Association · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kinyarwanda — English on glasses</option>
-        <option value="rn" title="Kirundi Translation - Yusuf Gahiti · version 1.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kirundi — English on glasses</option>
-        <option value="ko" title="Korean Translation - Hamid Choi · version 1.0.4. Selected language on phone and glasses.">Korean</option>
-        <option value="ku" title="Kurdish Translation - Muhammad Salih Bamoki · version 1.1.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kurdish — English on glasses</option>
-        <option value="kmr" title="Kurdish (Kurmanji) Translation - Ismail Sageri · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kurmanji Kurdish — English on glasses</option>
-        <option value="ky" title="Kyrgyz Translation - Shamsuddin Hakimov · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Kyrgyz — English on glasses</option>
-        <option value="ln" title="Lingala Translation - Mohammed Balangogo · version 1.0.2. Selected language on phone and glasses.">Lingala</option>
-        <option value="lt" title="Lithuanian Translation - Rowwad Translation Center · version 1.0.8. Native text on phone; English on glasses because this edition contains unsupported font characters.">Lithuanian — English on glasses</option>
-        <option value="luy" title="Luhya Translation - International Association for Science and Culture · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Luhya — English on glasses</option>
-        <option value="mk" title="Macedonian Translation - a group of Macedonian scholars · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Macedonian — English on glasses</option>
-        <option value="mdh" title="Filipino Translation (Maguindanaon) - Rowwad Translation Center · version 1.0.4. Selected language on phone and glasses.">Maguindanao</option>
-        <option value="mg" title="Malagasy Translation - Rowwad Translation Center · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Malagasy — English on glasses</option>
-        <option value="ms" title="Malay Translation - Abdullah Basumayyah · version 1.0.0. Selected language on phone and glasses.">Malay</option>
-        <option value="ml" title="Malayalam Translation - Abdul Hamid Haidar and Kunhi Muhammad · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Malayalam — English on glasses</option>
-        <option value="mr" title="Marathi Translation - Muhammad Shafee‘ Ansari · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Marathi — English on glasses</option>
-        <option value="mos" title="Moore Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Mooré — English on glasses</option>
-        <option value="nqo" title="N'ko Translation - Baba Mamadi · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">N’Ko — English on glasses</option>
-        <option value="ne" title="Nepali Translation - Ahlul-Hadith Association · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Nepali — English on glasses</option>
-        <option value="ny" title="Chichewa Translation - Khalid Ibrahim Batyala · version 1.0.0. Native text on phone; English on glasses because this edition contains unsupported font characters.">Nyanja — English on glasses</option>
-        <option value="om" title="Oromo Translation - Gali Ababor · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Oromo — English on glasses</option>
-        <option value="ps" title="Pashto Translation - Rowwad Translation Center · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Pashto — English on glasses</option>
-        <option value="fa" title="Persian Translation - Rowwad Translation Center · version 1.1.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Persian — English on glasses</option>
-        <option value="pt" title="Portuguese Translation - Helmi Nasr · version 1.4.1. Selected language on phone and glasses.">Portuguese</option>
-        <option value="pa" title="Punjabi Translation - Arif Haleem · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Punjabi — English on glasses</option>
-        <option value="ro" title="Romanian Translation - Islam4ro.com · version 1.0.4. Native text on phone; English on glasses because this edition contains unsupported font characters.">Romanian — English on glasses</option>
-        <option value="ru" title="Selected language on phone and glasses.">Russian</option>
-        <option value="sr" title="Serbian Translation - Rowwad Translation Center · version 1.0.4. Selected language on phone and glasses.">Serbian</option>
-        <option value="sn" title="Shona Translation - Dar al-Ilm Institute · version 1.0.0. Selected language on phone and glasses.">Shona</option>
-        <option value="si" title="Sinhalese Translation - Rowwad Translation Center · version 1.0.6. Native text on phone; English on glasses because this edition contains unsupported font characters.">Sinhala — English on glasses</option>
-        <option value="so" title="Somali Translation - Abdullah Hasan Yaqoub · version 1.0.26. Selected language on phone and glasses.">Somali</option>
-        <option value="es" title="Selected language on phone and glasses.">Spanish</option>
-        <option value="sw" title="Swahili Translation - Rowad Translation Center · version 1.0.5. Native text on phone; English on glasses because this edition contains unsupported font characters.">Swahili — English on glasses</option>
-        <option value="sv" title="Selected language on phone and glasses.">Swedish</option>
-        <option value="tg" title="Tajiki Translation - Rowwad Translation Center · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Tajik — English on glasses</option>
-        <option value="ta" title="Tamil Translation - Omar Sharif - Abridged Version · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Tamil — English on glasses</option>
-        <option value="te" title="Telugu Translation - Abdurrahim ibn Muhammad · version 1.0.7. Native text on phone; English on glasses because this edition contains unsupported font characters.">Telugu — English on glasses</option>
-        <option value="th" title="Thai Translation - Rowwad Translation Center · version 1.0.1. Native text on phone; English on glasses because this edition contains unsupported font characters.">Thai — English on glasses</option>
-        <option value="tr" title="Selected language on phone and glasses.">Turkish</option>
-        <option value="uk" title="Ukrainian Translation - Mikhailo Yakubovych · version 1.0.2. Selected language on phone and glasses.">Ukrainian</option>
-        <option value="ur" title="Native text on phone; English on glasses because this edition contains unsupported font characters.">Urdu — English on glasses</option>
-        <option value="ug" title="Uyghur Translation - Muhammad Saleh · version 1.0.2. Native text on phone; English on glasses because this edition contains unsupported font characters.">Uyghur — English on glasses</option>
-        <option value="uzc" title="Cyrillic on phone; Latin Uzbek on glasses.">Uzbek (Cyrillic)</option>
-        <option value="uz" title="Selected language on phone and glasses.">Uzbek (Latin)</option>
-        <option value="vi" title="Vietnamese Translation - Rowwad Translation Center · version 1.0.9. Native text on phone; English on glasses because this edition contains unsupported font characters.">Vietnamese — English on glasses</option>
-        <option value="yao" title="Yaw Translation - Muhammad ibn Abdulhamid Silika · version 1.0.3. Native text on phone; English on glasses because this edition contains unsupported font characters.">Yao — English on glasses</option>
-        <option value="yo" title="Yoruba Translation - Abu Rahimah Mikael · version 1.0.9. Native text on phone; English on glasses because this edition contains unsupported font characters.">Yoruba — English on glasses</option>
-        <option value="zu" title="Zulu Translation - Adel Jaafar Moltsho · version 1.0.0. Selected language on phone and glasses.">Zulu</option>
-      </select>
-      <span class="s-hint" id="translationDesc" style="font-size:11px;display:block;margin-top:4px;min-height:1.4em"></span>
-      <a id="translationSource" target="_blank" rel="noopener noreferrer" style="display:none;font-size:11px">Translation source and credits</a>
-      <span class="s-hint" id="langPackStatus" style="font-size:11px;display:block;margin-top:4px"></span>
-      <button type="button" class="toggle-btn" id="langPackBtn" style="display:none;margin-top:8px" onclick="downloadSelectedLangPack()">Download language pack</button>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:6px">English is built in. Download other languages once and keep them on the device. Each option states whether glasses show that language or English. Cyrillic Uzbek shows Latin Uzbek on glasses.</span>
+      <details class="settings-credits">
+        <summary>Content credits</summary>
+        <p>Tafsir: <a href="https://tafsir.net" target="_blank" rel="noopener">Tafsir Center for Quranic Studies</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. Hadith editions: hadith-api. Word morphology and English word meanings: <a href="https://corpus.quran.com" target="_blank" rel="noopener">Quranic Arabic Corpus</a> (Kais Dukes / University of Leeds), GNU GPL. Arabic fonts: Amiri Quran and DigitalKhatt IndoPak (Amine Anane / Tarteel), SIL OFL 1.1.</p>
+      </details>
     </div>
-    <div class="s-row">
-      <span class="s-label">Quranic marks (tashkeel)</span>
-      <div class="toggle-group" role="group">
-        <button type="button" class="toggle-btn active" id="btnTashkeelOn" onclick="setTashkeel(true)">Full marks</button>
-        <button type="button" class="toggle-btn" id="btnTashkeelOff" onclick="setTashkeel(false)">Plain text</button>
-      </div>
-      <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">Madd, zabar, zer and the other marks on the verse text — and on the live hearing preview for recognized words.</span>
-    </div>
-    <div class="s-row">
-      <label class="s-label" for="settingStudyTafsir">Default tafsir</label>
-      <select id="settingStudyTafsir" onchange="setStudyPreference('studyTafsir',Number(this.value))"><option value="266">Al-Mukhtasar · English</option></select>
-      <label class="s-label" for="settingHadithLanguage">Default Hadith language</label>
-      <select id="settingHadithLanguage" onchange="setStudyPreference('studyHadithLanguage',this.value);populateStudySettings()"><option>English</option></select>
-      <label class="s-label" for="settingHadithEdition">Default Hadith collection</label>
-      <select id="settingHadithEdition" onchange="setStudyPreference('studyHadithEdition',this.value)"><option value="eng-bukhari">Sahih al-Bukhari · English</option></select>
-      <span class="s-hint">These defaults are saved.</span>
-      <details><summary>Content credits</summary><p>Tafsir: <a href="https://tafsir.net" target="_blank" rel="noopener">Tafsir Center for Quranic Studies</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. Hadith editions: hadith-api. Word morphology and English word meanings: <a href="https://corpus.quran.com" target="_blank" rel="noopener">Quranic Arabic Corpus</a> (Kais Dukes / University of Leeds), GNU GPL. Arabic fonts: Amiri Quran and DigitalKhatt IndoPak (Amine Anane / Tarteel), SIL OFL 1.1.</p></details>
-      <label class="s-label" for="settingPhoneTextSize">Phone reading text size</label>
-      <div class="reading-tools">
-        <button type="button" class="toggle-btn" aria-label="Decrease reading text size" onclick="setPhoneTextSize(Number(document.getElementById('settingPhoneTextSize').value)-2)">A−</button>
-        <input type="range" id="settingPhoneTextSize" min="14" max="28" step="2" oninput="setPhoneTextSize(this.value)" style="flex:1;min-width:100px" />
-        <button type="button" class="toggle-btn" aria-label="Increase reading text size" onclick="setPhoneTextSize(Number(document.getElementById('settingPhoneTextSize').value)+2)">A+</button>
-        <output id="phoneTextSizeValue" for="settingPhoneTextSize">16 px</output>
-      </div>
-      <p id="phoneTextSizePreview" style="line-height:1.6;overflow-wrap:anywhere;margin:8px 0">Translation and transliteration preview</p>
-      <span class="s-hint">Changes Arabic, translation and transliteration on your phone. Your choice is saved.</span>
-    </div>
-    <div class="s-row">
-      <label class="s-label" for="settingGlassesLayout">Custom reading layout</label><select id="settingGlassesLayout" onchange="setCustomReadingLayout(this.value)"><option value="arabic">Arabic only</option><option value="translation">Translation only</option><option value="pronunciation">Transliteration only (Latin letters)</option><option value="arabic-translation">Arabic above translation (default)</option><option value="arabic-pronunciation">Arabic above transliteration</option><option value="translation-pronunciation">Translation + transliteration</option></select>
-      <div class="toggle-group" style="display:none">
-        <button type="button" class="toggle-btn active" id="btnBottomTranslit" onclick="setGlassesBottom('transliteration')">Translation + pronunciation</button>
-        <button type="button" class="toggle-btn" id="btnBottomTranslationOnly" onclick="setGlassesBottom('translation-only')">Translation only</button>
-      </div>
-      <span class="s-hint standalone-only" style="font-size:11px;display:block;margin-top:4px">Choose what appears on screen. Transliteration is Arabic pronunciation written in Latin letters.</span>
-      <span class="s-hint g2-only" style="font-size:11px;display:block;margin-top:4px">Choose what appears on glasses. Transliteration is Arabic pronunciation written in Latin letters. Long verses continue on additional pages.</span>
-      <label class="reading-tools g2-only"><input type="checkbox" id="settingDimSecondary" onchange="setDimSecondary(this.checked)" /> Dim secondary text on glasses</label>
-      <label class="reading-tools" style="display:none"><input type="checkbox" id="settingArabicImage" onchange="setArabicImage(this.checked)" /> Arabic verse image (experimental)</label>
-      <span class="s-hint g2-only">Arabic uses shaped text images. Translation underneath uses the glasses font, with English fallback for unsupported languages. Physical-glasses readability is not yet verified.</span>
-      <div id="previewLanguages" class="device-language g2-only"></div>
-      <canvas id="glassesPreview" class="glasses-preview g2-only" width="576" height="288" aria-label="Glasses layout preview"></canvas>
-      <div id="previewCaption" class="preview-caption g2-only" role="status">Layout preview</div>
-    </div>
-  </div>
-
-  <details class="s-adv">
-    <summary>Advanced</summary>
+  </section>
+  <section id="settings-support" data-settings-panel="support" aria-labelledby="settings-support-title" hidden="">
+    <h3 id="settings-support-title" class="settings-panel-title">Support &amp; advanced</h3>
+    <p class="settings-panel-hint">Connection details and tools for troubleshooting.</p>
     <div class="s-card">
-      <div class="s-row" id="transcribeModelRow">
-        <span class="s-label">Model</span>
-        <select id="settingTranscribeModel" onchange="setTranscribeModel(this.value)"></select>
-        <span class="s-hint" id="modelHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
-      </div>
-      <div class="s-row">
-        <span class="s-label">Backend URL</span>
-        <input id="settingBackendUrl" type="text" placeholder="auto" autocomplete="off" spellcheck="false" />
-        <span class="s-hint" id="backendUrlHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
-      </div>
-      <div class="s-row">
-        <span class="s-label">Tracking style</span>
-        <select id="settingPipeline">
-          <option value="v4">V4 (Recommended)</option>
-          <option value="v3">V3 (Compatibility)</option>
-        </select>
-      </div>
-      <div class="s-row">
-        <span class="s-label">Compare engines</span>
-        <button type="button" class="back-btn btn-arrow" onclick="compareSttProviders()" style="font-size:13px">Compare (4s recitation)</button>
-        <span class="s-hint" id="compareSttResult" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">Recite a short ayah, then tap Compare. Runs every configured engine independently.</span>
-      </div>
-      <div class="s-row" id="wakeServerRow" style="display:none">
-        <span class="s-label">Service</span>
-        <button type="button" id="wakeServerBtn" class="back-btn btn-primary btn-arrow" style="font-size:13px">Start service now</button>
-        <span class="s-hint" id="wakeServerHint" style="margin-top:6px;display:block">Use this if the service is sleeping.</span>
-      </div>
-      <div class="s-row">
-        <span class="s-label">Diagnostics</span>
-        <button type="button" class="back-btn btn-arrow" onclick="openAudioPlaybackTest()" style="font-size:13px">Audio playback test</button>
-        <button type="button" class="back-btn btn-arrow" onclick="copyDiagLog()" style="font-size:13px">Copy diagnostic log</button>
-        <span class="s-hint" id="diagCopyHint" style="margin-top:6px;display:block">Last 500 events. Paste into an issue when reporting a bug.</span>
-      </div>
-      <div class="s-row">
-        <span class="s-label">Listening trace</span>
-        <div class="toggle-group" role="group">
-          <button type="button" class="toggle-btn active" id="btnTraceOff" onclick="setTraceStreaming(false)">Off</button>
-          <button type="button" class="toggle-btn" id="btnTraceOn" onclick="setTraceStreaming(true)">Show live</button>
+      <div class="s-status" id="backendStatus">Checking...</div>
+    </div>
+    <details class="settings-group">
+      <summary>Service &amp; tracking</summary>
+      <div class="s-card">
+        <div class="s-row">
+          <label class="s-label" for="settingBackendUrl">Backend URL</label>
+          <input id="settingBackendUrl" type="text" placeholder="auto" autocomplete="off" spellcheck="false">
+          <span class="s-hint" id="backendUrlHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
         </div>
-        <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">The backend records this either way. The switch only opens the live
+        <div class="s-row">
+          <label class="s-label" for="settingPipeline">Tracking style</label>
+          <select id="settingPipeline">
+            <option value="v4">V4 (Recommended)</option>
+            <option value="v3">V3 (Compatibility)</option>
+          </select>
+        </div>
+        <div class="s-row" id="wakeServerRow" style="display:none">
+          <span class="s-label">Service</span>
+          <button type="button" id="wakeServerBtn" class="back-btn btn-primary btn-arrow" style="font-size:13px">Start service now</button>
+          <span class="s-hint" id="wakeServerHint" style="margin-top:6px;display:block">Use this if the service is sleeping.</span>
+        </div>
+      </div>
+    </details>
+    <details class="settings-group">
+      <summary>Diagnostics &amp; reports</summary>
+      <div class="s-card">
+        <div class="s-row">
+          <span class="s-label">Diagnostics</span>
+          <button type="button" class="back-btn btn-arrow" onclick="openAudioPlaybackTest()" style="font-size:13px">Audio playback test</button>
+          <button type="button" class="back-btn btn-arrow" onclick="copyDiagLog()" style="font-size:13px">Copy diagnostic log</button>
+          <span class="s-hint" id="diagCopyHint" style="margin-top:6px;display:block">Last 500 events. Paste into an issue when reporting a bug.</span>
+        </div>
+        <div class="s-row">
+          <span class="s-label">Compare engines</span>
+          <button type="button" class="back-btn btn-arrow" onclick="compareSttProviders()" style="font-size:13px">Compare (4s recitation)</button>
+          <span class="s-hint" id="compareSttResult" style="font-size:11px;display:block;margin-top:6px;line-height:1.5">Recite a short ayah, then tap Compare. Runs every configured engine independently.</span>
+        </div>
+        <div class="s-row">
+          <label class="s-label" for="traceNote">Listening trace</label>
+          <div class="toggle-group" role="group">
+            <button type="button" class="toggle-btn active" id="btnTraceOff" onclick="setTraceStreaming(false)">Off</button>
+            <button type="button" class="toggle-btn" id="btnTraceOn" onclick="setTraceStreaming(true)">Show live</button>
+          </div>
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:4px">The backend records this either way. The switch only opens the live
           feed below, so the history leading up to a problem is already captured.</span>
-        <div id="traceFeed" class="trace-feed" style="display:none"></div>
-        <input type="text" id="traceNote" placeholder="What went wrong? (optional)" maxlength="200" autocomplete="off" style="margin-top:8px">
-        <div class="rk-controls" style="margin-top:8px">
-          <button type="button" class="rk-btn" onclick="copyTraceReport()">Copy report</button>
-          <button type="button" class="rk-btn" onclick="downloadTraceReport()">Save report</button>
-          <button type="button" class="rk-btn" onclick="sendTraceReport()">Send to developer</button>
+          <div id="traceFeed" class="trace-feed" style="display:none"></div>
+          <input type="text" id="traceNote" placeholder="What went wrong? (optional)" maxlength="200" autocomplete="off" style="margin-top:8px">
+          <div class="rk-controls" style="margin-top:8px">
+            <button type="button" class="rk-btn" onclick="copyTraceReport()">Copy report</button>
+            <button type="button" class="rk-btn" onclick="downloadTraceReport()">Save report</button>
+            <button type="button" class="rk-btn" onclick="sendTraceReport()">Send to developer</button>
+          </div>
+          <span class="s-hint" id="traceHint" style="margin-top:6px;display:block">A report holds transcripts and decisions — never audio, never your API keys.</span>
         </div>
-        <span class="s-hint" id="traceHint" style="margin-top:6px;display:block">A report holds transcripts and decisions — never audio, never your API keys.</span>
+      </div>
+    </details>
+    <div class="s-card" id="adPrivacyRow" style="display:none">
+      <div class="s-row">
+        <span class="s-label">Ad privacy</span>
+        <button type="button" class="back-btn btn-arrow" onclick="showAdPrivacyOptions()" style="font-size:13px">Ad privacy choices</button>
       </div>
     </div>
-  </details>
-
-  <div class="settings-footer">
-    <div id="settingsVersion"></div>
-    <a href="privacy.html" style="color:inherit">Privacy policy</a><br>
-    Built with ♥ for the Ummah<br>by wasimlhr
-  </div>
+  </section>
+  <footer class="settings-footer settings-about">
+    <span id="settingsVersion"></span>
+    <a href="privacy.html">Privacy policy</a>
+    <span>Built for the Ummah · wasimlhr</span>
+  </footer>
 </div>
 
 <!-- Help view -->
@@ -2276,7 +2389,7 @@ html.reader-open #qvtDock { display:none !important; }
     var paceBtn = document.getElementById('paceModeBtn');
     if (paceBtn) paceBtn.style.display = paceOn ? '' : 'none';
     const paceSettings=document.getElementById('modePaceSettings');if(paceSettings)paceSettings.hidden=!paceOn;
-    const modeTitle=document.getElementById('modeSettingsTitle');if(modeTitle)modeTitle.textContent=(_reciteMode==='practice'?'Practice':_reciteMode==='taraweeh'?'Taraweeh':'Translate')+' settings';
+    const modeTitle=document.getElementById('modeSettingsTitle');if(modeTitle)modeTitle.textContent='Tracking preferences';
     var hint = document.getElementById('reciteModeHint');
     try { document.documentElement.setAttribute('data-recitation-mode', _reciteMode); } catch (_) {}
     if (hint) {
@@ -7077,10 +7190,18 @@ html.reader-open #qvtDock { display:none !important; }
     window.scrollTo(0, 0);
   };
 
+  window.selectSettingsSection=function(section,scroll=true){
+    const panels=Array.from(document.querySelectorAll('#settingsView [data-settings-panel]'));
+    const selected=panels.some(panel=>panel.dataset.settingsPanel===section)?section:'reading';
+    panels.forEach(panel=>{panel.hidden=panel.dataset.settingsPanel!==selected;});
+    document.getElementById('settingsCategory').value=selected;
+    if(scroll)window.scrollTo({top:0,behavior:'auto'});
+  };
   window.showSettings = function () {
     applyPhoneTextSize();
     document.getElementById('mainView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'block';
+    selectSettingsSection(_audioMode?'audio':document.getElementById('settingsCategory').value);
     document.getElementById('settingLang').value = sanitizeTranslationLang(S.settings.lang || '');
     filterLanguages();
     syncDeviceLanguages();
