@@ -1014,6 +1014,10 @@ html.standalone .study-tools .mode-btn { min-height: 40px; border-radius: 999px;
 html.standalone #verseCard { flex:0 0 auto;height:var(--verse-region-height,340px);min-height:0; }
 #lockedContent { flex:1 1 0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;overflow-anchor:none; }
 #lockedContent::-webkit-scrollbar { display:none; }
+#lockedContent > * { flex-shrink:0; }
+#mainView[data-audio="true"] #lockedContent { scrollbar-width:thin;scrollbar-color:var(--bc-4) transparent;scrollbar-gutter:stable; }
+#mainView[data-audio="true"] #lockedContent::-webkit-scrollbar { display:block;width:4px; }
+#mainView[data-audio="true"] #lockedContent::-webkit-scrollbar-thumb { background:var(--bc-4);border-radius:2px; }
 #verseNavRow { flex:0 0 auto;margin-top:auto; }
 #searchingContent { min-height:0;flex:1;overflow:auto;scrollbar-width:none; }
 #verseCard #holdVerseHint:empty { display:none; }
@@ -1062,6 +1066,7 @@ html[data-recitation-mode="practice"] #reciteModeHint { display:none; }
 .lq-embedded .lq-transport > [data-el="prev"]::before { content:'←';font-size:18px; }
 .lq-embedded .lq-transport > [data-el="next"]::before { content:'→';font-size:18px; }
 .lq-embedded .lq-fields { order:0;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1.2fr) minmax(60px,.65fr);gap:8px; }
+.lq-embedded .lq-fields,.lq-embedded .lq-transport,.lq-embedded .lq-offline { flex-shrink:0; }
 .lq-embedded .lq-fields label { font-size:11px;gap:4px; }
 .lq-embedded .lq-fields select { padding:8px 5px;font-size:12px;min-height:44px; }
 .lq-embedded .lq-progress { order:3;margin:0; }
@@ -1098,6 +1103,9 @@ html.standalone #qvtDock #mainLang { flex: 0 1 34%; min-width: 0; height: 48px; 
 html.standalone #qvtDock #recordBtn { flex: 1; height: 52px; margin: 0; padding: 0 16px; border-radius: 999px; font-size: 0; }
 html.standalone #qvtDock #recordBtn::before { content: '\25CF\2002Start'; font-size: 17px; font-weight: 500; }
 html.standalone #qvtDock #recordBtn.recording::before { content: '\25A0\2002Stop'; }
+html.standalone[data-audio="true"] #qvtDock #recordBtn { font-size:14px; }
+html.standalone[data-audio="true"] #qvtDock #recordBtn::before { content:none; }
+html.standalone[data-audio="true"] #qvtDock #mainLang,html.standalone[data-audio="true"] #qvtDock #waveRow { display:none; }
 html.standalone #qvtDock #moreBtn { flex: none; width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--bc-4); background: var(--bc-1); color: var(--tc-1); font-size: 20px; line-height: 1; }
 html.standalone #wakeServerMainBtn { margin-top: 8px; }
 /* "More" sheet: reading options, engine, pace */
@@ -3800,7 +3808,8 @@ html.reader-open #qvtDock { display:none !important; }
     _audioVisual=state;
     if(_audioMode){
       const button=document.getElementById('recordBtn'),playing=state.state==='playing';
-      button.disabled=!state.canPlay;button.textContent=playing?'Pause Playing (G2 glasses)':state.canPlay?'Start Playing (G2 glasses)':'Preparing audio…';
+      const output=S.isG2?'G2 glasses':'phone audio';
+      button.disabled=!state.canPlay;button.textContent=playing?'Pause Playing ('+output+')':state.canPlay?'Start Playing ('+output+')':'Preparing audio…';
       button.classList.toggle('stop',playing);
       const label=playing?'Playing':state.state==='paused'?'Paused':state.canPlay?'Ready to play':'Preparing audio';
       setStatus(label+(state.surah?' · '+SURAHS[state.surah]+(state.ayah?' · '+state.ayah:''):''),playing?'result':'');
@@ -3829,7 +3838,7 @@ html.reader-open #qvtDock { display:none !important; }
     if(_readerActive)closeQuranReader();
     leaveModeHome();_audioMode=true;_audioSyncKey='';
     _audioFrame=null;_audioFooterKey='';_audioVisualModule=await import('./glassesAudioPlayer.js');
-    const main=document.getElementById('mainView');main.style.display='';main.dataset.audio='true';
+    const main=document.getElementById('mainView');main.style.display='';main.dataset.audio='true';document.documentElement.dataset.audio='true';
     document.getElementById('settingsView').style.display='none';
     document.querySelectorAll('[aria-label="Recitation mode"] .mv-toggle-btn').forEach(button=>button.classList.remove('active'));
     document.getElementById('btnModeAudio').classList.add('active');
@@ -3851,11 +3860,11 @@ html.reader-open #qvtDock { display:none !important; }
     if(epoch!==_audioSyncEpoch)return;
     document.getElementById('readerView').style.display='none';
     const verse=_readerData?.verses.find(verse=>verse.ayah===state.ayah);
-    if(verse){updatePhoneUI({mode:'LOCKED',surah:state.surah,ayah:state.ayah,surahName:_readerData.name,ayahTotal:_readerData.totalAyahs,arabic:verse.arabic,translation:verse.translation,transliteration:verse.transliteration},'');if(_audioVisual)updateAudioMiniPlayer(_audioVisual);}
+    if(verse){updatePhoneUI({mode:'LOCKED',surah:state.surah,ayah:state.ayah,surahName:_readerData.name,ayahTotal:_readerData.totalAyahs,arabic:verse.arabic,translation:verse.translation,transliteration:verse.transliteration},'');document.getElementById('lockedContent').scrollTop=0;if(_audioVisual)updateAudioMiniPlayer(_audioVisual);}
   }
   window.closeListenQuran=function(){
     _audioMode=false;++_audioSyncEpoch;_audioSyncKey='';_audioFrame=null;_audioUI?.close();document.getElementById('listenQuranView').hidden=true;
-    document.getElementById('mainView').dataset.audio='false';document.getElementById('recordBtn').classList.remove('stop');
+    document.getElementById('mainView').dataset.audio='false';document.documentElement.dataset.audio='false';document.getElementById('recordBtn').classList.remove('stop');
     document.getElementById('recordBtn').textContent=S.isG2?'Start Listening (G2 mic)':'Start Listening';document.getElementById('recordBtn').disabled=false;
     _updateReciteModeUI();
     updatePhoneUI({mode:'SEARCHING'},'');
@@ -6710,7 +6719,11 @@ html.reader-open #qvtDock { display:none !important; }
       const viewport=window.visualViewport?.height||innerHeight;
       const fixed=document.documentElement.classList.contains('standalone');
       // Reserve every control below the card, including pace, mode and footer.
-      const tail=Math.max(0,main.getBoundingClientRect().bottom-rect.bottom);
+      let contentBottom=rect.bottom;
+      for(let sibling=card.nextElementSibling;sibling;sibling=sibling.nextElementSibling){
+        if(sibling.getClientRects().length)contentBottom=Math.max(contentBottom,sibling.getBoundingClientRect().bottom+(parseFloat(getComputedStyle(sibling).marginBottom)||0));
+      }
+      const tail=Math.max(0,contentBottom-rect.bottom);
       const dock=document.getElementById('qvtDock');
       const bottom=fixed&&dock?.getClientRects().length?dock.getBoundingClientRect().top:viewport;
       const padding=parseFloat(getComputedStyle(document.body).paddingBottom)||0;
