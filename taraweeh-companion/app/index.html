@@ -1179,6 +1179,10 @@ html.reader-open body { background:var(--reader-body,#fff);max-width:720px; }
 #modePaceSettings[hidden] { display:none; }
 #modeSettings .mv-toggle-group { flex-wrap:wrap; }
 #modeSettings .mv-toggle-btn { flex:1 1 120px;min-height:44px;white-space:normal; }
+.lq.lq-downloads { padding:0;margin:0; }
+.lq-downloads .lq-offline { border:0;margin:0;padding:0; }
+.audio-download-card { padding:12px var(--card-margin,16px); }
+.audio-download-card #audioPackLabel { margin:0 0 10px; }
 html.reader-open #qvtDock { display:none !important; }
 </style>
 </head>
@@ -1435,6 +1439,14 @@ html.reader-open #qvtDock { display:none !important; }
   </details>
     <div id="modePaceSettings" class="s-row"><span class="s-label">Reciter speed</span><div class="reading-tools">
     <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" aria-label="Reciter speed" title="Normal, Fast, Slow">Normal · Follow Mode</button></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="audioDownloadTitle">
+    <h3 id="audioDownloadTitle" class="s-section">Listen Quran · Downloads</h3>
+    <div class="s-card audio-download-card">
+      <p id="audioPackLabel" class="s-label">Choose a reciter and surah in Listen Quran to manage its download here.</p>
+      <div id="listenDownloadControls" class="lq lq-downloads"></div>
     </div>
   </section>
 
@@ -3845,7 +3857,7 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('searchingContent').style.display='none';document.getElementById('lockedContent').style.display='flex';
     document.getElementById('verseArabic').replaceChildren();document.getElementById('verseTrans').textContent='';document.getElementById('verseTranslit').textContent='';document.getElementById('versePos').textContent='Choose a reciter and surah';
     document.getElementById('listenQuranView').hidden=false;
-    if(!_audioUI){const module=await import('./listenQuran.js');_audioUI=module.mountListenQuran({host:document.getElementById('listenQuranView'),baseUrl:backendBase(),surahs:SURAHS,embedded:true,language:()=>S.settings.lang||'en',onChange:updateAudioMiniPlayer,onAyah:followListenAyah,onExit:closeListenQuran});}
+    if(!_audioUI){const module=await import('./listenQuran.js');_audioUI=module.mountListenQuran({host:document.getElementById('listenQuranView'),baseUrl:backendBase(),surahs:SURAHS,embedded:true,downloadHost:document.getElementById('listenDownloadControls'),onPackChange:pack=>{document.getElementById('audioPackLabel').textContent=pack?SURAHS[pack.surah]+' · '+({'alafasy':'Mishary Rashid Alafasy','husary':'Mahmoud Khalil Al-Husary','abdul-basit-murattal':'Abdul Basit Murattal'}[pack.reciter]||pack.reciter):'Choose a reciter and surah in Listen Quran to manage its download here.';},language:()=>S.settings.lang||'en',onChange:updateAudioMiniPlayer,onAyah:followListenAyah,onExit:closeListenQuran});}
     await _audioUI.open();
     if(S.isG2&&!_readerActive)queueBridgeCall('audioReady',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'audioReady',xPosition:12,yPosition:8,width:552,height:272,content:'Listen Quran\nChoose a reciter and surah on your phone.\nTap to play or pause.\nSwipe for previous or next ayah.',isEventCapture:1}],menuObject:{menuItems:[{itemID:30,itemName:'Back to modes'}]}}));
     window.scrollTo({top:0,behavior:'auto'});
