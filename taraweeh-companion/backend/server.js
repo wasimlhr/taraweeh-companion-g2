@@ -86,6 +86,7 @@ app.use('/artwork',express.static(join(rootDir,'app','artwork')));
 app.get('/readerArtwork.js',(req,res)=>res.sendFile(join(rootDir,'app','readerArtwork.js')));
 app.get('/readerPagination.js', (req,res)=>res.sendFile(join(rootDir,'app','readerPagination.js')));
 app.get('/glassesHome.js', (req,res)=>res.sendFile(join(rootDir,'app','glassesHome.js')));
+app.get('/audio-playback-test.html', (req,res)=>res.sendFile(join(rootDir,'app','audio-playback-test.html')));
 const usageStats = new UsageStats();
 const usageJournal = new UsageJournal({path:process.env.USAGE_STATS_PATH || join(__dirname,'data','usage','sessions.json')});
 setInterval(()=>usageJournal.flush(),30000).unref();

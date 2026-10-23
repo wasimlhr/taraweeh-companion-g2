@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Audio playback test</title>
+<style>
+:root{color-scheme:light;--bg:#eee;--surface:#fff;--ink:#232323;--muted:#555;--rule:#ccc}html[data-theme=dark]{color-scheme:dark;--bg:#111;--surface:#1a1a1a;--ink:#fff;--muted:#bbb;--rule:#444}*{box-sizing:border-box}body{max-width:480px;margin:0 auto;padding:16px 20px;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}h1{font-size:22px;font-weight:500;margin:20px 0 8px}p{color:var(--muted)}button,input{font:inherit}button{min-height:44px;padding:10px 16px;border:1px solid var(--rule);border-radius:8px;background:var(--surface);color:var(--ink);cursor:pointer}button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:3px}.controls{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}#play{flex:1;background:var(--ink);color:var(--bg)}#status{padding:12px 0;font-variant-numeric:tabular-nums;border-block:1px solid var(--rule)}label{display:block;margin:20px 0 8px}input{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;font:12px/1.5 ui-monospace,monospace;color:var(--muted)}small{display:block;color:var(--muted);margin-top:6px}
+</style></head><body>
+<button id="back">← Back</button><h1>Audio playback test</h1>
+<p>Connect your Bluetooth headphones using your phone settings. Start the sound, then lock your phone for one minute. Check that sound and the glasses timer both continue.</p>
+<div id="status" role="status" aria-live="polite">Ready · 2-minute test sound</div>
+<div class="controls"><button id="play">Start sound</button><button id="stop">Stop</button></div>
+<label for="file">Or choose an audio recording</label><input id="file" type="file" accept="audio/*"><small>The file stays on your phone. Nothing is uploaded.</small>
+<p id="glasses">Connecting glasses…</p>
+<div class="controls"><button id="copy">Copy results</button><button id="save">Save results</button></div>
+<p id="result" role="status"></p><details><summary>Test events</summary><pre id="events"></pre></details>
+<script type="module">
+const $=id=>document.getElementById(id),storageKey='quran_audio_probe_v1';
+if(localStorage.getItem('qc_theme')==='dark')document.documentElement.dataset.theme='dark';
+const audio=new Audio();audio.id='probeAudio';audio.hidden=true;document.body.appendChild(audio);audio.preload='auto';let bridge=null,bridgeQueue=Promise.resolve(),lastFrame='',assetUrl='',started=false,lastTick=Date.now(),lastCheckpoint=0;
+let previous=null;try{previous=JSON.parse(localStorage.getItem(storageKey)||'null');}catch{}
+const report={v:1,kind:'android-audio-probe',startedAt:new Date().toISOString(),previousRun:previous?{startedAt:previous.startedAt,lastEvent:previous.events?.at(-1)}:null,events:[]};
+const elapsed=()=>Number(audio.currentTime.toFixed(2));
+function checkpoint(){const json=JSON.stringify(report);try{localStorage.setItem(storageKey,json);}catch{}if(bridge)bridge.setLocalStorage(storageKey,json).catch(()=>{});}
+function record(event,detail=''){report.events.push({at:new Date().toISOString(),event,mediaSeconds:elapsed(),visibility:document.visibilityState,detail});if(report.events.length>300)report.events.shift();$('events').textContent=report.events.slice(-30).map(e=>`${e.at.slice(11,19)} ${e.event} @${e.mediaSeconds}s ${e.detail}`).join('\n');checkpoint();}
+function makeTone(){const rate=16000,count=rate*120,buffer=new ArrayBuffer(44+count*2),v=new DataView(buffer);const text=(at,s)=>{for(let i=0;i<s.length;i++)v.setUint8(at+i,s.charCodeAt(i));};text(0,'RIFF');v.setUint32(4,36+count*2,true);text(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);text(36,'data');v.setUint32(40,count*2,true);for(let i=0;i<count;i++){const t=i/rate,envelope=Math.min(1,t*5,(120-t)*5);v.setInt16(44+i*2,Math.round(Math.sin(2*Math.PI*220*t)*1800*envelope),true);}return new Blob([buffer],{type:'audio/wav'});}
+function setSource(blob){audio.pause();if(assetUrl)URL.revokeObjectURL(assetUrl);assetUrl=URL.createObjectURL(blob);audio.src=assetUrl;audio.load();}
+setSource(makeTone());
+function updatePhone(){const state=audio.ended?'Ended':audio.paused?'Paused':'Playing';$('status').textContent=`${started?state:'Ready'} · ${elapsed().toFixed(1)}s`; $('play').textContent=audio.paused?'Start sound':'Pause';}
+function glassesFrame(){if(!bridge)return;const state=audio.ended?'Ended':audio.paused?'Paused':'Playing',frame=`Audio playback test\n\n${state}  ${Math.floor(audio.currentTime)}s\n\nPhone: ${document.visibilityState}\nTap to pause / resume`;if(frame===lastFrame)return;lastFrame=frame;bridgeQueue=bridgeQueue.then(()=>bridge.textContainerUpgrade({containerID:1,containerName:'audioProbe',content:frame})).then(ok=>{if(ok===false)throw Error('Glasses text update rejected');}).catch(e=>record('glasses-error',String(e.message)));}
+async function play(){try{await audio.play();started=true;record('play-accepted');}catch(e){record('play-rejected',e.name);$('result').textContent='Playback was blocked. Tap Start sound on the phone.';}updatePhone();glassesFrame();}
+$('play').onclick=()=>{if(audio.paused)play();else audio.pause();};$('stop').onclick=()=>{audio.pause();audio.currentTime=0;record('stop');updatePhone();glassesFrame();};
+$('file').onchange=()=>{const file=$('file').files[0];if(file){setSource(file);record('local-file-selected');$('result').textContent='Recording selected. Tap Start sound.';updatePhone();}};
+for(const name of ['playing','pause','waiting','stalled','ended','error','seeking','seeked'])audio.addEventListener(name,()=>{record(name,name==='error'?String(audio.error?.code||''): '');updatePhone();glassesFrame();});
+document.addEventListener('visibilitychange',()=>{record('visibilitychange');glassesFrame();});window.addEventListener('pagehide',()=>record('pagehide'));window.addEventListener('pageshow',e=>record('pageshow',e.persisted?'restored':'new'));
+setInterval(()=>{const now=Date.now(),gap=now-lastTick;lastTick=now;if(gap>2500)record('timer-gap',`${gap}ms`);updatePhone();glassesFrame();if(now-lastCheckpoint>=5000){lastCheckpoint=now;record('progress');}},500);
+$('back').onclick=()=>{audio.pause();record('return');location.href='./';};
+$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(report,null,2));$('result').textContent='Results copied.';}catch{$('result').textContent='Copy unavailable. Use Save results.';}};
+$('save').onclick=()=>{const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));a.href=url;a.download='quran-audio-test.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+record('probe-opened');
+try{
+ const sdk=await import('./sdk/even_hub_sdk.js');bridge=await Promise.race([sdk.waitForEvenAppBridge(),new Promise((_,reject)=>setTimeout(()=>reject(Error('Bridge unavailable')),5000))]);
+ const page={containerTotalNum:1,textObject:[{containerID:1,containerName:'audioProbe',xPosition:8,yPosition:4,width:560,height:280,content:'Audio playback test\n\nTap Start sound on your phone.',isEventCapture:1,paddingLength:2}]};
+ const result=await bridge.createStartUpPageContainer(page);if(result!=null&&result!==0){const ok=await bridge.rebuildPageContainer(page);if(ok===false)throw Error('Glasses page rejected');}
+ bridge.onEvenHubEvent(event=>{const e=event.textEvent||event.sysEvent||event.listEvent;if(!e)return;const t=e.eventType??0;record('glasses-event',String(t));if(event.sysEvent&&(t===6||t===7)){audio.pause();record('glasses-exit');return;}if(event.textEvent&&t===0){if(audio.paused)play();else audio.pause();}});
+ $('glasses').textContent='Glasses connected. The timer follows the audio position.';record('bridge-ready');glassesFrame();
+}catch(e){$('glasses').textContent='Glasses unavailable here. Audio can still be tested.';record('bridge-unavailable',e.message);}
+</script></body></html>

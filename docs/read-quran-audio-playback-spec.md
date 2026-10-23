@@ -1,6 +1,22 @@
 # Read Quran: recitation playback with synchronized glasses
 
-Status: implementation specification, 22 October 2026. No application implementation, release bump, or deployment is included in this document.
+Status: implementation specification with a diagnostic playback prototype, 22 October 2026. Full Quran recitation playback and synchronization are not yet implemented. No version bump.
+
+## Selected approach
+
+User decision, 22 October 2026: implement direct phone-side playback inside the existing Even Hub package with `HTMLAudioElement`. Use the phone's current media route, including connected Bluetooth headphones. A separate Android helper APK is not part of this approach. Use the player's actual media position to synchronize ayahs and glasses pages; do not feed playback through transcription.
+
+Implementation precedent: [Even Voice AI playback source](https://github.com/MrScautHD/Even-Voice-AI/blob/main/src/tts.ts) creates an HTML audio element for streamed and buffered audio. This establishes a concrete implementation pattern, not proof of uninterrupted Android screen-off playback. Validate that behavior in the packaged beta app before claiming it.
+
+Additional engineering reference: [Matic's Even toolkit and measured findings](https://even.matic.sh/) ([source](https://github.com/maticsh/matic-even)). Its lifecycle notes distinguish overlay events from actual exit, recommend repeat-safe state checkpoints and connection recovery, and explicitly distinguish measured behavior from open background/long-lock questions. Use relevant findings as test inputs; adopting its runtime packages is not required.
+
+## Android feasibility test
+
+The packaged app now includes Settings → Diagnostics → Audio playback test (`app/audio-playback-test.html`). It generates a two-minute WAV test sound locally, or accepts a local recording without uploading it. Start requires an explicit tap; glasses show the audio element's actual elapsed position, with tap pause/resume. Results include play failures, media events, visibility changes and timer gaps, and can be copied or saved. Local and native storage receive bounded checkpoints; a fresh WebView records the previous run's final checkpoint instead of claiming playback continued.
+
+The owned desktop simulator verified WAV decoding, real HTML media advancement, pause, stop, glasses rendering and local result persistence through `scripts/verify-audio-probe.mjs`. Development-PC playback was muted during verification. This is not physical Android/Bluetooth or screen-lock evidence.
+
+Physical acceptance: pair headphones; open the test in the installed beta EHPK; tap Start; verify sound; lock for at least one minute; check that sound and glasses seconds both advance; unlock and inspect/save results. Repeat with another app foregrounded, headset pause/resume, and a local continuous recording. Record the Android and Even app versions. A stopped timer, restarted test page or interruption is a failed gate to investigate, not a successful background result.
 
 ## Outcome
 

@@ -40,6 +40,7 @@ copyFileSync(src, dest);
 copyFileSync(join(root,'app','readerPagination.js'),join(outDir,'readerPagination.js'));
 copyFileSync(join(root,'app','readerArtwork.js'),join(outDir,'readerArtwork.js'));
 copyFileSync(join(root,'app','glassesHome.js'),join(outDir,'glassesHome.js'));
+copyFileSync(join(root,'app','audio-playback-test.html'),join(outDir,'audio-playback-test.html'));
 cpSync(join(root,'app','artwork'),join(outDir,'artwork'),{recursive:true});
 mkdirSync(join(outDir, 'fonts'), { recursive: true });
 copyFileSync(join(root, 'app', 'fonts', 'AmiriQuran.ttf'), join(outDir, 'fonts', 'AmiriQuran.ttf'));
