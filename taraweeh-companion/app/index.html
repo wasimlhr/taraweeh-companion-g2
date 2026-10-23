@@ -1052,6 +1052,32 @@ html[data-recitation-mode="practice"] #reciteModeHint { display:none; }
 #practiceChoices button[aria-pressed="true"] { font-weight:700;text-decoration:underline;text-underline-offset:4px; }
 [aria-label="Recitation mode"] .mv-toggle-btn { padding:10px 3px;font-size:12px;min-height:44px; }
 #mainView [aria-label="Recitation mode"] { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:16px; }
+#mainView [aria-label="Recitation mode"] .mode-icon { width:15px;height:15px;vertical-align:-3px;margin-right:4px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round; }
+#listenQuranView,.lq.lq-embedded { display:contents; }
+#listenQuranView[hidden],.lq.lq-embedded[hidden] { display:none; }
+.lq.lq-embedded header,.lq-embedded .lq-position,.lq-embedded .lq-status { display:none; }
+.lq-embedded .lq-transport { order:3;display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;gap:10px; }
+.lq-embedded .lq-transport .lq-progress { order:0; }
+.lq-embedded .lq-transport > button { font-size:0;padding:0; }
+.lq-embedded .lq-transport > [data-el="prev"]::before { content:'←';font-size:18px; }
+.lq-embedded .lq-transport > [data-el="next"]::before { content:'→';font-size:18px; }
+.lq-embedded .lq-fields { order:0;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1.2fr) minmax(60px,.65fr);gap:8px; }
+.lq-embedded .lq-fields label { font-size:11px;gap:4px; }
+.lq-embedded .lq-fields select { padding:8px 5px;font-size:12px;min-height:44px; }
+.lq-embedded .lq-progress { order:3;margin:0; }
+.lq-embedded .lq-offline { order:4;display:flex;align-items:center;flex-wrap:wrap;gap:6px;border:0;margin:0;padding:0; }
+.lq-embedded .lq-offline button { width:auto;font-size:12px;min-height:36px;padding:6px 10px; }
+.lq-embedded .lq-download-status { flex:1;font-size:11px; }
+.lq-embedded .lq-confirm { flex-basis:100%; }
+#mainView[data-audio="true"] #lockedContent { order:1; }
+#mainView[data-audio="true"] #verseNavRow { order:2;margin-top:0; }
+#mainView[data-audio="true"] #practiceSurahRow,#mainView[data-audio="true"] #rakatBar,#mainView[data-audio="true"] #searchingContent,#mainView[data-audio="true"] #holdVerseBtn,#mainView[data-audio="true"] #holdVerseHint,#mainView[data-audio="true"] #swipeHint,#mainView[data-audio="true"] #verseStudyTools,#mainView[data-audio="true"] #waveRow,#mainView[data-audio="true"] #reciteModeHint,#mainView[data-audio="true"] #statusBar,#mainView[data-audio="true"] #verseNavRow { display:none !important; }
+#mainView[data-audio="true"] #statusBar > :not(#sPillG2) { display:none !important; }
+#mainView[data-audio="true"] #statusBar { min-height:0;padding:6px 8px; }
+@media (max-height:700px) {
+ #mainView[data-audio="true"] #verseArabic { font-size:28px !important;line-height:2.1;padding-block:0 4px; }
+ #mainView[data-audio="true"] #lockedContent { gap:6px !important; }
+}
 html.standalone #modeTabs [aria-label="Recitation mode"] .mv-toggle-btn { font-size:12px;min-height:44px; }
 html.standalone .header { padding:2px 0 6px; }
 html.reader-open body { padding-top:max(4px,env(safe-area-inset-top)); }
@@ -1213,6 +1239,7 @@ html.reader-open #qvtDock { display:none !important; }
   </div>
 
   <div id="verseCard">
+    <div id="listenQuranView" hidden></div>
     <div class="verse-searching" id="searchingContent">
       <!-- Idle state (before Start is pressed) -->
       <div class="match-idle" id="matchIdle">
@@ -1313,7 +1340,7 @@ html.reader-open #qvtDock { display:none !important; }
       <button type="button" class="mv-toggle-btn active" id="btnModeListen" onclick="setReciteMode('listen')">🌐 Translate</button>
       <button type="button" class="mv-toggle-btn" id="btnModePractice" onclick="setReciteMode('practice')">📖 Practice</button>
       <button type="button" class="mv-toggle-btn" onclick="openQuranReader()"><svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px;margin-right:4px;color:#75a9db" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-3-2-6-2-9-1v14c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Z"/><path d="M12 6v14"/></svg>Read Quran</button>
-      <button type="button" class="mv-toggle-btn" id="btnModeTaraweeh" onclick="setReciteMode('taraweeh')">🌙 Taraweeh</button><button type="button" class="mv-toggle-btn" onclick="openListenQuran()">Listen Quran</button><button type="button" class="mv-toggle-btn" onclick="showSettings()">Settings</button>
+      <button type="button" class="mv-toggle-btn" id="btnModeTaraweeh" onclick="setReciteMode('taraweeh')">🌙 Taraweeh</button><button type="button" class="mv-toggle-btn" id="btnModeAudio" onclick="openListenQuran()"><svg class="mode-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 14v-2a9 9 0 0 1 18 0v2M3 13h4v8H3zM17 13h4v8h-4z"/></svg>Listen Quran</button><button type="button" class="mv-toggle-btn" onclick="showSettings()"><svg class="mode-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/></svg>Settings</button>
     </div>
     <div id="practiceSurahRow" class="s-row" style="display:none;margin-bottom:8px">
       <details id="practicePicker"><summary id="practicePickerLabel">Any surah</summary><div id="practicePickerPanel"><input id="practiceSearch" type="search" placeholder="Find surah by name or number" aria-label="Find practice surah" oninput="filterPracticeSurahs(this.value)"><div id="practiceChoices" aria-label="Practice surahs"></div></div></details>
@@ -1370,7 +1397,6 @@ html.reader-open #qvtDock { display:none !important; }
   <div id="moreSheetBody"></div>
 </section>
 
-<div id="listenQuranView" hidden></div>
 <!-- Settings view -->
 <div id="settingsView">
   <div class="settings-header">
@@ -1943,6 +1969,7 @@ html.reader-open #qvtDock { display:none !important; }
     if(event.key==='Escape'&&document.getElementById('readerDisplayOptions').open){event.preventDefault();closeReaderDisplayOptions(true);}
   });
   window.openQuranReader=async function () {
+    if(_audioMode)closeListenQuran();
     if(S.isRecording)stopListening();
     leaveModeHome();
     closeMoreSheet();if(getComputedStyle(document.getElementById('settingsView')).display!=='none')hideSettings();_manualBrowse=false;resetVerseHold();
@@ -2211,6 +2238,7 @@ html.reader-open #qvtDock { display:none !important; }
     if (ls) ls.classList.toggle('active', _reciteMode === 'listen');
     if (tw) tw.classList.toggle('active', _reciteMode === 'taraweeh');
     if (pr) pr.classList.toggle('active', _reciteMode === 'practice');
+    document.getElementById('btnModeAudio')?.classList.remove('active');
     var practiceRow = document.getElementById('practiceSurahRow');
     if (practiceRow) practiceRow.style.display = _practiceMode ? '' : 'none';
     var practiceSelect = document.getElementById('practiceSurah');
@@ -2234,6 +2262,7 @@ html.reader-open #qvtDock { display:none !important; }
 
   window.setReciteMode = function (mode) {
     if (!RECITE_MODES[mode]) return;
+    if(document.getElementById('mainView').dataset.audio==='true')closeListenQuran();
     _reciteMode = mode;
     _taraweehMode = mode === 'taraweeh';
     _practiceMode = mode === 'practice';
@@ -3769,6 +3798,13 @@ html.reader-open #qvtDock { display:none !important; }
   let _audioVisual=null,_audioVisualModule=null,_audioFrame=null,_audioFooterLayout=false,_audioFooterKey='',_audioFooterPending=false;
   function updateAudioMiniPlayer(state){
     _audioVisual=state;
+    if(_audioMode){
+      const button=document.getElementById('recordBtn'),playing=state.state==='playing';
+      button.disabled=!state.canPlay;button.textContent=playing?'Pause Playing (G2 glasses)':state.canPlay?'Start Playing (G2 glasses)':'Preparing audio…';
+      button.classList.toggle('stop',playing);
+      const label=playing?'Playing':state.state==='paused'?'Paused':state.canPlay?'Ready to play':'Preparing audio';
+      setStatus(label+(state.surah?' · '+SURAHS[state.surah]+(state.ayah?' · '+state.ayah:''):''),playing?'result':'');
+    }
     const key=[state.state,Math.floor(state.positionMs/1000),Math.floor(state.durationMs/1000)].join(':');
     if(!_audioMode||!_readerActive||!_readerImageLayout||!_audioFrame||!_audioVisualModule||key===_audioFooterKey)return;
     if(_audioFooterPending)return;
@@ -3788,13 +3824,19 @@ html.reader-open #qvtDock { display:none !important; }
     }).catch(error=>trace('audio.player',error.message)).finally(()=>{_audioFooterPending=false;if(_audioVisual)updateAudioMiniPlayer(_audioVisual);});
   }
   window.openListenQuran=async function(){
+    if(_audioMode){document.getElementById('mainView').style.display='';return;}
     if(S.isRecording)await stopListening();
     if(_readerActive)closeQuranReader();
     leaveModeHome();_audioMode=true;_audioSyncKey='';
     _audioFrame=null;_audioFooterKey='';_audioVisualModule=await import('./glassesAudioPlayer.js');
-    document.getElementById('mainView').style.display='none';document.getElementById('settingsView').style.display='none';
+    const main=document.getElementById('mainView');main.style.display='';main.dataset.audio='true';
+    document.getElementById('settingsView').style.display='none';
+    document.querySelectorAll('[aria-label="Recitation mode"] .mv-toggle-btn').forEach(button=>button.classList.remove('active'));
+    document.getElementById('btnModeAudio').classList.add('active');
+    document.getElementById('searchingContent').style.display='none';document.getElementById('lockedContent').style.display='flex';
+    document.getElementById('verseArabic').replaceChildren();document.getElementById('verseTrans').textContent='';document.getElementById('verseTranslit').textContent='';document.getElementById('versePos').textContent='Choose a reciter and surah';
     document.getElementById('listenQuranView').hidden=false;
-    if(!_audioUI){const module=await import('./listenQuran.js');_audioUI=module.mountListenQuran({host:document.getElementById('listenQuranView'),baseUrl:backendBase(),surahs:SURAHS,language:()=>S.settings.lang||'en',onChange:updateAudioMiniPlayer,onAyah:followListenAyah,onExit:closeListenQuran});}
+    if(!_audioUI){const module=await import('./listenQuran.js');_audioUI=module.mountListenQuran({host:document.getElementById('listenQuranView'),baseUrl:backendBase(),surahs:SURAHS,embedded:true,language:()=>S.settings.lang||'en',onChange:updateAudioMiniPlayer,onAyah:followListenAyah,onExit:closeListenQuran});}
     await _audioUI.open();
     if(S.isG2&&!_readerActive)queueBridgeCall('audioReady',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'audioReady',xPosition:12,yPosition:8,width:552,height:272,content:'Listen Quran\nChoose a reciter and surah on your phone.\nTap to play or pause.\nSwipe for previous or next ayah.',isEventCapture:1}],menuObject:{menuItems:[{itemID:30,itemName:'Back to modes'}]}}));
     window.scrollTo({top:0,behavior:'auto'});
@@ -3807,10 +3849,16 @@ html.reader-open #qvtDock { display:none !important; }
     if(initial||!_readerData||_readerData.surah!==state.surah)await loadReaderSurah(state.surah,0,state.ayah);
     else jumpReaderAyah(state.ayah,false);
     if(epoch!==_audioSyncEpoch)return;
-    document.getElementById('readerView').style.display='none';document.getElementById('mainView').style.display='none';
+    document.getElementById('readerView').style.display='none';
+    const verse=_readerData?.verses.find(verse=>verse.ayah===state.ayah);
+    if(verse){updatePhoneUI({mode:'LOCKED',surah:state.surah,ayah:state.ayah,surahName:_readerData.name,ayahTotal:_readerData.totalAyahs,arabic:verse.arabic,translation:verse.translation,transliteration:verse.transliteration},'');if(_audioVisual)updateAudioMiniPlayer(_audioVisual);}
   }
   window.closeListenQuran=function(){
     _audioMode=false;++_audioSyncEpoch;_audioSyncKey='';_audioFrame=null;_audioUI?.close();document.getElementById('listenQuranView').hidden=true;
+    document.getElementById('mainView').dataset.audio='false';document.getElementById('recordBtn').classList.remove('stop');
+    document.getElementById('recordBtn').textContent=S.isG2?'Start Listening (G2 mic)':'Start Listening';document.getElementById('recordBtn').disabled=false;
+    _updateReciteModeUI();
+    updatePhoneUI({mode:'SEARCHING'},'');
     if(_readerActive)closeQuranReader();else{document.getElementById('mainView').style.display='';showModeHome();}
   };
   let _glassesSettings=false,_glassesSettingIndex=0,_glassesLanguagePicking=false;
@@ -5238,6 +5286,7 @@ html.reader-open #qvtDock { display:none !important; }
         }));
       }
     } else if (msg.type === 'state') {
+      if(_audioMode)return;
       if (_readingHeld) { _heldLatestMsg = msg; return; }
       // A confirmed/candidate verse immediately replaces the opening phrase.
       // Plain search heartbeats must not erase it before the wearer can read it.
@@ -5724,6 +5773,7 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   window.manualPrevAyah = function () {
+    if(_audioMode){_audioUI?.step(-1);return;}
     if (_readingHeld) { onG2Event({ textEvent: { eventType: 1 } }); return; }
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'manual_prev' }));
@@ -5731,6 +5781,7 @@ html.reader-open #qvtDock { display:none !important; }
     mirrorManualNavOnGlasses();
   };
   window.manualNextAyah = function () {
+    if(_audioMode){_audioUI?.step(1);return;}
     if (_readingHeld) { onG2Event({ textEvent: { eventType: 2 } }); return; }
     if (S.ws && S.ws.readyState === WebSocket.OPEN) {
       S.ws.send(JSON.stringify({ type: 'manual_advance' }));
@@ -6652,7 +6703,7 @@ html.reader-open #qvtDock { display:none !important; }
   function setupFlexibleVerseRegion(){
     const card=document.getElementById('verseCard'),button=document.getElementById('recordBtn'),main=document.getElementById('mainView');
     let pending=false;
-    function schedule(){if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;if(_readerActive||!card.getClientRects().length||!button.getClientRects().length)return;
+    function schedule(){if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;if((_readerActive&&!_audioMode)||!card.getClientRects().length||!button.getClientRects().length)return;
       const listening=String(!!S.isRecording);
       if(main.dataset.listening!==listening)main.dataset.listening=listening;
       const rect=card.getBoundingClientRect();
@@ -7229,6 +7280,7 @@ html.reader-open #qvtDock { display:none !important; }
     setupFlexibleVerseRegion();
 
     document.getElementById('recordBtn').addEventListener('click', function () {
+      if(_audioMode){_audioUI?.toggle();return;}
       if (S.isRecording) stopListening();
       else startListening();
     });
