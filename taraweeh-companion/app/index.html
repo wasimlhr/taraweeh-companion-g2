@@ -2073,11 +2073,23 @@ html.reader-open #qvtDock { display:none !important; }
   var _readerPages=[], _readerPage=0, _readerEpoch=0, _readerAbort=null, _readerModule=null, _readerArtworkModule=null, _readerDirection=0;
   let _readerAutoEnabled=false,_readerAutoTimer=null,_readerAutoDeadline=0;
   let _readerNativeText='',_readerNativeY=48,_readerNativeKey='',_readerCountdownLast='';
+  let _readerCountdownFrame=null;
   function readerNativeContent(seconds){return _readerAutoEnabled&&!_readerPicking?seconds+'s':' ';}
   function updateReaderCountdown(seconds){
     const content=readerNativeContent(seconds);
     if(!S.isG2||!S.bridge||!_readerImageLayout||_readerPicking||content===_readerCountdownLast)return;
     _readerCountdownLast=content;const epoch=_readerEpoch;
+    if(_readerCountdownFrame){
+      const canvas=_readerCountdownFrame,ctx=canvas.getContext('2d');_readerArtworkModule.drawReaderCountdown(ctx,content);
+      queueBridgeCall('readerCountdown',async()=>{
+        if(!_readerActive||epoch!==_readerEpoch||canvas!==_readerCountdownFrame)return;
+        const rgba=ctx.getImageData(288,0,288,144).data,gray=new Uint8Array(288*144);
+        for(let n=0;n<gray.length;n++)gray[n]=rgba[n*4];
+        const result=await S.bridge.updateImageRawData({containerID:21,containerName:'reader1',imageData:gray});
+        if(result!=null&&result!==0&&result!=='success')throw Error('Reader countdown image update failed');
+        _readerLastTiles[1]=gray;
+      }).catch(error=>trace('reader.countdown',error.message));return;
+    }
     queueBridgeCall('readerCountdown',()=>{if(_readerActive&&epoch===_readerEpoch)return S.bridge.textContainerUpgrade({containerID:1,containerName:'readerInput',content});});
   }
   function stopReaderAutoTimer(){if(_readerAutoTimer)clearInterval(_readerAutoTimer);_readerAutoTimer=null;}
@@ -2160,7 +2172,7 @@ html.reader-open #qvtDock { display:none !important; }
       const measureArabic=t=>{ctx.font='28px '+readerFont();return ctx.measureText(displayArabic(t)).width;};
       const measureTranslation=t=>{if((_audioMode||S.settings.readerGlassesTranslation)&&_pretext)return _pretext.getTextWidth(t);ctx.font='20px sans-serif';return ctx.measureText(t).width;};
       if(_audioMode)_readerPages=listenGlassesDisplay()==='translation'?_readerModule.readerTranslationPages(data.verses,measureTranslation):_readerModule.readerInterleavedPages(data.verses,measureArabic,measureTranslation,520,!!data.basmala,4,true);
-      else if(S.settings.readerGlassesTranslation)_readerPages=_readerModule.readerInterleavedPages(data.verses,measureArabic,measureTranslation,520,!!data.basmala,5);
+      else if(S.settings.readerGlassesTranslation)_readerPages=_readerModule.readerInterleavedPages(data.verses,measureArabic,measureTranslation,520,!!data.basmala,4);
       else if(S.settings.readerLayout==='single')_readerPages=S.settings.readerShowTranslation===false?_readerModule.readerVerseWindows(data.verses,measureArabic):_readerModule.readerSinglePages(data.verses,measureArabic,measureTranslation,520,!!data.basmala);
       else _readerPages=_readerModule.readerPackedWindows(data.verses,measureArabic,520,4,!!data.basmala,data.surah===1);
       _readerPage=focusAyah?Math.max(0,_readerPages.findIndex(p=>p.ayahs.includes(focusAyah))):Math.max(0,Math.min(page,_readerPages.length-1));
@@ -2286,9 +2298,11 @@ html.reader-open #qvtDock { display:none !important; }
     const ctx=canvas.getContext('2d');let failure=null;
     const interleaved=!splash&&(_audioMode||!!S.settings.readerGlassesTranslation)&&!_readerPicking&&!!_readerNativeText;
     const miniPlayer=!splash&&_audioMode&&!_readerPicking&&!!_audioVisualModule;
+    _readerCountdownFrame=interleaved&&!miniPlayer?canvas:null;
+    if(_readerCountdownFrame){const content=readerNativeContent(Number(S.settings.readerAutoSeconds)||15);_readerArtworkModule.drawReaderCountdown(ctx,content);_readerCountdownLast=content;}
     // Full lower tiles retain the frame beside native translation text.
     if(miniPlayer){_audioFrame=canvas;_audioFooterLayout=false;ctx.save();ctx.translate(0,256);_audioVisualModule.drawAudioPlayer(ctx,_audioVisual||{});ctx.restore();}
-    const tiles=Array.from({length:interleaved&&!miniPlayer?2:4},(_,i)=>({x:i%2*288,y:Math.floor(i/2)*144,height:144}));
+    const tiles=Array.from({length:4},(_,i)=>({x:i%2*288,y:Math.floor(i/2)*144,height:144}));
     const nativeKey=splash+':'+miniPlayer+':'+interleaved+':'+_readerNativeY+':'+_readerNativeText;
     if(nativeKey!==_readerNativeKey){_readerImageLayout=false;_readerNativeKey=nativeKey;}
     await queueBridgeCall('readerPage',async()=>{
@@ -2296,8 +2310,8 @@ html.reader-open #qvtDock { display:none !important; }
       if(!_readerImageLayout){
       const images=tiles.map((tile,i)=>({containerID:20+i,containerName:'reader'+i,xPosition:tile.x,yPosition:tile.y,width:288,height:tile.height,zOrderIndex:i+1}));
       const content=readerNativeContent(Number(S.settings.readerAutoSeconds)||15);_readerCountdownLast=content;
-      const textObject=miniPlayer||splash?[]:[{containerID:1,containerName:'readerInput',xPosition:360,yPosition:27,width:44,height:24,content,isEventCapture:1,zOrderIndex:interleaved?3:5,paddingLength:0}];
-      if(interleaved)textObject.push({containerID:miniPlayer?1:2,containerName:miniPlayer?'readerInput':'readerTranslation',xPosition:_readerModule.READER_TRANSLATION_INSET,yPosition:_readerNativeY,width:_readerModule.READER_TRANSLATION_WIDTH,height:(miniPlayer?252:288)-_readerNativeY,content:_readerNativeText,isEventCapture:miniPlayer?1:0,zOrderIndex:miniPlayer?5:4,paddingLength:0});
+      const textObject=miniPlayer||splash||interleaved?[]:[{containerID:1,containerName:'readerInput',xPosition:360,yPosition:27,width:44,height:24,content,isEventCapture:1,zOrderIndex:5,paddingLength:0}];
+      if(interleaved)textObject.push({containerID:1,containerName:'readerInput',xPosition:_readerModule.READER_TRANSLATION_INSET,yPosition:_readerNativeY,width:_readerModule.READER_TRANSLATION_WIDTH,height:(miniPlayer?252:272)-_readerNativeY,content:_readerNativeText,isEventCapture:1,zOrderIndex:5,paddingLength:0});
       else if(miniPlayer||splash)textObject.push({containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:576,height:288,content:' ',isEventCapture:1,zOrderIndex:0,paddingLength:0});
       const ok=await S.bridge.rebuildPageContainer({containerTotalNum:images.length+textObject.length,textObject,imageObject:images,menuObject:glassesMenu()});
       if(ok===false){failure=Error('Reader layout rejected');throw failure;}

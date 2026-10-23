@@ -1,4 +1,8 @@
 // Geometry-only manuscript frame. Colors become brightness on the G2.
+export function drawReaderCountdown(ctx,content=''){
+ ctx.save();ctx.fillStyle='#000';ctx.fillRect(360,25,52,28);
+ ctx.fillStyle='#bbb';ctx.font='20px sans-serif';ctx.direction='ltr';ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fillText(content,363,44);ctx.restore();
+}
 function star(ctx,x,y,r){ctx.beginPath();for(let n=0;n<16;n++){const a=n*Math.PI/8-Math.PI/2,rr=n%2?r*.46:r;const xx=x+Math.cos(a)*rr,yy=y+Math.sin(a)*rr;n?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);}ctx.closePath();ctx.stroke();}
 export function drawReaderFrame(ctx,title,font='QuranIndoPak',range='',showHeader=true){
  ctx.save();ctx.strokeStyle='#555';ctx.lineWidth=1;ctx.strokeRect(3,3,570,282);ctx.strokeRect(15,15,546,258);
