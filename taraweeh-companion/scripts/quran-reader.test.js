@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readerChapter} from '../backend/quranReader.js';
-import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows,readerSinglePages,readerInterleavedPages} from '../app/readerPagination.js';
+import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows,readerSinglePages,readerInterleavedPages,readerAudioPage} from '../app/readerPagination.js';
+
+test('audio pages follow media progress within the current ayah, including backwards seeks',()=>{
+ const pages=[{ayahs:[1],lines:['other']},{ayahs:[2],lines:['one two three four five six'],translationLines:['first']},{ayahs:[2],lines:['seven eight nine'],translationLines:['next']},{ayahs:[2],lines:['seven eight nine'],translationLines:['the remaining translation also needs its own page']},{ayahs:[3],lines:['next ayah']}];
+ assert.equal(readerAudioPage(pages,2,0,12000),1);
+ assert.equal(readerAudioPage(pages,2,7000,12000),2);
+ assert.equal(readerAudioPage(pages,2,11000,12000),3);
+ assert.equal(readerAudioPage(pages,2,1000,12000),1);
+ assert.equal(readerAudioPage(pages,2,15000,12000),3);
+ assert.equal(readerAudioPage(pages,2,500,0),1);
+ assert.equal(readerAudioPage(pages,2,500,NaN),1);
+ assert.equal(readerAudioPage(pages,2,NaN,12000),1);
+ assert.equal(readerAudioPage(pages,99,500,12000),-1);
+});
 
 test('interleaved pages retain Arabic above every translation segment',()=>{
  const verse={ayah:39,arabic:Array(50).fill('كلمة').join(' '),translation:Array.from({length:150},(_,i)=>'word'+i).join(' ')};

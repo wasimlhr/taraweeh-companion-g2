@@ -42,6 +42,27 @@ export function readerPackedWindows(verses,measure,width=520,lineCount=4,opening
  return pages;
 }
 
+// Ayah recordings have no word timestamps: estimate page intervals from content
+// length, using the real media clock so pauses and seeks stay in sync.
+export function readerAudioPage(pages,ayah,positionMs,durationMs){
+ const candidates=[];const seenArabic=new Set(),seenTranslation=new Set();
+ const words=text=>String(text).trim().split(/\s+/).filter(Boolean).length;
+ pages.forEach((page,index)=>{
+  if(!page.ayahs?.includes(ayah))return;
+  const arabic=(page.lines||[]).join(' '),translation=(page.translationLines||[]).join(' ');
+  const arabicWeight=seenArabic.has(arabic)?0:words(arabic);
+  const translationWeight=seenTranslation.has(translation)?0:words(translation)/3;
+  seenArabic.add(arabic);seenTranslation.add(translation);
+  candidates.push({index,weight:Math.max(1,arabicWeight,translationWeight)});
+ });
+ if(!candidates.length)return -1;
+ if(!Number.isFinite(durationMs)||durationMs<=0||!Number.isFinite(positionMs)||positionMs<=0)return candidates[0].index;
+ const progress=Math.min(1,positionMs/durationMs),total=candidates.reduce((sum,p)=>sum+p.weight,0);
+ let consumed=0;
+ for(const page of candidates){consumed+=page.weight;if(progress<consumed/total)return page.index;}
+ return candidates.at(-1).index;
+}
+
 // Complete one ayah (Arabic and translation) before advancing to the next.
 export function readerInterleavedPages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false,translationLineCount=5){
  return verses.flatMap(verse=>{

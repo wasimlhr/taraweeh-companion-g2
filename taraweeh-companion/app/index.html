@@ -3820,6 +3820,14 @@ html.reader-open #qvtDock { display:none !important; }
 
   let _audioMode=false,_audioUI=null,_audioSyncKey='',_audioSyncEpoch=0;
   let _audioVisual=null,_audioVisualModule=null,_audioFrame=null,_audioFooterLayout=false,_audioFooterKey='',_audioFooterPending=false;
+  function syncListenPage(state){
+    if(!_audioMode||!_readerActive||_readerLoading||_readerPicking||!_readerModule||state.state==='loading'||state.state==='error'||_readerData?.surah!==state.surah||_audioSyncKey!==state.surah+':'+state.ayah)return false;
+    const page=_readerModule.readerAudioPage(_readerPages,state.ayah,state.positionMs,state.durationMs);
+    if(page<0||page===_readerPage)return false;
+    _readerPage=page;
+    renderReaderPage(state.ayah,false).catch(error=>trace('audio.page',error.message));
+    return true;
+  }
   function updateAudioMiniPlayer(state){
     _audioVisual=state;
     if(_audioMode){
@@ -3830,6 +3838,7 @@ html.reader-open #qvtDock { display:none !important; }
       const label=playing?'Playing':state.state==='paused'?'Paused':state.canPlay?'Ready to play':'Preparing audio';
       setStatus(label+(state.surah?' · '+SURAHS[state.surah]+(state.ayah?' · '+state.ayah:''):''),playing?'result':'');
     }
+    if(syncListenPage(state))return;
     const key=[state.state,Math.floor(state.positionMs/1000),Math.floor(state.durationMs/1000)].join(':');
     if(!_audioMode||!_readerActive||!_readerImageLayout||!_audioFrame||!_audioVisualModule||key===_audioFooterKey)return;
     if(_audioFooterPending)return;
