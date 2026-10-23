@@ -63,7 +63,7 @@ await phone.send('Debugger.resume'); await call; await phone.send('Debugger.disa
 
 
 await evaluate('window.__bookmarkOldSettings=JSON.parse(JSON.stringify(__uiAudit.S.settings));__uiAudit.S.settings.readerLayout="single";openQuranReader()');await evaluate('loadReaderSurah(2,0,282)');await evaluate('readerStep(1)');await evaluate('__uiAudit.S.bridgeCallQueue');
-assert.deepEqual(await evaluate('__uiAudit.glassesMenu().menuItems.slice(0,5).map(i=>i.itemID)'),[7,8,15,14,13]);
+assert.deepEqual(await evaluate('__uiAudit.glassesMenu().menuItems.slice(0,6).map(i=>i.itemID)'),[13,17,7,8,15,14]);
 const original=await evaluate('__uiAudit.getReaderWindow()');assert.equal(original.part,2);
 await evaluate('__uiAudit.onG2Event({menuItemClickEvent:{itemID:15}})');await evaluate('__uiAudit.S.bridgeCallQueue');
 assert.equal(await evaluate('document.getElementById("readerBookmarkStar").textContent'),'★');assert.ok(await evaluate('__uiAudit.glassesMenu().menuItems.some(i=>i.itemID===16)'));

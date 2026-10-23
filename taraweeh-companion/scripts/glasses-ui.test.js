@@ -49,6 +49,8 @@ function harness() {
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       showModeHome, leaveModeHome, getHome:()=>({active:_homeActive,index:_homeIndex}),
+      setReaderPicker:(kind,value,max)=>{_readerActive=true;_readerPicking=kind;_readerPick=value;_readerData={surah:2,verses:Array(max).fill({})};},
+      getReaderPicker:()=>({kind:_readerPicking,value:_readerPick}),
       clearGlassesPreamble, startSearchingDots, PREAMBLE_GLASSES,
       quranArabicDisplay, arabicLayoutPages, arabicImageCanvas, buildPages, G2_BODY_LINES, startPageFlip, _buildTraceReport, stopListening, rakatHdr, _applyPrayerSnapshot,
       setMode: function (mode) {
@@ -328,6 +330,24 @@ test('mode launcher fits four images and one full-screen gesture target inside G
  assert.equal(page.textObject[0].isEventCapture,1);
  assert.equal(page.textObject[0].height,288);
  assert.deepEqual(HOME_MODES.map(m=>m.key),['listen','practice','reader','taraweeh']);
+});
+
+test('glasses ayah picker bounds swipes and ten-ayah jumps; omitted click type selects the ayah',async()=>{
+ const h=harness();h.ui.setReaderPicker('ayah',286,286);
+ assert.equal(validateEvenHubPageContainer(modeHomePage(h.ui.glassesMenu())).valid,true);
+ assert.deepEqual(Array.from(h.ui.glassesMenu().menuItems.slice(0,4),i=>i.itemID),[13,17,18,19]);
+ h.ui.onG2Event({textEvent:{eventType:2}});assert.equal(h.ui.getReaderPicker().value,286);
+ h.ui.onG2Event({menuItemClickEvent:{itemID:19}});assert.equal(h.ui.getReaderPicker().value,276);
+ h.ui.onG2Event({textEvent:{eventType:1}});assert.equal(h.ui.getReaderPicker().value,275);
+ let selected=0;h.context.jumpReaderAyah=ayah=>{selected=ayah;};
+ h.ui.onG2Event({textEvent:{}});assert.equal(selected,275);
+ h.ui.setReaderPicker('ayah',1,7);h.ui.onG2Event({textEvent:{eventType:1}});assert.equal(h.ui.getReaderPicker().value,1);
+ h.ui.onG2Event({menuItemClickEvent:{itemID:18}});assert.equal(h.ui.getReaderPicker().value,7);
+ h.ui.onG2Event({menuItemClickEvent:{itemID:20}});assert.equal(selected,7);
+ h.ui.S.settings.readerBookmark={surah:2,ayah:1};h.ui.setReaderPicker(false,1,7);
+ assert.equal(h.ui.glassesMenu().menuItems.length,10);
+ assert.equal(validateEvenHubPageContainer(modeHomePage(h.ui.glassesMenu())).valid,true);
+ await h.flush();
 });
 
 test('idle swipes select a mode without verse navigation; tapping Read Quran opens the reader',async()=>{
