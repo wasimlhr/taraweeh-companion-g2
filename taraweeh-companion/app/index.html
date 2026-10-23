@@ -1876,6 +1876,7 @@ html.reader-open #qvtDock { display:none !important; }
   window.resumeReaderBookmark=async function(){const b=S.settings.readerBookmark;if(!b||!Number.isInteger(b.surah)||b.surah<1||b.surah>114)return;setReaderAutoScroll(false);S.settings.readerSurah=b.surah;S.settings.readerAyah=b.ayah;S.settings.readerLayout=b.layout==='single'?'single':'maximum';S.settings.readerScript=b.script==='madani'?'madani':'indopak';saveSettings();if(!_readerActive)await openQuranReader();document.getElementById('readerScript').value=S.settings.readerScript;applyReaderDisplay();await loadReaderSurah(b.surah,Number(b.page)||0,b.pagination===2?0:b.ayah);};
   window.openQuranReader=async function () {
     if(S.isRecording)stopListening();
+    leaveModeHome();
     closeMoreSheet();if(getComputedStyle(document.getElementById('settingsView')).display!=='none')hideSettings();_manualBrowse=false;resetVerseHold();
     stopPageFlip();stopCountdown();stopSearchingDots();stopLockingDots();
     _readerActive=true;_readerPicking=false;_readerImageLayout=false;_readerLastTiles=[];
@@ -3582,6 +3583,57 @@ html.reader-open #qvtDock { display:none !important; }
   var EVENT_SRC_GLASSES_R = 1;  // TOUCH_EVENT_FROM_GLASSES_R
   var EVENT_SRC_GLASSES_L = 3;  // TOUCH_EVENT_FROM_GLASSES_L
   var _ringConnected = false;
+  var _homeActive = false, _homeIndex = 0, _homeEpoch = 0, _homeLayout = false;
+  var _homeModule = null, _homeLastTiles = [], _homeScrollAt = 0;
+
+  function leaveModeHome() {
+    _homeActive=false;_homeEpoch++;_homeLayout=false;_homeLastTiles=[];
+    S.displayRebuilt=false;
+  }
+
+  function renderModeHome() {
+    if(!_homeActive||_readerActive||S.isRecording||!S.bridge)return;
+    if(!S.bridge.updateImageRawData){
+      showGlassesPage({hdr:'Choose mode',pages:[['Translate','Practice','Read Quran','Taraweeh'].map((name,i)=>(i===_homeIndex?'> ':'  ')+name).join('\n')]},0);return;
+    }
+    const epoch=++_homeEpoch;
+    queueBridgeCall('mode-home',async function(){
+      const current=()=>_homeActive&&!_readerActive&&!S.isRecording&&epoch===_homeEpoch;
+      if(!current())return;
+      _homeModule ||= await import('./glassesHome.js');
+      if(!current())return;
+      const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;
+      const ctx=canvas.getContext('2d');_homeModule.drawModeHome(ctx,_homeIndex);
+      if(!_homeLayout){
+        const ok=await S.bridge.rebuildPageContainer(_homeModule.modeHomePage(glassesMenu()));
+        if(ok===false)throw Error('Glasses rejected mode home');
+        _homeLayout=true;_homeLastTiles=[];_readerImageLayout=false;_imagePageActive=false;
+      }
+      for(let i=0;i<4;i++){
+        if(!current())return;
+        const rgba=ctx.getImageData(i%2*288,Math.floor(i/2)*144,288,144).data;
+        const gray=new Uint8Array(288*144);for(let n=0;n<gray.length;n++)gray[n]=rgba[n*4];
+        const previous=_homeLastTiles[i];if(previous&&gray.every((v,n)=>v===previous[n]))continue;
+        const result=await S.bridge.updateImageRawData({containerID:30+i,containerName:'home'+i,imageData:gray});
+        if(result!=null&&result!==0&&result!=='success')throw Error('Mode home image transfer failed: '+result);
+        _homeLastTiles[i]=gray;
+      }
+    });
+  }
+
+  function showModeHome() {
+    _homeActive=true;_homeLayout=false;_homeLastTiles=[];_pendingGlasses=null;
+    renderModeHome();
+  }
+
+  async function openSelectedHomeMode() {
+    const mode=['listen','practice','reader','taraweeh'][_homeIndex];
+    leaveModeHome();
+    if(mode==='reader'){await openQuranReader();return;}
+    setReciteMode(mode);
+    await startListening();
+    if(!S.isRecording&&!_readerActive)showModeHome();
+  }
 
   function _startupBodyText() {
     if (_ringConnected) {
@@ -3597,6 +3649,7 @@ html.reader-open #qvtDock { display:none !important; }
 
   function refreshGlassesWelcomeText() {
     if (_readerActive || !S.bridge || !S.startupPageCreated) return;
+    if(_homeActive){renderModeHome();return;}
     var body = _startupBodyText();
     queueBridgeCall('refresh-welcome', function () {
       if(_readerActive)return;
@@ -3721,6 +3774,7 @@ html.reader-open #qvtDock { display:none !important; }
   function glassesStartup() {
     _readerImageLayout=false;_readerLastTiles=[];
     if (!S.bridge) return;
+    _homeActive=!_readerActive&&!S.isRecording;_homeLayout=false;_homeLastTiles=[];
     S.startupPageCreated = false;
     // Per SDK: createStartUpPageContainer may be called ONLY ONCE ever; all
     // subsequent page ops must use rebuildPageContainer. On reload/reconnect
@@ -3818,6 +3872,7 @@ html.reader-open #qvtDock { display:none !important; }
   /** Header-only repaint. The countdown ticks twice a minute per ayah and only
    *  ever changes the header, so it must not force a full container rebuild. */
   function glassesHeaderUpdate(hdr) {
+    if(_homeActive)return;
     if (!S.bridge || !S.displayRebuilt) return;   // no container yet: skip, a full write is coming
     queueBridgeCall('glassesHeader', function () {
       return S.bridge.textContainerUpgrade({
@@ -3828,6 +3883,7 @@ html.reader-open #qvtDock { display:none !important; }
 
   function _writeGlasses(display) {
     return Promise.resolve().then(function () {
+      if(_homeActive&&_homeLayout&&!S.isRecording&&!_manualBrowse)return;
       if (display.arabicImage) return writeArabicImage(display).catch(function (error) {
         // An experimental transfer failure must leave a readable display.
         S.settings.arabicImage = false; saveSettings();
@@ -3927,6 +3983,7 @@ html.reader-open #qvtDock { display:none !important; }
    * short BLE write, so they must never force a full page rebuild.
    */
   function glassesTopBarUpdate() {
+    if(_homeActive)return;
     // Gate on the containers existing, not on a rebuild having happened. The
     // startup page creates them too, and gating on displayRebuilt left the
     // pills showing whatever the very first paint put there.
@@ -4173,6 +4230,7 @@ html.reader-open #qvtDock { display:none !important; }
 
   var _manualBrowse = false;
   function mirrorManualNavOnGlasses() {
+    leaveModeHome();
     _manualBrowse = true;
     if (!S.isG2) return;
     var st = S._lastGlassesState || { mode: 'SEARCHING' };
@@ -5368,6 +5426,12 @@ html.reader-open #qvtDock { display:none !important; }
     noteRingInput(event, ev);
 
     var t = (ev.eventType == null ? 0 : ev.eventType);
+    if(_homeActive&&(t===1||t===2)){
+      if(Date.now()-_homeScrollAt<180)return;
+      _homeScrollAt=Date.now();_homeIndex=(_homeIndex+(t===1?3:1))%4;
+      renderModeHome();return;
+    }
+    if(_homeActive&&t===0){openSelectedHomeMode().catch(error=>{log(error.message,'err');showModeHome();});return;}
     if (_readingHeld && (t === 1 || t === 2 || t === 3)) {
       var heldDisplay = buildGlassesText(_heldState);
       _heldPage = Math.max(0, Math.min(heldDisplay.pages.length - 1, _heldPage + (t === 1 ? -1 : 1)));
@@ -5478,6 +5542,7 @@ html.reader-open #qvtDock { display:none !important; }
       }
     }
     S.isRecording = true;
+    leaveModeHome();
     _glassesSessionId++;
     var startSessionId = _glassesSessionId;
     S._lastGlassesState = null;
@@ -5558,7 +5623,7 @@ html.reader-open #qvtDock { display:none !important; }
     // Update G2 glasses BEFORE tearing down mic/WS — bridge must still be alive
     if (S.isG2) {
       S.displayRebuilt = false;
-      showGlassesPage({ hdr: appTitleHdr(), pages: ['Stopped.\nSingle-tap to resume.\nDouble-tap to exit.'] }, 0);
+      showModeHome();
     }
 
     var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
@@ -6271,6 +6336,7 @@ html.reader-open #qvtDock { display:none !important; }
   function refreshGlassesPreferences() {
     S.displayRebuilt = false;
     if (S.isG2 && S.bridge) {
+      if(_homeActive){renderModeHome();syncDeviceLanguages();return;}
       var state = _readingHeld ? _heldState : S._lastGlassesState;
       showGlassesPage(state && S.isRecording ? buildGlassesText(state) : { hdr: appTitleHdr(), pages: [_startupBodyText()] }, 0);
     }

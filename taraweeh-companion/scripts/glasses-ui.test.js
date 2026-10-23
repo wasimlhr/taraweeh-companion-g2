@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { getAdvW, getTextWidth, pxTruncate } from '@evenrealities/pretext';
 import { validateEvenHubPageContainer } from '@evenrealities/even_hub_sdk';
+import { HOME_MODES, modeHomePage } from '../app/glassesHome.js';
 
 const html = readFileSync(new URL('../app/index.html', import.meta.url), 'utf8');
 const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -47,6 +48,7 @@ function harness() {
   const exported = `
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
+      showModeHome, leaveModeHome, getHome:()=>({active:_homeActive,index:_homeIndex}),
       clearGlassesPreamble, startSearchingDots, PREAMBLE_GLASSES,
       quranArabicDisplay, arabicLayoutPages, arabicImageCanvas, buildPages, G2_BODY_LINES, startPageFlip, _buildTraceReport, stopListening, rakatHdr, _applyPrayerSnapshot,
       setMode: function (mode) {
@@ -313,10 +315,30 @@ test('stop clears timers and stale verse; late state cannot repaint glasses',asy
  h.ui.startPageFlip({hdr:'An-Nas 114:1',pages:['Old verse']},60000);await h.flush();
  h.ui.stopListening();await h.flush();
  const stop=h.writes.filter(w=>w.page).at(-1);
- assert.match(stop.page.textObject.find(c=>c.containerName==='body').content,/Stopped/);
+ assert.match(stop.page.textObject.find(c=>c.containerName==='body').content,/Translate[\s\S]*Practice[\s\S]*Read Quran[\s\S]*Taraweeh/);
  const count=h.writes.length;
  h.ui.handleServerMsg({type:'state',state:{mode:'LOCKED',surah:114,ayah:1,translation:'late verse'}});await h.flush();
  assert.equal(h.writes.length,count);assert.equal(h.ui.S.isRecording,false);
+});
+
+test('mode launcher fits four images and one full-screen gesture target inside G2 limits',()=>{
+ const page=modeHomePage({menuItems:[]});
+ assert.equal(validateEvenHubPageContainer(page).valid,true);
+ assert.equal(page.imageObject.length,4);
+ assert.equal(page.textObject[0].isEventCapture,1);
+ assert.equal(page.textObject[0].height,288);
+ assert.deepEqual(HOME_MODES.map(m=>m.key),['listen','practice','reader','taraweeh']);
+});
+
+test('idle swipes select a mode without verse navigation; tapping Read Quran opens the reader',async()=>{
+ const h=harness();h.ui.S.isRecording=false;h.ui.showModeHome();await h.flush();
+ let opened=0;h.context.openQuranReader=async()=>{opened++;};
+ h.ui.onG2Event({textEvent:{eventType:2}});assert.equal(h.ui.getHome().index,1);
+ await new Promise(resolve=>setTimeout(resolve,190));
+ h.ui.onG2Event({textEvent:{eventType:2}});assert.equal(h.ui.getHome().index,2);
+ h.ui.onG2Event({textEvent:{eventType:0}});await h.flush();
+ assert.equal(opened,1);assert.equal(h.ui.getHome().active,false);
+ assert.ok(h.messages.every(m=>m.type!=='manual_advance'));
 });
 test('rejected text upgrade rebuilds a visible complete frame',async()=>{
  const h=harness();h.ui.S.displayRebuilt=true;
