@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 taraweeh-companion/backend/data/usage/
+taraweeh-companion/backend/data/recitations/
 *.log
 .DS_Store
 Thumbs.db

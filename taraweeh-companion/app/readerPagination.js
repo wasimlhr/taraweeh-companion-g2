@@ -43,18 +43,35 @@ export function readerPackedWindows(verses,measure,width=520,lineCount=4,opening
 }
 
 // Complete one ayah (Arabic and translation) before advancing to the next.
-export function readerSinglePages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false){
+export function readerInterleavedPages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false){
+ return verses.flatMap(verse=>{
+  const arabic=paginateReader([verse],measureArabic,width,1).flatMap(p=>p.lines);
+  const translated=[];let line='';
+  for(const word of String(verse.translation||'').trim().split(/\s+/).filter(Boolean)){
+   if(line&&measureTranslation(line+' '+word)>544){translated.push(line);line='';}
+   for(const character of word){if(line&&measureTranslation(line+character)>544){translated.push(line);line='';}line+=character;}
+   line+=' ';
+  }
+  if(line.trim())translated.push(line.trim());
+  const chunks=[];for(let n=0;n<arabic.length;){const count=n===0&&verse.ayah===1&&hasBasmala?1:2;chunks.push(arabic.slice(n,n+count));n+=count;}
+  const parts=Math.max(chunks.length,Math.ceil(translated.length/5),1);
+  return Array.from({length:parts},(_,i)=>({kind:'interleaved',lines:chunks[Math.min(i,chunks.length-1)]||[],translationLines:translated.slice(Math.min(i,Math.max(0,Math.ceil(translated.length/5)-1))*5,Math.min(i,Math.max(0,Math.ceil(translated.length/5)-1))*5+5),translationY:164,opening:i===0&&verse.ayah===1&&hasBasmala,ayah:verse.ayah,ayahs:[verse.ayah],part:i+1,parts}));
+ });
+}
+
+export function readerSinglePages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false,reservedHeight=0){
  function wrap(text){const lines=[];let line='';for(const word of String(text||'').trim().split(/\s+/).filter(Boolean)){if(line&&measureTranslation(line+' '+word)>width){lines.push(line);line='';}if(measureTranslation(word)>width){for(const ch of word){if(line&&measureTranslation(line+ch)>width){lines.push(line);line='';}line+=ch;}}else line=line?line+' '+word:word;}if(line)lines.push(line);return lines;}
  return verses.flatMap(verse=>{
   const arabic=paginateReader([verse],measureArabic,width,1).flatMap(p=>p.lines),translation=wrap(verse.translation);
   const opening=verse.ayah===1&&hasBasmala,base=opening?132:96;
   const translationY=base+(arabic.length-1)*44+44;
-  const fits=arabic.length<=(opening?3:4)&&translationY+(translation.length-1)*26<=258;
+  const fits=arabic.length<=(opening?3:4)&&translationY+(translation.length-1)*26<=258-reservedHeight;
   const pages=[];
   if(fits)pages.push({kind:'combined',lines:arabic,translationLines:translation,translationY,opening,startLine:0});
   else {
    for(let start=0;start<arabic.length;){const count=start===0&&opening?3:4;pages.push({kind:'arabic',lines:arabic.slice(start,start+count),translationLines:[],opening:start===0&&opening,startLine:start});start+=count;}
-   for(let start=0;start<translation.length;start+=7)pages.push({kind:'translation',lines:[],translationLines:translation.slice(start,start+7),translationY:92,opening:false,startLine:start});
+   const count=Math.max(1,7-Math.ceil(reservedHeight/26));
+   for(let start=0;start<translation.length;start+=count)pages.push({kind:'translation',lines:[],translationLines:translation.slice(start,start+count),translationY:92,opening:false,startLine:start});
   }
   return pages.map((p,index)=>({...p,ayah:verse.ayah,ayahs:[verse.ayah],part:index+1,parts:pages.length}));
  });

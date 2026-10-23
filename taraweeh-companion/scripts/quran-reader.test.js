@@ -1,7 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readerChapter} from '../backend/quranReader.js';
-import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows,readerSinglePages} from '../app/readerPagination.js';
+import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows,readerSinglePages,readerInterleavedPages} from '../app/readerPagination.js';
+
+test('interleaved pages retain Arabic above every translation segment',()=>{
+ const verse={ayah:39,arabic:Array(50).fill('كلمة').join(' '),translation:Array.from({length:150},(_,i)=>'word'+i).join(' ')};
+ const pages=readerInterleavedPages([verse],text=>text.length*10,text=>text.length*12);
+ assert.ok(pages.length>1);
+ for(const page of pages){assert.equal(page.kind,'interleaved');assert.ok(page.lines.length>0&&page.lines.length<=2);assert.ok(page.translationLines.length>0&&page.translationLines.length<=5);assert.deepEqual(page.ayahs,[39]);}
+ const translated=pages.flatMap(page=>page.translationLines).join(' ').replace(/\s+/g,' ').trim();
+ assert.equal(translated,verse.translation);
+});
 import {validateEvenHubPageContainer} from '@evenrealities/even_hub_sdk';
 test('reader contains all 114 surahs and 6236 intact numbered ayahs',()=>{
  let count=0;for(let s=1;s<=114;s++){const c=readerChapter(s);assert.equal(c.surah,s);assert.equal(c.verses.length,c.totalAyahs);c.verses.forEach((v,i)=>{assert.equal(v.ayah,i+1);assert.ok(v.arabic.trim());});count+=c.totalAyahs;}

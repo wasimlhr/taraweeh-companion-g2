@@ -1,4 +1,5 @@
 import {readerChapter} from './quranReader.js';
+import {RecitationStore,installRecitationRoutes} from './recitations.js';
 import {LANGUAGE_CODES, PACK_CODES} from './languageCatalog.js';
 /**
  * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
@@ -74,6 +75,10 @@ const APP_VERSION = (() => {
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
+installRecitationRoutes(app,new RecitationStore(process.env.RECITATION_PATH||(process.env.RAILWAY_VOLUME_MOUNT_PATH?join(process.env.RAILWAY_VOLUME_MOUNT_PATH,'recitations'):join(__dirname,'data','recitations'))));
+app.get('/listenQuran.js',(req,res)=>res.sendFile(join(rootDir,'app','listenQuran.js')));
+app.get('/readerPlayback.js',(req,res)=>res.sendFile(join(rootDir,'app','readerPlayback.js')));
+app.get('/readerAudioCache.js',(req,res)=>res.sendFile(join(rootDir,'app','readerAudioCache.js')));
 app.get('/api/quran/:surah', (req,res)=>{
  res.set('Access-Control-Allow-Origin','*');
  const lang=String(req.query.lang||'').trim();

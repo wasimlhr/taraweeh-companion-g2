@@ -1,0 +1,9 @@
+const CACHE='quran-recitation-v1';
+export class ReaderAudioCache{
+ constructor({baseUrl,fetcher=fetch,storage=globalThis.caches}={}){this.base=new URL(baseUrl||location.origin);this.fetcher=fetcher;this.storage=storage;}
+ url(track){const u=new URL(track.url,this.base);if(u.origin!==this.base.origin||! /^\/audio\/[a-f0-9]{64}\.mp3$/.test(u.pathname))throw Error('Untrusted audio URL');return u.href;}
+ async has(manifest){if(!this.storage)return false;const c=await this.storage.open(CACHE);for(const t of manifest.tracks)if(!await c.match(this.url(t)))return false;return true;}
+ async download(manifest,{signal,onProgress=()=>{}}={}){if(!this.storage)throw Error('Offline storage unavailable');const c=await this.storage.open(CACHE);let done=0;const total=manifest.tracks.reduce((n,t)=>n+t.bytes,0);for(const t of manifest.tracks){signal?.throwIfAborted();const url=this.url(t);if(!await c.match(url)){const res=await this.fetcher(url,{signal});if(!res.ok)throw Error('Audio download failed: '+res.status);const data=await res.arrayBuffer();signal?.throwIfAborted();if(data.byteLength!==t.bytes)throw Error('Audio size mismatch');const digest=await crypto.subtle.digest('SHA-256',data);const hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');if(hash!==t.sha256)throw Error('Audio checksum mismatch');await c.put(url,new Response(data,{headers:{'Content-Type':'audio/mpeg'}}));}done+=t.bytes;onProgress({bytes:done,totalBytes:total,ayah:t.ayah});}return {bytes:done};}
+ async remove(manifest){if(!this.storage)return;const c=await this.storage.open(CACHE);for(const t of manifest.tracks)await c.delete(this.url(t));}
+ async resolveTrack(track){const url=this.url(track);if(this.storage){const c=await this.storage.open(CACHE),res=await c.match(url);if(res)return URL.createObjectURL(await res.blob());}return url;}
+}

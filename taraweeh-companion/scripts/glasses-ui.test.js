@@ -15,9 +15,9 @@ function harness() {
   const nodes = new Map();
   function node(id) {
     if (!nodes.has(id)) nodes.set(id, {
-      style: {}, dataset: {}, options: [], selectedIndex: 0, textContent: '', innerHTML: '', value: '',
+      style: {}, dataset: {}, options: [], children: [], selectedIndex: 0, textContent: '', innerHTML: '', value: '',
       classList: { add() {}, remove() {}, toggle() {} },
-      addEventListener() {}, setAttribute() {}, appendChild() {},
+      addEventListener() {}, setAttribute() {}, appendChild(child) {this.children.push(child);}, replaceChildren() {this.children=[];},
       querySelector(selector) { return node(id + selector); },
       querySelectorAll() { return []; },
     });
@@ -329,7 +329,7 @@ test('mode launcher fits four images and one full-screen gesture target inside G
  assert.equal(page.imageObject.length,4);
  assert.equal(page.textObject[0].isEventCapture,1);
  assert.equal(page.textObject[0].height,288);
- assert.deepEqual(HOME_MODES.map(m=>m.key),['listen','practice','reader','taraweeh']);
+ assert.deepEqual(HOME_MODES.map(m=>m.key),['listen','practice','reader','taraweeh','audio','settings']);
 });
 
 test('glasses ayah picker bounds swipes and ten-ayah jumps; omitted click type selects the ayah',async()=>{
@@ -345,7 +345,8 @@ test('glasses ayah picker bounds swipes and ten-ayah jumps; omitted click type s
  h.ui.onG2Event({menuItemClickEvent:{itemID:18}});assert.equal(h.ui.getReaderPicker().value,7);
  h.ui.onG2Event({menuItemClickEvent:{itemID:20}});assert.equal(selected,7);
  h.ui.S.settings.readerBookmark={surah:2,ayah:1};h.ui.setReaderPicker(false,1,7);
- assert.equal(h.ui.glassesMenu().menuItems.length,10);
+ assert.equal(h.ui.glassesMenu().menuItems.length,9);
+ assert.ok(h.ui.glassesMenu().menuItems.some(item=>item.itemID===21&&item.itemName==='Show translation'));
  assert.equal(validateEvenHubPageContainer(modeHomePage(h.ui.glassesMenu())).valid,true);
  await h.flush();
 });
