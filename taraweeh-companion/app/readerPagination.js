@@ -64,7 +64,7 @@ export function readerAudioPage(pages,ayah,positionMs,durationMs){
 }
 
 // Complete one ayah (Arabic and translation) before advancing to the next.
-export function readerInterleavedPages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false,translationLineCount=5){
+export function readerInterleavedPages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false,translationLineCount=5,compactAfterOpening=false){
  return verses.flatMap(verse=>{
   const arabic=paginateReader([verse],measureArabic,width,1).flatMap(p=>p.lines);
   const translated=[];let line='';
@@ -74,26 +74,27 @@ export function readerInterleavedPages(verses,measureArabic,measureTranslation,w
    line+=' ';
   }
   if(line.trim())translated.push(line.trim());
-  const chunks=[];for(let n=0;n<arabic.length;){const count=n===0&&verse.ayah===1&&hasBasmala?1:2;chunks.push(arabic.slice(n,n+count));n+=count;}
+  const chunks=[];for(let n=0;n<arabic.length;){const header=!compactAfterOpening||verse.ayah===1&&n===0;const count=header?(n===0&&verse.ayah===1&&hasBasmala?1:2):3;chunks.push(arabic.slice(n,n+count));n+=count;}
   const parts=Math.max(chunks.length,Math.ceil(translated.length/translationLineCount),1);
-  return Array.from({length:parts},(_,i)=>({kind:'interleaved',lines:chunks[Math.min(i,chunks.length-1)]||[],translationLines:translated.slice(Math.min(i,Math.max(0,Math.ceil(translated.length/translationLineCount)-1))*translationLineCount,Math.min(i,Math.max(0,Math.ceil(translated.length/translationLineCount)-1))*translationLineCount+translationLineCount),translationY:164,opening:i===0&&verse.ayah===1&&hasBasmala,ayah:verse.ayah,ayahs:[verse.ayah],part:i+1,parts}));
+  return Array.from({length:parts},(_,i)=>({kind:'interleaved',header:!compactAfterOpening||verse.ayah===1&&i===0,lines:chunks[Math.min(i,chunks.length-1)]||[],translationLines:translated.slice(Math.min(i,Math.max(0,Math.ceil(translated.length/translationLineCount)-1))*translationLineCount,Math.min(i,Math.max(0,Math.ceil(translated.length/translationLineCount)-1))*translationLineCount+translationLineCount),translationY:164,opening:i===0&&verse.ayah===1&&hasBasmala,ayah:verse.ayah,ayahs:[verse.ayah],part:i+1,parts}));
  });
 }
 
-export function readerSinglePages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false,reservedHeight=0){
+export function readerSinglePages(verses,measureArabic,measureTranslation,width=520,hasBasmala=false,reservedHeight=0,compactAfterOpening=false){
  function wrap(text){const lines=[];let line='';for(const word of String(text||'').trim().split(/\s+/).filter(Boolean)){if(line&&measureTranslation(line+' '+word)>width){lines.push(line);line='';}if(measureTranslation(word)>width){for(const ch of word){if(line&&measureTranslation(line+ch)>width){lines.push(line);line='';}line+=ch;}}else line=line?line+' '+word:word;}if(line)lines.push(line);return lines;}
  return verses.flatMap(verse=>{
   const arabic=paginateReader([verse],measureArabic,width,1).flatMap(p=>p.lines),translation=wrap(verse.translation);
-  const opening=verse.ayah===1&&hasBasmala,base=opening?132:96;
+  const opening=verse.ayah===1&&hasBasmala,header=!compactAfterOpening||verse.ayah===1,base=opening?132:header?96:50;
+  const capacity=Math.floor((258-reservedHeight-base)/44)+1;
   const translationY=base+(arabic.length-1)*44+44;
-  const fits=arabic.length<=(opening?3:4)&&translationY+(translation.length-1)*26<=258-reservedHeight;
+  const fits=arabic.length<=capacity&&(!translation.length||translationY+(translation.length-1)*26<=258-reservedHeight);
   const pages=[];
-  if(fits)pages.push({kind:'combined',lines:arabic,translationLines:translation,translationY,opening,startLine:0});
+  if(fits)pages.push({kind:'combined',lines:arabic,translationLines:translation,translationY,arabicY:base,opening,startLine:0});
   else {
-   for(let start=0;start<arabic.length;){const count=start===0&&opening?3:4;pages.push({kind:'arabic',lines:arabic.slice(start,start+count),translationLines:[],opening:start===0&&opening,startLine:start});start+=count;}
-   const count=Math.max(1,7-Math.ceil(reservedHeight/26));
-   for(let start=0;start<translation.length;start+=count)pages.push({kind:'translation',lines:[],translationLines:translation.slice(start,start+count),translationY:92,opening:false,startLine:start});
+   for(let start=0;start<arabic.length;){const arabicY=start===0?base:compactAfterOpening?50:96;const count=Math.max(1,Math.floor((258-reservedHeight-arabicY)/44)+1);pages.push({kind:'arabic',lines:arabic.slice(start,start+count),translationLines:[],arabicY,opening:start===0&&opening,startLine:start});start+=count;}
+   const translationY=compactAfterOpening?50:92,count=Math.max(1,Math.floor((258-reservedHeight-translationY)/26)+1);
+   for(let start=0;start<translation.length;start+=count)pages.push({kind:'translation',lines:[],translationLines:translation.slice(start,start+count),translationY,opening:false,startLine:start});
   }
-  return pages.map((p,index)=>({...p,ayah:verse.ayah,ayahs:[verse.ayah],part:index+1,parts:pages.length}));
+  return pages.map((p,index)=>({...p,header:!compactAfterOpening||verse.ayah===1&&index===0,ayah:verse.ayah,ayahs:[verse.ayah],part:index+1,parts:pages.length}));
  });
 }

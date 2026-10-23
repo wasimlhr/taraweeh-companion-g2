@@ -16,6 +16,35 @@ test('audio pages follow media progress within the current ayah, including backw
  assert.equal(readerAudioPage(pages,99,500,12000),-1);
 });
 
+test('audio hides the title after the opening and fills the reclaimed space without losing text',()=>{
+ const verses=[1,2].map(ayah=>({ayah,arabic:Array.from({length:60},(_,i)=>'كلمة'+i).join(' '),translation:Array.from({length:100},(_,i)=>'word'+i).join(' ')}));
+ const measure=t=>t.length*10;
+ for(const hasBasmala of [false,true]){
+  const pages=readerInterleavedPages(verses,measure,measure,520,hasBasmala,4,true);
+  assert.equal(pages[0].header,true);assert.equal(pages[0].opening,hasBasmala);
+  assert.ok(pages.slice(1).every(p=>p.header===false&&!p.opening));
+  assert.ok(pages.some(p=>p.lines.length===3),'Reclaimed header fits an extra Arabic line');
+  for(const verse of verses){
+   const own=pages.filter(p=>p.ayah===verse.ayah),chunks=[];
+   for(const page of own){const text=page.lines.join(' ');if(text!==chunks.at(-1))chunks.push(text);}
+   assert.equal(chunks.join(' '),paginateReader([verse],measure,520,1).flatMap(p=>p.lines).join(' '));
+   assert.equal(own.flatMap(p=>p.translationLines).join(' ').replace(/\s+/g,' ').trim(),verse.translation);
+  }
+  const single=readerSinglePages(verses,measure,measure,520,hasBasmala,32,true);
+  assert.equal(single[0].header,true);assert.ok(single.slice(1).every(p=>!p.header));
+  assert.ok(single.some(p=>p.lines.length===5));
+  for(const page of single){
+   if(page.lines.length)assert.ok(page.arabicY+(page.lines.length-1)*44<=226);
+   if(page.translationLines.length)assert.ok(page.translationY+(page.translationLines.length-1)*26<=226);
+  }
+  for(const verse of verses){
+   const own=single.filter(p=>p.ayah===verse.ayah);
+   assert.equal(own.flatMap(p=>p.lines).join(' '),paginateReader([verse],measure,520,1).flatMap(p=>p.lines).join(' '));
+   assert.equal(own.flatMap(p=>p.translationLines).join(' '),verse.translation);
+  }
+ }
+});
+
 test('interleaved pages retain Arabic above every translation segment',()=>{
  const verse={ayah:39,arabic:Array(50).fill('كلمة').join(' '),translation:Array.from({length:150},(_,i)=>'word'+i).join(' ')};
  const pages=readerInterleavedPages([verse],text=>text.length*10,text=>text.length*12);

@@ -2035,7 +2035,10 @@ html.reader-open #qvtDock { display:none !important; }
       const ctx=document.createElement('canvas').getContext('2d');ctx.font='28px '+readerFont();
       const measureArabic=t=>{ctx.font='28px '+readerFont();return ctx.measureText(displayArabic(t)).width;};
       const measureTranslation=t=>{if(S.settings.readerGlassesTranslation&&_pretext)return _pretext.getTextWidth(t);ctx.font='20px sans-serif';return ctx.measureText(t).width;};
-      _readerPages=S.settings.readerGlassesTranslation?_readerModule.readerInterleavedPages(data.verses,measureArabic,measureTranslation,520,!!data.basmala,_audioMode?4:5):(S.settings.readerLayout==='single'||_audioMode)?(S.settings.readerShowTranslation===false?_readerModule.readerVerseWindows(data.verses,measureArabic):_readerModule.readerSinglePages(data.verses,measureArabic,measureTranslation,520,!!data.basmala,_audioMode?32:0)):_readerModule.readerPackedWindows(data.verses,measureArabic,520,4,!!data.basmala,data.surah===1);
+      if(S.settings.readerGlassesTranslation)_readerPages=_readerModule.readerInterleavedPages(data.verses,measureArabic,measureTranslation,520,!!data.basmala,_audioMode?4:5,_audioMode);
+      else if(_audioMode)_readerPages=_readerModule.readerSinglePages(S.settings.readerShowTranslation===false?data.verses.map(v=>({...v,translation:''})):data.verses,measureArabic,measureTranslation,520,!!data.basmala,32,true);
+      else if(S.settings.readerLayout==='single')_readerPages=S.settings.readerShowTranslation===false?_readerModule.readerVerseWindows(data.verses,measureArabic):_readerModule.readerSinglePages(data.verses,measureArabic,measureTranslation,520,!!data.basmala);
+      else _readerPages=_readerModule.readerPackedWindows(data.verses,measureArabic,520,4,!!data.basmala,data.surah===1);
       _readerPage=focusAyah?Math.max(0,_readerPages.findIndex(p=>p.ayahs.includes(focusAyah))):Math.max(0,Math.min(page,_readerPages.length-1));
       const ayah=document.getElementById('readerAyah');ayah.replaceChildren();data.verses.forEach(v=>ayah.add(new Option(String(v.ayah),String(v.ayah))));
       document.getElementById('readerStatus').textContent=data.name+' · '+data.totalAyahs+' ayahs'+(S.isG2?' · Tap Arabic to show on glasses':'');
@@ -2076,7 +2079,8 @@ html.reader-open #qvtDock { display:none !important; }
     _readerNativeText='';_readerNativeY=48;
     const number=String(currentAyah).replace(/[0-9]/g,d=>String.fromCharCode(0x660+Number(d)));
     const range=page.ayahs[0]+(page.ayahs.length>1?'–'+page.ayahs.at(-1):'');
-    _readerArtworkModule.drawReaderFrame(ctx,'سورة '+(_readerData.arabicName||_readerData.name),readerFont(),range);
+    const showHeader=page.header!==false;
+    _readerArtworkModule.drawReaderFrame(ctx,'سورة '+(_readerData.arabicName||_readerData.name),readerFont(),range,showHeader);
     // The opening invocation is a separate heading, never part of an ayah's flow.
     const opening=packed?page.opening:currentAyah===1&&page.part===1;
     const basmala=opening?_readerData.basmala:'';
@@ -2084,13 +2088,13 @@ html.reader-open #qvtDock { display:none !important; }
     if(basmala){ctx.font='24px '+readerFont();ctx.textAlign='center';ctx.fillText(displayArabic(basmala),288,91);}
     if(page.kind==='interleaved'){
       ctx.font='28px '+readerFont();ctx.textAlign='right';
-      page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,(basmala?128:94)+i*36));
+      page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,(showHeader?(basmala?128:94):54)+i*36));
       _readerNativeText=page.translationLines.join('\n');_readerNativeY=150;
       await sendReaderCanvas(canvas,epoch);if(epoch===_readerEpoch)resetReaderAutoTimer();return;
     }
     if(page.kind){
       ctx.font='28px '+readerFont();ctx.textAlign='right';
-      const base=basmala?132:96;
+      const base=page.arabicY??(basmala?132:96);
       page.lines.forEach((line,i)=>{const numberedOpening=_readerData.surah===1&&page.ayah===1&&i===0;ctx.textAlign=numberedOpening?'center':'right';ctx.fillText(displayArabic(line),numberedOpening?288:548,base+i*44);});
       if(page.translationLines.length){if(S.settings.readerGlassesTranslation){_readerNativeText=page.translationLines.join('\n');_readerNativeY=Math.max(56,page.translationY-20);}else{const firstLetter=page.translationLines.join(' ').match(/\p{L}/u)?.[0]||'';const rtl=/[\u0590-\u08ff]/u.test(firstLetter);ctx.font='20px sans-serif';ctx.direction=rtl?'rtl':'ltr';ctx.textAlign=rtl?'right':'left';page.translationLines.forEach((line,i)=>ctx.fillText(line,rtl?548:28,page.translationY+i*26));}}
       await sendReaderCanvas(canvas,epoch);if(epoch===_readerEpoch)resetReaderAutoTimer();return;
