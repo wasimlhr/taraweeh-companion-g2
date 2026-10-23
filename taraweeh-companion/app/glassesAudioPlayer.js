@@ -3,6 +3,13 @@ export function audioProgress(state={}){return Math.max(0,Math.min(1,(state.posi
 // A dark, compact transport strip; the ring tap toggles play/pause.
 export function drawAudioPlayer(ctx,state={}){
  ctx.save();ctx.fillStyle='#000';ctx.fillRect(0,0,576,32);
+ // Continue the reader's double outline around the transport strip.
+ ctx.strokeStyle='#555';ctx.lineWidth=1;
+ ctx.beginPath();
+ for(const [left,right,bottom] of [[3,573,29],[15,561,27]]){
+  ctx.moveTo(left,0);ctx.lineTo(left,bottom);ctx.lineTo(right,bottom);ctx.lineTo(right,0);
+ }
+ ctx.stroke();
  ctx.strokeStyle='#555';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(16,.5);ctx.lineTo(560,.5);ctx.stroke();
  ctx.fillStyle='#fff';
  if(state.state==='playing'){ctx.fillRect(21,11,3,13);ctx.fillRect(28,11,3,13);}

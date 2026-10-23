@@ -29,7 +29,7 @@ try{
  await evaluate(`const sel=document.querySelector('.lq [data-el="ayah"]');sel.value='7';sel.dispatchEvent(new Event('change'));`);await settle();
  await evaluate(`document.querySelector('.lq [data-el="play"]').click()`);await new Promise(r=>setTimeout(r,1200));
  assert.equal(await evaluate(`document.querySelector('.lq [data-el="status"]').textContent`),'Playing');
- const data=await evaluate('__homeAudit.audio()');assert.equal(data.footer,true);assert.deepEqual(data.tiles,[41472,41472,9216,9216]);
+ const data=await evaluate('__homeAudit.audio()');assert.equal(data.footer,false);assert.deepEqual(data.tiles,[41472,41472,41472,41472]);
  await screenshot('playing');
  await input('click');console.log(await evaluate('__homeAudit.recent()'));assert.equal(await evaluate(`document.querySelector('.lq [data-el="status"]').textContent`),'Paused');
  await screenshot('paused');

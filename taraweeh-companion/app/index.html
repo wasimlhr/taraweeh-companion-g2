@@ -2154,8 +2154,9 @@ html.reader-open #qvtDock { display:none !important; }
     const ctx=canvas.getContext('2d');let failure=null;
     const interleaved=!splash&&!!S.settings.readerGlassesTranslation&&!_readerPicking&&!!_readerNativeText;
     const miniPlayer=!splash&&_audioMode&&!_readerPicking&&!!_audioVisualModule;
-    if(miniPlayer){_audioFrame=canvas;_audioFooterLayout=interleaved;ctx.save();ctx.translate(0,256);_audioVisualModule.drawAudioPlayer(ctx,_audioVisual||{});ctx.restore();}
-    const tiles=Array.from({length:interleaved&&!miniPlayer?2:4},(_,i)=>({x:i%2*288,y:miniPlayer&&interleaved&&i>=2?256:Math.floor(i/2)*144,height:miniPlayer&&interleaved&&i>=2?32:144}));
+    // Full lower tiles retain the frame beside native translation text.
+    if(miniPlayer){_audioFrame=canvas;_audioFooterLayout=false;ctx.save();ctx.translate(0,256);_audioVisualModule.drawAudioPlayer(ctx,_audioVisual||{});ctx.restore();}
+    const tiles=Array.from({length:interleaved&&!miniPlayer?2:4},(_,i)=>({x:i%2*288,y:Math.floor(i/2)*144,height:144}));
     const nativeKey=splash+':'+miniPlayer+':'+interleaved+':'+_readerNativeY+':'+_readerNativeText;
     if(nativeKey!==_readerNativeKey){_readerImageLayout=false;_readerNativeKey=nativeKey;}
     await queueBridgeCall('readerPage',async()=>{
