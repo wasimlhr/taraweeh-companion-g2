@@ -92,6 +92,7 @@ body {
   -webkit-font-smoothing: antialiased;
   transition: background 0.3s, color 0.3s;
 }
+html.g2-hosted body { padding-top:8px;padding-bottom:8px; }
 
 /* Header */
 .header {
@@ -1016,6 +1017,22 @@ html.standalone #verseCard { flex:0 0 auto;height:var(--verse-region-height,340p
 #verseNavRow { flex:0 0 auto;margin-top:auto; }
 #searchingContent { min-height:0;flex:1;overflow:auto;scrollbar-width:none; }
 #verseCard #holdVerseHint:empty { display:none; }
+#verseStudyTools[hidden] { display:none; }
+#verseStudyTools { flex:0 0 auto;margin:0; }
+#verseStudyTools button { flex:1;min-height:40px;padding:6px 12px;margin:0; }
+#mainControlsRow { display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin:6px 0; }
+#mainControlsRow > details { flex:1;min-width:120px;margin:0 !important; }
+#mainControlsRow > details[open] { flex-basis:100%; }
+#mainControlsRow > #paceModeBtn { flex:0 1 auto !important;width:auto;min-width:132px !important;min-height:40px;padding:8px 12px;margin:0;font-size:13px; }
+#mainView[data-listening="true"] #reciteModeHint { display:none !important; }
+#mainView #waveRow { height:18px;margin-bottom:6px; }
+#mainView #versionEl { padding:2px 0;font-size:10px;line-height:14px;margin:0; }
+#mainView #verseCard { padding:12px;gap:8px; }
+#mainView #recordBtn { min-height:44px;padding:10px 16px; }
+#mainView #readingOptions { margin-top:6px !important; }
+#mainView #readingOptions > summary { padding:6px 0 !important; }
+#mainView .verse-nav-row { gap:8px;padding-top:6px; }
+#mainView .nav-arrow-btn { min-height:44px;padding:8px 10px; }
 #mainView[data-listening="false"] #waveRow { display:none; }
 #mainView[data-listening="false"] #verseCard { height:min(var(--verse-region-height,160px),180px); }
 #mainView[data-listening="false"] #matchIdle { padding:12px 4px;gap:8px; }
@@ -1236,7 +1253,6 @@ html.reader-open #qvtDock { display:none !important; }
       <div class="verse-translit" id="verseTranslit"></div>
       <div class="verse-divider"></div>
       <div class="verse-translation" id="verseTrans" dir="auto"></div>
-      <div class="study-tools"><button type="button" class="mode-btn" onclick="openStudy('tafsir')">Tafsir</button><button type="button" class="mode-btn" onclick="openStudy('hadith')">Hadith</button></div>
       <div id="studyBackdrop" hidden onclick="closeStudy()"></div>
       <section id="studyPanel" hidden role="dialog" aria-modal="true" aria-labelledby="studyTitle" tabindex="-1">
         <div class="study-tools"><strong id="studyTitle"></strong><button type="button" onclick="closeStudy()" aria-label="Close ayah study">×</button></div>
@@ -1246,6 +1262,7 @@ html.reader-open #qvtDock { display:none !important; }
 
       </section>
     </div>
+    <div id="verseStudyTools" class="study-tools" hidden><button type="button" class="mode-btn" onclick="openStudy('tafsir')">Tafsir</button><button type="button" class="mode-btn" onclick="openStudy('hadith')">Hadith</button></div>
     <div id="verseNavRow" class="verse-nav-row" style="display:none">
       <button type="button" class="nav-arrow-btn" onclick="manualPrevAyah()" title="Previous ayah">← Prev</button>
       <button type="button" class="nav-arrow-btn" id="holdVerseBtn" onclick="toggleVerseHold()" disabled aria-pressed="false">Hold verse</button>
@@ -1303,7 +1320,7 @@ html.reader-open #qvtDock { display:none !important; }
     <button id="paceModeBtn" class="mode-btn" style="width:auto;flex:1;margin:0;min-width:140px" onclick="cyclePaceMode()" aria-label="Reciter speed" title="Normal, Fast, Slow">Normal · Follow Mode</button></div>
   </div>
 
-  <footer class="version" id="versionEl" style="text-align:center;padding:16px 0 8px">v3.4.36</footer>
+  <footer class="version" id="versionEl" style="text-align:center">v3.4.36</footer>
 </div>
 
 <section id="readerView" hidden aria-label="Read Quran">
@@ -4536,6 +4553,7 @@ html.reader-open #qvtDock { display:none !important; }
       if (state.mode === 'LOCKED') resetMatchPanel && resetMatchPanel();
       searching.style.display = 'none';
       locked.style.display = 'flex';
+      document.getElementById('verseStudyTools').hidden=false;
       // V4: Show word progress only in LOCKED mode; fill from state so "Word X / Y" appears immediately (and after reconnect)
       var wordProg = document.getElementById('wordProgress');
       if (wordProg) {
@@ -4590,6 +4608,7 @@ html.reader-open #qvtDock { display:none !important; }
       setStatus(statusLabel, (state.syncing || ((isCandidate || state.userSearching) && !_practiceMode)) ? '' : 'result');
     } else {
       locked.style.display = 'none';
+      document.getElementById('verseStudyTools').hidden=true;
       var navRow = document.getElementById('verseNavRow');
       if (navRow) navRow.style.display = (state.mode === 'SEARCHING' && S.isRecording) ? 'flex' : 'none';
       searching.style.display = 'flex';
@@ -4646,7 +4665,8 @@ html.reader-open #qvtDock { display:none !important; }
     // G2 mic RMS ~0.001–0.002 vs PC ~0.05–0.3 — need strong boost for visible meter
     var gain = S.isG2 ? 120 : 3;
     S.waveLevel = Math.max(S.waveLevel * 0.7, Math.min(1, rms * gain));
-    var h = Math.max(4, Math.round(4 + S.waveLevel * 44));
+    var available = document.getElementById('waveRow').clientHeight || 18;
+    var h = Math.max(4, Math.round(4 + S.waveLevel * Math.max(0,available-4)));
     var ph = Date.now() / 80;
     S.waveBars.forEach(function (b, i) {
       b.style.height = Math.round(h * (0.5 + 0.5 * Math.sin(ph + i * 0.45))) + 'px';
@@ -5759,6 +5779,8 @@ html.reader-open #qvtDock { display:none !important; }
     // wiped on .ehpk WebView restart). Then re-load settings so any values
     // the user set on a prior session — API keys especially — come back.
     if (S.bridge) {
+      document.documentElement.classList.add('g2-hosted');
+      setupG2MainControls();
       try {
         await Storage.attach(S.bridge);
         var freshSettings = loadSettings();
@@ -5935,6 +5957,13 @@ html.reader-open #qvtDock { display:none !important; }
     setupBackSwipe('helpView', function () { hideHelp(); });
     setupSheetSwipe(document.getElementById('moreSheet'), closeMoreSheet);
     setupSheetSwipe(document.getElementById('studyPanel'), function () { closeStudy(); });
+  }
+
+  function setupG2MainControls(){
+    if(document.getElementById('mainControlsRow'))return;
+    const options=document.getElementById('readingOptions'),pace=document.getElementById('paceModeBtn'),old=pace.parentNode;
+    const row=document.createElement('div');row.id='mainControlsRow';options.before(row);row.append(options,pace);
+    if(!old.children.length)old.remove();
   }
 
   window.openMoreSheet = function () {
