@@ -1802,7 +1802,7 @@ html.reader-open #qvtDock { display:none !important; }
   var _slowMode = false;
 
   var PACE_LABELS = {
-    normal: 'Normal · Follow Mode',
+    normal: 'Normal reciter',
     fast:   '\uD83D\uDC07 Fast reciter',
     slow:   '\uD83D\uDC22 Slow reciter',
   };
@@ -2817,7 +2817,7 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   // ─── Settings ─────────────────────────────────────────────────────────────
-  var HOSTED_BACKEND = 'https://taraweeh-companion-g2-production-150e.up.railway.app';
+  var HOSTED_BACKEND = 'https://taraweeh.up.railway.app';
 
   // Set once at boot: true only when the origin that served this page also
   // answers /api/status. A packed .ehpk is served by the Even Hub WebView, not
@@ -4061,12 +4061,10 @@ html.reader-open #qvtDock { display:none !important; }
   // Header: surah/ayah left, with room for the countdown on the right.
   function buildGlassesText(state) {
     state = applyLocalTranslation(state);
+    if (_glassesPreamble) return preambleDisplay(_glassesPreamble);
     if (S.settings && S.settings.arabicImage && state && state.arabic) {
       var imageCount = arabicLayoutPages(state).count;
       return { hdr: glassesRef(state) + ' Arabic', pages: Array(imageCount).fill('Arabic image') };
-    }
-    if (_glassesPreamble && state.mode === 'SEARCHING' && !state.isCandidate && !state.userSearching) {
-      return preambleDisplay(_glassesPreamble);
     }
     var transForGlasses = glassesTranslationText(state.translationGlasses ?? state.translation);
     switch (state.mode) {
@@ -4153,7 +4151,7 @@ html.reader-open #qvtDock { display:none !important; }
     var frame = { hdr: shownHdr, body: display.pages[idx] };
     frame.secondaryOnly = !!(display.pages.pronunciationOnly && display.pages.pronunciationOnly.indexOf(idx) >= 0);
     var imageState = _readingHeld ? _heldState : S._lastGlassesState;
-    if (S.settings && S.settings.arabicImage && imageState && imageState.arabic && (S.isRecording || _manualBrowse)) {
+    if (!_glassesPreamble && S.settings && S.settings.arabicImage && imageState && imageState.arabic && (S.isRecording || _manualBrowse)) {
       frame.arabicImage = quranArabicDisplay(imageState); var translatedImageState = applyLocalTranslation(imageState); frame.imageTranslation = S.settings.glassesLayout === 'arabic-pronunciation' ? imageState.transliteration : translatedImageState.translationGlasses ?? translatedImageState.translation;
       frame.imagePage = pageIdx;
       frame.hdr = (_readingHeld ? 'Held ' : '') + glassesRef(imageState) + ' Arabic';
@@ -5033,7 +5031,7 @@ html.reader-open #qvtDock { display:none !important; }
 
         if (msg.state.mode === 'LOCKED') {
           var ayahChanged = sessionStart || msg.state.translationGlasses !== prev.translationGlasses || msg.state.surah !== prev.surah || msg.state.ayah !== prev.ayah || prev.mode !== 'LOCKED';
-          if (!_practiceMode && _paceMode !== 'follow') {
+          if (!_practiceMode) {
             if (ayahChanged) {
               // Force full rebuild so glasses reliably receive the new verse
               // (textContainerUpgrade can fail to push over BLE in some cases)
@@ -5669,6 +5667,10 @@ html.reader-open #qvtDock { display:none !important; }
         await Storage.attach(S.bridge);
         var freshSettings = loadSettings();
         S.settings = { ...S.settings, ...freshSettings };
+        // Start each app launch at Normal, including bridge-restored settings.
+        _paceMode = 'normal';
+        _applyPaceMode();
+        _updatePaceButton();
         applyPhoneTextSize();
         if (RECITE_MODES[S.settings.reciteMode]) {
           _reciteMode = S.settings.reciteMode;
@@ -6901,16 +6903,8 @@ html.reader-open #qvtDock { display:none !important; }
     }
     setupReadingUI();
     syncMainLang();
-    if (['normal','fast','slow'].includes(S.settings.paceMode)) {
-      _paceMode = S.settings.paceMode;
-    } else if (S.settings.slowMode) {
-      _paceMode = 'slow';
-    } else if (S.settings.fastMode) {
-      _paceMode = 'fast';
-    } else {
-      _paceMode = 'normal';
-    }
-    _syncPaceFlags();
+    _paceMode = 'normal';
+    _applyPaceMode();
     _updatePaceButton();
     if (typeof S.settings.targetRakat === 'number') _prayer.targetRakat = S.settings.targetRakat;
     _applyPrayerSnapshot(_prayer);

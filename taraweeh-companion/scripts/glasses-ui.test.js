@@ -221,6 +221,16 @@ for (const [kind, raw, title] of [
   });
 }
 
+test('Bismillah notice takes priority over a stale Arabic candidate', async () => {
+  const h = harness();
+  h.ui.S.settings.arabicImage = true;
+  h.ui.S._lastGlassesState = {mode:'SEARCHING',isCandidate:true,surah:1,ayah:1,arabic:'بسم الله',translation:'In the name of Allah'};
+  h.ui.handleServerMsg({type:'match_progress',preamble:'bismillah'});
+  await h.flush();
+  assert.equal(h.ui.buildGlassesText(h.ui.S._lastGlassesState).hdr,'Bismillah');
+  assert.equal(h.writes.at(-1).page.textObject.find(c=>c.containerID===1).content,'Bismillah');
+});
+
 test('preamble expires without a verse and does not display while stopped', async () => {
   const h = harness();
   h.ui.handleServerMsg({ type: 'match_progress', preamble: 'bismillah' });

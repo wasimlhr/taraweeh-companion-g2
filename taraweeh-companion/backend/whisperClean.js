@@ -78,6 +78,9 @@ export function isBismillahOnly(text) {
   let norm = normalizeMarks(text);
   const isti = norm.match(ISTI_ADHA_PREFIX_RE);
   if (isti) norm = norm.slice(isti[0].length).trim();
+  // Early ASR windows often contain only the first two or three words.
+  // Keep these on the same opening display instead of a competing 1:1 candidate.
+  if (/^بسم\s*الله(?:\s+الرحمن)?[\s،,.]*$/.test(norm)) return true;
   const match = norm.match(BISMILLAH_NORM_RE);
   if (!match) return false;
   // Even a one-letter remainder can be Quran (ص / ق / ن); never swallow

@@ -496,7 +496,8 @@ export class AudioPipeline {
     const changed = this.fastMode !== !!enabled || (!!enabled && this.slowMode);
     this.fastMode = !!enabled;
     if (enabled) this.slowMode = false;
-    this.setFollowMode(!this.fastMode && !this.slowMode);
+    // All three reciter speeds use the pacer. Practice alone holds verses.
+    this.setFollowMode(false);
     if (changed) this._refreshPaceMode();
     console.log(`[Pipeline] Pace: ${this.fastMode ? 'FAST' : this.slowMode ? 'SLOW' : 'normal'}`);
     this.onStatus({ type: 'fast_mode', enabled: this.fastMode });
@@ -507,7 +508,7 @@ export class AudioPipeline {
     const changed = this.slowMode !== !!enabled || (!!enabled && this.fastMode);
     this.slowMode = !!enabled;
     if (enabled) this.fastMode = false;
-    this.setFollowMode(!this.fastMode && !this.slowMode);
+    this.setFollowMode(false);
     if (changed) this._refreshPaceMode();
     console.log(`[Pipeline] Pace: ${this.slowMode ? 'SLOW' : this.fastMode ? 'FAST' : 'normal'}`);
     this.onStatus({ type: 'slow_mode', enabled: this.slowMode });

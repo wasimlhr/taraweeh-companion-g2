@@ -29,6 +29,8 @@ test('opening cleanup preserves short Quran letters and ignores quoted basmala',
     }
   }
   assert.equal(isOpeningPreamble('بسم الله الرحمن الرحيم'), true);
+  assert.equal(isOpeningPreamble('بسم الله'), true);
+  assert.equal(isOpeningPreamble('بسم الله الرحمن'), true);
   assert.equal(isOpeningPreamble('أعوذ بالله من الشيطان الرجيم بسم الله الرحمن الرحيم'), true);
   assert.equal(openingPreambleKind('إنه من سليمان وإنه بسم الله الرحمن الرحيم'), null);
 });
@@ -285,11 +287,31 @@ test('Follow blocks predicted advancement and moves only on real heard confirmat
  assert.equal(pipeline._displayAdvanceTimer,null);pipeline.stop();
 });
 
-test('pace choices keep Follow separate from Practice and preserve fast and slow selection', () => {
+test('all reciter speeds keep automatic advancement separate from Practice', () => {
  const pipeline=new AudioPipeline({onStateUpdate(){},onStatus(){}});
  pipeline.setFastMode(true);assert.equal(pipeline.followMode,false);assert.equal(pipeline.fastMode,true);
  pipeline.setSlowMode(true);assert.equal(pipeline.followMode,false);assert.equal(pipeline.fastMode,false);assert.equal(pipeline.slowMode,true);
- pipeline.setSlowMode(false);assert.equal(pipeline.followMode,true);assert.equal(pipeline.practiceMode,false);pipeline.stop();
+ pipeline.setSlowMode(false);assert.equal(pipeline.followMode,false);assert.equal(pipeline.practiceMode,false);pipeline.stop();
+});
+
+test('Normal Translate advances on its timer without another ASR confirmation, including after speed changes', async () => {
+ loadQuran();
+ const {pipeline}=makePipeline();
+ try {
+  pipeline.active=true;pipeline.setTaraweehMode(false);
+  pipeline.state={mode:'LOCKED',surah:112,ayah:1,confidence:95};
+  pipeline._displaySurah=112;pipeline._displayAyah=1;
+  pipeline._whisperSurah=112;pipeline._whisperAyah=1;
+  pipeline.setFastMode(true);pipeline.setSlowMode(true);pipeline.setSlowMode(false);
+  assert.equal(pipeline.followMode,false);
+  pipeline._scheduleReadAdvance(95,0,1,20);
+  assert.ok(pipeline._displayAdvanceTimer);
+  await new Promise(resolve=>setTimeout(resolve,60));
+  assert.equal(pipeline._displayAyah,2);
+  pipeline.setPracticeMode(true);
+  pipeline._scheduleReadAdvance(95,0,1,20);
+  assert.equal(pipeline._displayAdvanceTimer,null);
+ } finally {pipeline.destroy();}
 });
 
 
@@ -415,13 +437,13 @@ test('Follow keeps word progress separate from predicted verse advancement', () 
  assert.equal(pipeline._displayAyah,13);assert.equal(pipeline._displayAdvanceTimer,null);pipeline.destroy();
 });
 
-test('switching recitor mode replaces the timer and restores Follow word updates', () => {
+test('switching reciter speeds replaces the timer and Normal keeps word updates', () => {
  loadQuran();const {pipeline}=makePipeline();pipeline.setTaraweehMode(false);pipeline.active=true;
  pipeline.state={...pipeline.state,mode:'LOCKED',surah:36,ayah:12,confidence:0.95};
  pipeline._displaySurah=36;pipeline._displayAyah=12;pipeline._lastDetectedVoiceAt=Date.now();
  pipeline.setFastMode(true);assert.ok(pipeline._displayAdvanceTimer);const first=pipeline._displayAdvanceTimer;
  pipeline.setSlowMode(true);assert.ok(pipeline._displayAdvanceTimer);assert.notEqual(pipeline._displayAdvanceTimer,first);
- pipeline.setSlowMode(false);assert.equal(pipeline._displayAdvanceTimer,null);assert.ok(pipeline._wordProgressInterval);
+ pipeline.setSlowMode(false);assert.ok(pipeline._displayAdvanceTimer);assert.ok(pipeline._wordProgressInterval);
  pipeline.setFastMode(true);assert.ok(pipeline._displayAdvanceTimer);pipeline.destroy();
 });
 
