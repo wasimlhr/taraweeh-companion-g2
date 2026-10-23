@@ -2145,24 +2145,27 @@ html.reader-open #qvtDock { display:none !important; }
   window.setReaderScript=async function(script){S.settings.readerScript=script==='madani'?'madani':'indopak';document.getElementById('readerScript').value=S.settings.readerScript;saveSettings();const ayah=Number(document.getElementById('readerAyah').value)||1;await loadReaderSurah(Number(document.getElementById('readerSurah').value),0,ayah);};
   async function showReaderSplash(){
     const epoch=++_readerEpoch, image=new Image();image.src='./artwork/quran-splash.png';
-    try{await image.decode();const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,576,288);ctx.drawImage(image,214,12,148,264);const data=ctx.getImageData(0,0,576,288);for(let i=0;i<data.data.length;i+=4){const ink=255-(data.data[i]*.2126+data.data[i+1]*.7152+data.data[i+2]*.0722);data.data[i]=data.data[i+1]=data.data[i+2]=ink;}ctx.putImageData(data,0,0);await sendReaderCanvas(canvas,epoch);await new Promise(resolve=>setTimeout(resolve,650));}catch(error){trace('reader.splash',String(error));}
+    try{await image.decode();const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,576,288);
+      // Exclude the scanned artwork's bottom border while keeping the ornament.
+      ctx.drawImage(image,0,0,image.naturalWidth,image.naturalHeight-7,214,12,148,264);
+      const data=ctx.getImageData(0,0,576,288);for(let i=0;i<data.data.length;i+=4){const ink=255-(data.data[i]*.2126+data.data[i+1]*.7152+data.data[i+2]*.0722);data.data[i]=data.data[i+1]=data.data[i+2]=ink;}ctx.putImageData(data,0,0);await sendReaderCanvas(canvas,epoch,{splash:true});await new Promise(resolve=>setTimeout(resolve,650));}catch(error){trace('reader.splash',String(error));}
   }
-  async function sendReaderCanvas(canvas,epoch){
+  async function sendReaderCanvas(canvas,epoch,{splash=false}={}){
     const ctx=canvas.getContext('2d');let failure=null;
-    const interleaved=!!S.settings.readerGlassesTranslation&&!_readerPicking&&!!_readerNativeText;
-    const miniPlayer=_audioMode&&!_readerPicking&&!!_audioVisualModule;
+    const interleaved=!splash&&!!S.settings.readerGlassesTranslation&&!_readerPicking&&!!_readerNativeText;
+    const miniPlayer=!splash&&_audioMode&&!_readerPicking&&!!_audioVisualModule;
     if(miniPlayer){_audioFrame=canvas;_audioFooterLayout=interleaved;ctx.save();ctx.translate(0,256);_audioVisualModule.drawAudioPlayer(ctx,_audioVisual||{});ctx.restore();}
     const tiles=Array.from({length:interleaved&&!miniPlayer?2:4},(_,i)=>({x:i%2*288,y:miniPlayer&&interleaved&&i>=2?256:Math.floor(i/2)*144,height:miniPlayer&&interleaved&&i>=2?32:144}));
-    const nativeKey=miniPlayer+':'+interleaved+':'+_readerNativeY+':'+_readerNativeText;
+    const nativeKey=splash+':'+miniPlayer+':'+interleaved+':'+_readerNativeY+':'+_readerNativeText;
     if(nativeKey!==_readerNativeKey){_readerImageLayout=false;_readerNativeKey=nativeKey;}
     await queueBridgeCall('readerPage',async()=>{
       if(!_readerActive||epoch!==_readerEpoch)return;
       if(!_readerImageLayout){
       const images=tiles.map((tile,i)=>({containerID:20+i,containerName:'reader'+i,xPosition:tile.x,yPosition:tile.y,width:288,height:tile.height,zOrderIndex:i+1}));
       const content=readerNativeContent(Number(S.settings.readerAutoSeconds)||15);_readerCountdownLast=content;
-      const textObject=miniPlayer?[]:[{containerID:1,containerName:'readerInput',xPosition:360,yPosition:27,width:44,height:24,content,isEventCapture:1,zOrderIndex:5,paddingLength:0}];
+      const textObject=miniPlayer||splash?[]:[{containerID:1,containerName:'readerInput',xPosition:360,yPosition:27,width:44,height:24,content,isEventCapture:1,zOrderIndex:5,paddingLength:0}];
       if(interleaved)textObject.push({containerID:miniPlayer?1:2,containerName:miniPlayer?'readerInput':'readerTranslation',xPosition:16,yPosition:144,width:544,height:miniPlayer?108:144,content:_readerNativeText,isEventCapture:miniPlayer?1:0,zOrderIndex:5,paddingLength:0});
-      else if(miniPlayer)textObject.push({containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:576,height:288,content:' ',isEventCapture:1,zOrderIndex:0,paddingLength:0});
+      else if(miniPlayer||splash)textObject.push({containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:576,height:288,content:' ',isEventCapture:1,zOrderIndex:0,paddingLength:0});
       const ok=await S.bridge.rebuildPageContainer({containerTotalNum:images.length+textObject.length,textObject,imageObject:images,menuObject:glassesMenu()});
       if(ok===false){failure=Error('Reader layout rejected');throw failure;}
       _readerImageLayout=true;_readerLastTiles=[];
