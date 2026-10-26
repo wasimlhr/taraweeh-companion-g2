@@ -1083,7 +1083,7 @@ html.standalone #verseCard { flex:0 0 auto;height:var(--verse-region-height,340p
 #mainView #verseCard { padding:12px;gap:8px; }
 #mainView #recordBtn { min-height:44px;padding:10px 16px; }
 #captureControls { display:flex;align-items:stretch;gap:8px;min-width:0; }
-#homePaceModeBtn { flex:none;min-height:44px;padding:8px 12px;font-size:12px;margin:0; }
+#homePaceModeBtn { flex:0 0 132px;width:132px;box-sizing:border-box;white-space:nowrap;min-height:44px;padding:8px 12px;font-size:12px;margin:0; }
 html[data-audio="true"] #homePaceModeBtn,html[data-recitation-mode="practice"] #homePaceModeBtn { display:none; }
 #captureControls #recordBtn { flex:1;min-width:0;margin:0; }
 #homeMicToggle { display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:34px;padding:6px;margin:0;border:1px solid var(--bc-4);border-radius:8px;background:var(--bc-2);color:var(--tc-1);cursor:pointer; }
@@ -2237,10 +2237,10 @@ html.reader-open #qvtDock { display:none !important; }
   window.setReaderGlassesTranslation=async function(enabled){S.settings.readerGlassesTranslation=!!enabled;saveSettings();applyReaderDisplay();if(_readerActive&&!_audioMode&&_readerData)await loadReaderSurah(_readerData.surah,0,Number(document.getElementById('readerAyah').value)||1);};
   window.toggleReaderGlassesTranslation=function(){return setReaderGlassesTranslation(!readerGlassesTranslationEnabled());};
   window.setReaderAutoSeconds=function(seconds){S.settings.readerAutoSeconds=[5,10,15,20,30,45,60,90,120].includes(seconds)?seconds:15;saveSettings();document.getElementById('readerAutoSeconds').value=String(S.settings.readerAutoSeconds);resetReaderAutoTimer();};
-  function readerBookmarkMatches(){const b=S.settings.readerBookmark;return !!(b&&_readerData&&b.surah===_readerData.surah&&b.page===_readerPage&&b.layout===(S.settings.readerLayout==='single'?'single':'maximum')&&b.script===(S.settings.readerScript==='madani'?'madani':'indopak'));}
+  function readerBookmarkMatches(){const b=S.settings.readerBookmark;return !!(b&&_readerData&&b.surah===_readerData.surah&&(b.pagination===4?b.page===_readerPage:b.ayah===_readerPages[_readerPage]?.ayahs[0])&&b.layout===(S.settings.readerLayout==='single'?'single':'maximum')&&b.script===(S.settings.readerScript==='madani'?'madani':'indopak'));}
   function updateReaderBookmarkUI(){const b=S.settings.readerBookmark,selected=readerBookmarkMatches();const star=document.getElementById('readerBookmarkStar');star.textContent=selected?'★':'☆';star.setAttribute('aria-pressed',String(selected));star.setAttribute('aria-label',selected?'Remove bookmark':'Bookmark this page');const resume=document.getElementById('readerBookmarkResume');resume.hidden=!b;resume.textContent=b?'Resume '+b.surah+':'+b.ayah:'Resume bookmark';}
-  window.toggleReaderBookmark=function(){if(!_readerData||_readerLoading)return;if(readerBookmarkMatches())delete S.settings.readerBookmark;else S.settings.readerBookmark={surah:_readerData.surah,ayah:_readerPages[_readerPage].ayahs[0],page:_readerPage,layout:S.settings.readerLayout==='single'?'single':'maximum',script:S.settings.readerScript==='madani'?'madani':'indopak',glassesTranslation:readerGlassesTranslationEnabled(),pagination:3};saveSettings();updateReaderBookmarkUI();_readerImageLayout=false;renderReaderPage();log(S.settings.readerBookmark?'Reading bookmark saved':'Reading bookmark removed','ok');};
-  window.resumeReaderBookmark=async function(){const b=S.settings.readerBookmark;if(!b||!Number.isInteger(b.surah)||b.surah<1||b.surah>114)return;setReaderAutoScroll(false);S.settings.readerSurah=b.surah;S.settings.readerAyah=b.ayah;S.settings.readerLayout=b.layout==='single'?'single':'maximum';if(typeof b.glassesTranslation==='boolean')S.settings.readerGlassesTranslation=b.glassesTranslation;S.settings.readerScript=b.script==='madani'?'madani':'indopak';saveSettings();if(!_readerActive)await openQuranReader();document.getElementById('readerScript').value=S.settings.readerScript;applyReaderDisplay();await loadReaderSurah(b.surah,Number(b.page)||0,b.pagination===3?0:b.ayah);};
+  window.toggleReaderBookmark=function(){if(!_readerData||_readerLoading)return;if(readerBookmarkMatches())delete S.settings.readerBookmark;else S.settings.readerBookmark={surah:_readerData.surah,ayah:_readerPages[_readerPage].ayahs[0],page:_readerPage,layout:S.settings.readerLayout==='single'?'single':'maximum',script:S.settings.readerScript==='madani'?'madani':'indopak',glassesTranslation:readerGlassesTranslationEnabled(),pagination:4};saveSettings();updateReaderBookmarkUI();_readerImageLayout=false;renderReaderPage();log(S.settings.readerBookmark?'Reading bookmark saved':'Reading bookmark removed','ok');};
+  window.resumeReaderBookmark=async function(){const b=S.settings.readerBookmark;if(!b||!Number.isInteger(b.surah)||b.surah<1||b.surah>114)return;setReaderAutoScroll(false);S.settings.readerSurah=b.surah;S.settings.readerAyah=b.ayah;S.settings.readerLayout=b.layout==='single'?'single':'maximum';if(typeof b.glassesTranslation==='boolean')S.settings.readerGlassesTranslation=b.glassesTranslation;S.settings.readerScript=b.script==='madani'?'madani':'indopak';saveSettings();if(!_readerActive)await openQuranReader();document.getElementById('readerScript').value=S.settings.readerScript;applyReaderDisplay();await loadReaderSurah(b.surah,Number(b.page)||0,b.pagination===4?0:b.ayah);};
   function closeReaderDisplayOptions(restoreFocus=false){
     const details=document.getElementById('readerDisplayOptions');
     if(!details.open)return;
@@ -2362,8 +2362,8 @@ html.reader-open #qvtDock { display:none !important; }
     if(basmala){ctx.font='24px '+readerFont();ctx.textAlign='center';ctx.fillText(displayArabic(basmala),288,91-Math.max(0,metrics.size-28));}
     if(page.kind==='arabic-only'){
       ctx.font=metrics.size+'px '+readerFont();ctx.textAlign='right';
-      page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,(showHeader?(basmala?metrics.openingY:metrics.headerY):metrics.compactY)+i*metrics.step));
-      await sendReaderCanvas(canvas,epoch);return;
+      page.lines.forEach((line,i)=>{const numberedOpening=showHeader&&_readerData.surah===1&&page.ayahs[0]===1&&i===0;ctx.textAlign=numberedOpening?'center':'right';ctx.fillText(displayArabic(line),numberedOpening?288:548,(showHeader?(basmala?metrics.openingY:metrics.headerY):metrics.compactY)+i*metrics.step);});
+      await sendReaderCanvas(canvas,epoch);if(epoch===_readerEpoch)resetReaderAutoTimer();return;
     }
     if(page.kind==='interleaved'){
       ctx.font=metrics.size+'px '+readerFont();ctx.textAlign='right';
@@ -4088,9 +4088,18 @@ html.reader-open #qvtDock { display:none !important; }
       if(!_homeLayout){
         const ok=await S.bridge.rebuildPageContainer(page);
         if(ok===false)throw Error('Glasses rejected mode home');
-        _homeLayout=true;_homeLastTiles=[];_readerImageLayout=false;_imagePageActive=false;
+        _homeLayout=true;_homeLastTiles=page.textObject.map(c=>c.content);_readerImageLayout=false;_imagePageActive=false;
       }
-      else if(current()){let ok=false;try{ok=await S.bridge.textContainerUpgrade({containerID:1,containerName:'homeInput',content:page.textObject[0].content});}catch(_){}if(ok===false){_homeLayout=false;await S.bridge.rebuildPageContainer(page);if(current())_homeLayout=true;}}
+      else if(current()){
+        for(let i=0;i<page.textObject.length;i++){
+          if(!current())return;
+          const c=page.textObject[i];if(_homeLastTiles[i]===c.content)continue;
+          let ok=false;try{ok=await S.bridge.textContainerUpgrade({containerID:c.containerID,containerName:c.containerName,content:c.content});}catch(_){}
+          if(!current())return;
+          if(ok===false){_homeLayout=false;const rebuilt=await S.bridge.rebuildPageContainer(page);if(rebuilt===false)throw Error('Glasses rejected mode home');if(current()){_homeLayout=true;_homeLastTiles=page.textObject.map(c=>c.content);}return;}
+          _homeLastTiles[i]=c.content;
+        }
+      }
     });
   }
 
@@ -4483,7 +4492,7 @@ html.reader-open #qvtDock { display:none !important; }
       S.startupPageCreated=true;S.displayRebuilt=!home;
       if(!current())return;
       _lastRakHdr=rakatHdr();_lastClkHdr=clockHdr();
-      if(home){_homeLayout=true;_readerImageLayout=false;_imagePageActive=false;}
+      if(home){_homeLayout=true;_homeLastTiles=page.textObject.map(c=>c.content);_readerImageLayout=false;_imagePageActive=false;}
       else if(!_readerActive){refreshGlassesWelcomeText();glassesTopBarUpdate();}
       log('G2: '+(home?'native mode menu':'startup page')+' ready','ok');
     });

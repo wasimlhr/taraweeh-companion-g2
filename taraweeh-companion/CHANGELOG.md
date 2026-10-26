@@ -7,6 +7,9 @@
 - Include the tested reading and listening controls, Arabic display preferences, Saad Al-Ghamdi recordings, and synchronized Noreen Al-Duri support.
 - Add timer regression coverage for continuous Normal, Fast, and Slow Translate modes.
 - Publish accepted Practice matches immediately and retain new-verse candidates when local tracking misses.
+- Prevent stale manual timing samples from overriding the current speech-learned tempo.
+- Show the Read Quran surah header only on its opening page, reclaim later text space, and preserve auto-scroll and existing bookmarks.
+- Keep the reciter speed button fixed-width and use four native glasses launcher containers, including mode guidance and controls on the right.
 
 ## 3.4.13 - 2026-10-12
 

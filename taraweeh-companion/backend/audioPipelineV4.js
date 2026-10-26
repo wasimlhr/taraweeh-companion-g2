@@ -988,6 +988,10 @@ export class AudioPipeline {
       console.log(`[Pipeline] Pace ignored: ${wc}w in ${(elapsedMs/1000).toFixed(1)}s = ${sample}ms/w (outside 700-4000 range)`);
       return;
     }
+    // Once speech timings have established the current tempo, old manual
+    // samples belong to an earlier calibration. A new correction must not
+    // replace that tempo with their stale median.
+    if (this._wordPaceSamples > 0) this._msPerWordSamples = [];
     this._msPerWordSamples.push(sample);
     if (this._msPerWordSamples.length > 10) this._msPerWordSamples.shift();
     // Weighted median: sort samples, take middle value. More robust than mean

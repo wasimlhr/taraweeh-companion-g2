@@ -7,6 +7,8 @@ import { validateEvenHubPageContainer } from '@evenrealities/even_hub_sdk';
 import { HOME_MODES, modeHomePage } from '../app/glassesHome.js';
 import * as typography from '../app/glassesTypography.js';
 import * as readerPagination from '../app/readerPagination.js';
+import * as readerArtwork from '../app/readerArtwork.js';
+import { readerChapter } from '../backend/quranReader.js';
 
 const html = readFileSync(new URL('../app/index.html', import.meta.url), 'utf8');
 const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -54,6 +56,8 @@ function harness() {
       drawFontTest,updatePhoneUI,setFontTest:(active,controls)=>{_fontTestActive=active;_fontTestUI=controls;},
       setAudioControls: controls=>{_audioMode=true;_audioUI=controls;},
       setListenPages:(pages,page,state)=>{_readerModule=readerPagination;_readerPages=pages;_readerPage=page;_audioVisual=state;},
+      prepareReader:(data,pages,page,artwork)=>{_readerActive=true;_readerData=data;_readerModule=readerPagination;_readerPages=pages;_readerPage=page;_readerArtworkModule=artwork;_readerAutoEnabled=true;},
+      renderReaderPage,readerBookmarkMatches,
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       showModeHome, leaveModeHome, getHome:()=>({active:_homeActive,index:_homeIndex}),
       setReaderPicker:(kind,value,max)=>{_readerActive=true;_readerPicking=kind;_readerPick=value;_readerData={surah:2,verses:Array(max).fill({})};},
@@ -87,6 +91,30 @@ function harness() {
     async flush() { for (let i = 0; i < 12; i++) await ui.S.bridgeCallQueue; },
   };
 }
+
+test('reader renderer removes the opening title, retains the frame and rearms auto-scroll', async () => {
+ const h=harness(),draws=[],borders=[];
+ const ctx=new Proxy({measureText:t=>({width:t.length*10}),fillText(text,x,y){draws.push({text,x,y});},strokeRect(...args){borders.push(args);},getImageData:()=>({data:new Uint8Array(288*144*4)})},{get:(target,key)=>key in target?target[key]:()=>{}});
+ h.context.document.createElement=()=>({getContext:()=>ctx});
+ h.context.document.getElementById('readerPaper').style.setProperty=()=>{};
+ h.ui.S.bridge.updateImageRawData=async()=> 'success';
+ Object.assign(h.ui.S.settings,{readerLayout:'single',readerScript:'indopak'});
+ const chapter=readerChapter(1),pages=readerPagination.readerReadingPages(chapter.verses,t=>t.length*10,t=>t.length*10,{layout:'single',showTranslation:false,numberedBasmala:true});
+ h.ui.prepareReader(chapter,pages,0,readerArtwork);
+ await h.ui.renderReaderPage();await h.flush();
+ assert.ok(draws.some(d=>d.text.startsWith('سورة ')));
+ assert.ok(draws.some(d=>d.x===288&&d.y===typography.arabicMetrics().headerY),'numbered Bismillah stays centered');
+ assert.equal([...h.intervals.values()].filter(t=>t.ms===250).length,1);
+ draws.length=0;borders.length=0;
+ h.ui.prepareReader(chapter,pages,1,readerArtwork);
+ await h.ui.renderReaderPage();await h.flush();
+ assert.ok(!draws.some(d=>d.text.startsWith('سورة ')));
+ assert.ok(draws.some(d=>d.y===typography.arabicMetrics().compactY),'text moves into reclaimed space');
+ assert.equal(borders.length,2,'both manuscript border rectangles remain');
+ assert.equal([...h.intervals.values()].filter(t=>t.ms===250).length,1,'exactly one auto-scroll timer stays active');
+ h.ui.S.settings.readerBookmark={surah:1,ayah:pages[1].ayahs[0],page:99,layout:'single',script:'indopak',pagination:3};
+ assert.equal(h.ui.readerBookmarkMatches(),true,'old bookmarks match by ayah after repagination');
+});
 
 test('switching local languages preserves the source state and English glasses fallback', () => {
   const h = harness();
@@ -440,27 +468,58 @@ test('stop clears timers and stale verse; late state cannot repaint glasses',asy
  assert.equal(h.writes.length,count);assert.equal(h.ui.S.isRecording,false);
 });
 
-test('mode launcher is one native text container with all six choices and no images',()=>{
- const page=modeHomePage({menuItems:[]});
+test('mode launcher uses four non-overlapping native regions with two on the right',()=>{
+ for(let selected=0;selected<HOME_MODES.length;selected++){
+ const page=modeHomePage({menuItems:[]},selected);
  assert.equal(validateEvenHubPageContainer(page).valid,true);
- assert.equal(page.imageObject,undefined);assert.equal(page.containerTotalNum,1);
- assert.equal(page.textObject[0].isEventCapture,1);
- assert.ok(page.textObject[0].height<=288);assert.match(page.textObject[0].content,/> Translate/);
+ assert.equal(page.imageObject,undefined);assert.equal(page.containerTotalNum,4);
+ assert.equal(page.textObject.filter(c=>c.isEventCapture===1).length,1);
+ assert.match(page.textObject[0].content,new RegExp('> '+HOME_MODES[selected].label));
+ const right=page.textObject.filter(c=>c.xPosition>=288);assert.equal(right.length,2);
+ assert.ok(right[0].content.startsWith(HOME_MODES[selected].label));
+ assert.ok(right[0].yPosition+right[0].height<=right[1].yPosition);
+ for(const c of page.textObject){
+  assert.ok(c.xPosition+c.width<=576&&c.yPosition+c.height<=288);
+  for(const line of c.content.split('\n'))assert.ok(getTextWidth(line)<=c.width,`Clipped line: ${line}`);
+  assert.ok(c.content.split('\n').length*28<=c.height,'no firmware overflow scrolling');
+  for(const other of page.textObject.filter(o=>o!==c))assert.ok(c.xPosition+c.width<=other.xPosition||other.xPosition+other.width<=c.xPosition||c.yPosition+c.height<=other.yPosition||other.yPosition+other.height<=c.yPosition);
+ }
+ }
  assert.deepEqual(HOME_MODES.map(m=>m.key),['listen','practice','reader','taraweeh','audio','settings']);
 });
 
 test('native mode menu selection and reader pickers transfer no images',async()=>{
  const h=harness();h.ui.S.isRecording=false;let images=0;h.ui.S.bridge.updateImageRawData=async()=>images++;
  h.ui.showModeHome();await h.flush();const builds=h.writes.filter(w=>w.type==='rebuild').length;
- h.ui.onG2Event({textEvent:{eventType:2}});await h.flush();assert.equal(images,0);assert.equal(h.writes.filter(w=>w.type==='rebuild').length,builds);assert.match(h.writes.at(-1).data.content,/> Practice/);
+ h.ui.onG2Event({textEvent:{eventType:2}});await h.flush();assert.equal(images,0);assert.equal(h.writes.filter(w=>w.type==='rebuild').length,builds);
+ const updates=h.writes.filter(w=>w.type==='text');assert.deepEqual(updates.map(w=>w.data.containerName),['homeInput','homeDetail']);
+ assert.match(updates[0].data.content,/> Practice/);assert.match(updates[1].data.content,/Practice[\s\S]*Holds the verse/);
  h.ui.leaveModeHome();h.ui.setReaderPicker('ayah',12,286);h.ui.onG2Event({textEvent:{eventType:2}});await h.flush();assert.equal(images,0);const picker=h.writes.at(-1).page;assert.equal(picker.imageObject,undefined);assert.match(picker.textObject[0].content,/> 13/);
  h.ui.onG2Event({textEvent:{eventType:2}});await h.flush();assert.equal(images,0);assert.equal(h.writes.at(-1).type,'text');assert.match(h.writes.at(-1).data.content,/> 14/);
 });
 
 test('startup opens the native mode menu directly without an intermediate ready screen',async()=>{
  const h=harness();h.ui.S.isRecording=false;h.ui.glassesStartup();await h.flush();
- const pages=h.writes.filter(w=>w.page);assert.equal(pages.length,1);assert.equal(pages[0].page.containerTotalNum,1);assert.match(pages[0].page.textObject[0].content,/Choose mode/);
+ const pages=h.writes.filter(w=>w.page);assert.equal(pages.length,1);assert.equal(pages[0].page.containerTotalNum,4);assert.match(pages[0].page.textObject.find(c=>c.containerName==='homeTitle').content,/Choose mode/);
  assert.equal(h.ui.getHome().active,true);
+});
+
+test('launcher restores all four regions after a rejected text update',async()=>{
+ const h=harness();h.ui.S.isRecording=false;h.ui.showModeHome();await h.flush();
+ h.ui.S.bridge.textContainerUpgrade=async()=>false;
+ h.ui.onG2Event({textEvent:{eventType:2}});await h.flush();
+ const page=h.writes.filter(w=>w.page).at(-1).page;
+ assert.equal(page.containerTotalNum,4);assert.match(page.textObject[0].content,/> Practice/);
+ assert.match(page.textObject.find(c=>c.containerName==='homeDetail').content,/Practice/);
+ assert.equal(validateEvenHubPageContainer(page).valid,true);
+});
+
+test('reciter pace cycles labels while keeping one fixed-width phone control',()=>{
+ const h=harness(),labels=[];
+ for(let i=0;i<3;i++){h.context.cyclePaceMode();labels.push(h.nodes.get('homePaceModeBtn').textContent);}
+ assert.deepEqual(labels,['Fast reciter ↔','Slow reciter ↔','Normal reciter ↔']);
+ const rule=html.match(/#homePaceModeBtn\s*\{([^}]+)\}/)[1];
+ assert.match(rule,/flex:0 0 132px/);assert.match(rule,/width:132px/);assert.match(rule,/white-space:nowrap/);
 });
 
 test('double-tap keeps reader, audio and live recitation modes open; only launcher requests system exit',async()=>{

@@ -109,12 +109,42 @@ test('Read Quran keeps single and multiple verse choices with translation enable
  const verses=readerChapter(55).verses,measure=t=>t.length*9;
  const multiple=readerReadingPages(verses,measure,measure,{showTranslation:true});
  assert.ok(multiple.some(page=>page.ayahs.length>1));
- assert.ok(multiple.every(page=>page.header));assert.ok(multiple.some(page=>page.translationLines.length));
- for(const page of multiple.filter(p=>p.kind==='interleaved')){assert.ok(page.lines.length<=2);assert.ok(page.translationLines.length<=4);assert.ok(page.ayahs.length<=4);}
+ assert.equal(multiple[0].header,true);assert.ok(multiple.slice(1).every(page=>!page.header));assert.ok(multiple.some(page=>page.translationLines.length));
+ for(const page of multiple.filter(p=>p.kind==='interleaved')){assert.ok(page.lines.length<=(page.header?2:3));assert.ok(page.translationLines.length<=4);assert.ok(page.ayahs.length<=4);}
  assert.deepEqual([...new Set(multiple.flatMap(p=>p.ayahs))],verses.map(v=>v.ayah));
  const single=readerReadingPages(verses,measure,measure,{layout:'single',showTranslation:true});
  assert.ok(single.every(page=>page.ayahs.length===1));assert.ok(single.length>multiple.length);
  for(const verse of verses){const pages=single.filter(p=>p.ayah===verse.ayah);assert.equal(pages.flatMap(p=>p.translationLines).join(' '),verse.translation);}
+});
+
+test('Read Quran reserves its title and Bismillah only on the opening and reclaims later pages',()=>{
+ const measure=t=>t.length*10;
+ for(const size of ARABIC_SIZES)for(const layout of ['single','maximum'])for(const showTranslation of [false,true]){
+  const source=readerChapter(2),chapter={...source,verses:[...source.verses.slice(0,4),source.verses[281]]},metrics=arabicMetrics(size);
+  const pages=readerReadingPages(chapter.verses,measure,measure,{layout,showTranslation,hasBasmala:true,arabicSize:size});
+  assert.equal(pages[0].header,true);
+  assert.equal(pages[0].opening,true);
+  assert.ok(pages.slice(1).every(p=>p.header===false&&!p.opening));
+  assert.deepEqual([...new Set(pages.flatMap(p=>p.ayahs))],chapter.verses.map(v=>v.ayah));
+  if(!showTranslation){
+   assert.ok(pages.slice(1).some(p=>p.lines.length>metrics.onlyOpening),'use the former header space');
+   for(const page of pages){const base=page.header?metrics.openingY:metrics.compactY;assert.ok(base+(page.lines.length-1)*metrics.step+metrics.descent<=252);}
+  }
+ }
+});
+
+test('opening-only Read Quran headers preserve every ayah across all chapters and font sizes',()=>{
+ for(let surah=1;surah<=114;surah++){
+  const chapter=readerChapter(surah),expected=chapter.verses.map(v=>v.ayah);
+  for(const size of ARABIC_SIZES)for(const layout of ['single','maximum'])for(const showTranslation of [false,true]){
+   const measure=t=>t.length*size/3;
+   const pages=readerReadingPages(chapter.verses,measure,measure,{layout,showTranslation,hasBasmala:!!chapter.basmala,numberedBasmala:surah===1,arabicSize:size});
+   assert.ok(pages.length,`${surah} ${size}px ${layout}`);
+   assert.equal(pages[0].header,true);
+   assert.ok(pages.slice(1).every(p=>p.header===false),'no repeated chapter title');
+   assert.deepEqual([...new Set(pages.flatMap(p=>p.ayahs))],expected,'all ayahs remain reachable in order');
+  }
+ }
 });
 
 test('Read Quran multiple verse pages preserve translations, long ayahs and an Arabic-only choice',()=>{

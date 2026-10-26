@@ -52,6 +52,22 @@ for (const action of ['stop', 'practice', 'follow']) {
   });
 }
 
+test('a new manual pace correction does not resurrect old samples after speech learns a faster tempo', t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: 100000 });
+  const pipeline = lockedPipeline();
+  try {
+    pipeline._displaySurah = 36;
+    pipeline._displayAyah = 8;
+    pipeline._wordPaceSamples = 5;
+    pipeline._measuredMsPerWord = 818;
+    pipeline._msPerWordSamples = [1688, 1700, 1542, 1396];
+    pipeline._ayahStartTime = Date.now() - 6960;
+    pipeline._learnPaceFromManual();
+    assert.equal(pipeline._measuredMsPerWord, 870);
+    assert.deepEqual(pipeline._msPerWordSamples, [870]);
+  } finally { pipeline.destroy(); }
+});
+
 for (const speed of ['normal', 'fast', 'slow']) {
   test(`Translate ${speed} keeps advancing through silence beyond the last heard ayah`, t => {
     t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: 100000 });

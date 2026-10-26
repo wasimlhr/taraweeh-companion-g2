@@ -43,7 +43,7 @@ export function readerTranslationPages(verses,measure){
 // measured line budgets as the renderer; oversized ayahs retain timed pages.
 export function readerListeningPages(verses,measureArabic,measureTranslation,{translationOnly=false,arabicOnly=false,hasBasmala=false,compactAfterOpening=true,singleAyahPages=false,arabicSize=28}={}){
  const metrics=arabicMetrics(arabicSize),pages=[];let group=[];
- const fallback=verse=>arabicOnly?readerArabicOnlyPages(verse,measureArabic,hasBasmala,arabicSize):translationOnly?readerTranslationPages([verse],measureTranslation):singleAyahPages?readerSinglePages([verse],measureArabic,measureTranslation,520,hasBasmala,0,false,arabicSize):readerInterleavedPages([verse],measureArabic,measureTranslation,520,hasBasmala,4,compactAfterOpening,arabicSize);
+ const fallback=verse=>arabicOnly?readerArabicOnlyPages(verse,measureArabic,hasBasmala,arabicSize):translationOnly?readerTranslationPages([verse],measureTranslation):singleAyahPages?readerSinglePages([verse],measureArabic,measureTranslation,520,hasBasmala,0,compactAfterOpening,arabicSize):readerInterleavedPages([verse],measureArabic,measureTranslation,520,hasBasmala,4,compactAfterOpening,arabicSize);
  function packed(items){
   const lines=translationOnly?[]:paginateReader(items,measureArabic,520,1).flatMap(p=>p.lines);
   const translated=arabicOnly?[]:translationLines(items.map(v=>(v.ayahLabel||v.ayah)+'. '+String(v.translation||'').trim()).join('  '),measureTranslation);
@@ -70,10 +70,10 @@ function readerArabicOnlyPages(verse,measure,hasBasmala,arabicSize=28){
 // Layout and translation are independent preferences in Read Quran. Showing
 // translation must not silently replace the selected multiple-verse layout.
 export function readerReadingPages(verses,measureArabic,measureTranslation,{layout='maximum',showTranslation=true,hasBasmala=false,numberedBasmala=false,arabicSize=28}={}){
- const count=arabicMetrics(arabicSize).legacyCount;
- if(layout==='single')return showTranslation?readerSinglePages(verses,measureArabic,measureTranslation,520,hasBasmala,0,false,arabicSize):readerVerseWindows(verses,measureArabic,520,count);
- if(!showTranslation)return readerPackedWindows(verses,measureArabic,520,count,hasBasmala,numberedBasmala);
- return readerListeningPages(verses,measureArabic,measureTranslation,{hasBasmala,compactAfterOpening:false,singleAyahPages:true,arabicSize});
+ const metrics=arabicMetrics(arabicSize),openingCount=hasBasmala?metrics.onlyOpening:metrics.onlyHeader;
+ if(layout==='single')return showTranslation?readerSinglePages(verses,measureArabic,measureTranslation,520,hasBasmala,0,true,arabicSize):verses.flatMap(verse=>readerVerseWindows([verse],measureArabic,520,verse.ayah===1?openingCount:metrics.onlyCompact,metrics.onlyCompact).map(page=>({...page,kind:'arabic-only',opening:page.header&&hasBasmala})));
+ if(!showTranslation)return readerPackedWindows(verses,measureArabic,520,openingCount+(hasBasmala?1:0),hasBasmala,numberedBasmala,metrics.onlyCompact).map(page=>({...page,kind:'arabic-only'}));
+ return readerListeningPages(verses,measureArabic,measureTranslation,{hasBasmala,compactAfterOpening:true,singleAyahPages:true,arabicSize});
 }
 
 // Flow complete ayahs into five full-screen lines without dropping words.
@@ -102,19 +102,27 @@ export function readerWindows(verses,measure,width=520,lineCount=4){
 }
 
 // Each glasses window belongs to exactly one numbered ayah.
-export function readerVerseWindows(verses,measure,width=520,lineCount=4){
- return verses.flatMap(verse=>{const windows=readerWindows([verse],measure,width,lineCount);return windows.map((window,index)=>({...window,ayah:verse.ayah,part:index+1,parts:windows.length}));});
+export function readerVerseWindows(verses,measure,width=520,lineCount=4,compactLineCount=lineCount){
+ return verses.flatMap(verse=>{
+  const flow=paginateReader([verse],measure,width,1),windows=[];
+  for(let start=0;start<flow.length;start++){
+   const header=verse.ayah===1&&start===0,count=start===0?lineCount:compactLineCount,slice=flow.slice(start,start+count);
+   windows.push({lines:slice.flatMap(p=>p.lines),ayahs:[...new Set(slice.flatMap(p=>p.ayahs))],startLine:start,totalLines:flow.length,header});
+   if(start+count>=flow.length)break;
+  }
+  return windows.map((window,index)=>({...window,ayah:verse.ayah,part:index+1,parts:windows.length}));
+ });
 }
 
 // Dense, non-overlapping windows share exactly the same ayah range on both displays.
-export function readerPackedWindows(verses,measure,width=520,lineCount=4,opening=false,numberedBasmala=false){
+export function readerPackedWindows(verses,measure,width=520,lineCount=4,opening=false,numberedBasmala=false,compactLineCount=lineCount){
  const flow=numberedBasmala?[...paginateReader(verses.slice(0,1),measure,width,1),...paginateReader(verses.slice(1),measure,width,1)]:paginateReader(verses,measure,width,1);
  const lines=flow.map(p=>({text:p.lines[0],ayahs:p.ayahs}));
  const pages=[];
  for(let start=0;start<lines.length;){
-  const count=start===0&&opening?lineCount-1:lineCount;
+  const count=start===0?(opening?lineCount-1:lineCount):compactLineCount;
   const slice=lines.slice(start,start+count);
-  pages.push({lines:slice.map(l=>l.text),ayahs:[...new Set(slice.flatMap(l=>l.ayahs))],startLine:start,totalLines:lines.length,opening:start===0});
+  pages.push({lines:slice.map(l=>l.text),ayahs:[...new Set(slice.flatMap(l=>l.ayahs))],startLine:start,totalLines:lines.length,opening:start===0,header:start===0});
   start+=count;
  }
  return pages;
