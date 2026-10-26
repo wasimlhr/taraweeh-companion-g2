@@ -576,7 +576,12 @@ function handlePracticeLocked(whisperText, state, fastMode, opts) {
     missBeforeResuming: Number.MAX_SAFE_INTEGER,
     missBeforeLost: Number.MAX_SAFE_INTEGER,
   });
-  if (tracked.mode === 'LOCKED') return tracked;
+  if (tracked.mode === 'LOCKED') {
+    // A local miss holds the current Practice verse, but must retain global
+    // candidates so Practice can accept a newly recited verse with its own
+    // two-word threshold (the same one used during initial search).
+    return tracked._locked ? tracked : { ...tracked, _matches: matches.slice(0, 3) };
+  }
   if (jumped && top.score >= SINGLE_WIN_SCORE && mc >= 2) {
     console.log(`[Anchor] Practice heard [${top.surah}:${top.ayah}] score=${top.score.toFixed(2)} (was ${state.surah}:${state.ayah})`);
     return {

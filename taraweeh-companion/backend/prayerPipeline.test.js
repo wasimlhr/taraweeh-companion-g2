@@ -241,6 +241,29 @@ test('a ready post-opening buffer is searched without waiting for another microp
   } finally { releaseOpening(); pipeline.destroy(); }
 });
 
+test('Practice publishes its first partial match and replaces it with the next heard verse', async t => {
+  loadQuran();
+  const updates = [];
+  const pipeline = new AudioPipeline({ onStateUpdate: m => updates.push(m), onStatus() {}, onError() {},
+    whisperOpts: { provider: 'groq', groqApiKey: 'test-key' } });
+  pipeline.active = true;
+  pipeline.setPracticeMode(true);
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ text: 'إنا أطيناك الكوثر' }), { status: 200 }));
+  try {
+    updates.length = 0;
+    await pipeline._processSearchTranscript({ text: 'سمرا دعنا هم أسفل سفلين', words: [], rms: 0.007,
+      bufMs: 5120, audioWindow: { startMs: 0, endMs: 5120 }, submittedBufferBytes: 0, myGen: pipeline._searchGen });
+    assert.ok(updates.some(m => m.type === 'state' && m.state.mode === 'LOCKED' && m.state.surah === 95 && m.state.ayah === 5),
+      'accepted partial match must reach the screen immediately');
+    await pipeline._processLockedChunk(Buffer.alloc(3000 * 32, 1), 1);
+    assert.equal(pipeline._displaySurah, 108);
+    assert.equal(pipeline._displayAyah, 1);
+    assert.ok(updates.some(m => m.type === 'state' && m.state.mode === 'LOCKED' && m.state.surah === 108 && m.state.ayah === 1));
+    assert.equal(pipeline._displayAdvanceTimer, null, 'Practice must remain recognition-driven');
+    assert.equal(pipeline.processing, false);
+  } finally { pipeline.destroy(); }
+});
+
 function makePipeline(opts = {}) {
   const updates = [];
   const statuses = [];

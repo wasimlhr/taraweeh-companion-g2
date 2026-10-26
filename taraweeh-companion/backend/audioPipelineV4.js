@@ -1818,8 +1818,9 @@ export class AudioPipeline {
           this._resetSearchBuf();
           this._lastLockedCall = 0;
           this._lockedBuf = Buffer.alloc(0);
-          if (!stale()) this._emitState(text, rms);
-          if (!stale()) this.processing = false;
+          // This accepted result owns the reset above. Its old generation is
+          // intentionally invalid now; still publish the verse we just accepted.
+          this._emitState(text, rms);
           return;
         }
         // Taraweeh: wait for anchor to lock — show candidate + "Auto locking".

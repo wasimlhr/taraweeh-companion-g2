@@ -6,6 +6,7 @@
 - Preserve Practice's recognition-driven verse holds and Taraweeh's separate prayer tracking.
 - Include the tested reading and listening controls, Arabic display preferences, Saad Al-Ghamdi recordings, and synchronized Noreen Al-Duri support.
 - Add timer regression coverage for continuous Normal, Fast, and Slow Translate modes.
+- Publish accepted Practice matches immediately and retain new-verse candidates when local tracking misses.
 
 ## 3.4.13 - 2026-10-12
 

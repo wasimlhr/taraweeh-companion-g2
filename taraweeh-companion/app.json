@@ -11,8 +11,6 @@
       "name": "network",
       "desc": "Connects to our backend for transcription, translation packs and study content; optional provider setup and source-credit links.",
       "whitelist": [
-        "https://taraweeh-companion-g2-production-150e.up.railway.app",
-        "wss://taraweeh-companion-g2-production-150e.up.railway.app/ws",
         "http://localhost:3001",
         "http://127.0.0.1:3001",
         "ws://localhost:3001",
