@@ -4,7 +4,7 @@ import {LANGUAGE_CODES, PACK_CODES} from './languageCatalog.js';
 /**
  * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.37 — on-device language packs + DIAG_TOKEN usage analytics
+ * v3.4.39 — on-device language packs + DIAG_TOKEN usage analytics
  *   Translate mode: general Quran follow-along translator; Taraweeh adds rak'ah tracking
  */
 import 'dotenv/config';
@@ -80,11 +80,15 @@ app.get('/glassesAudioPlayer.js',(req,res)=>res.sendFile(join(rootDir,'app','gla
 app.get('/listenQuran.js',(req,res)=>res.sendFile(join(rootDir,'app','listenQuran.js')));
 app.get('/readerPlayback.js',(req,res)=>res.sendFile(join(rootDir,'app','readerPlayback.js')));
 app.get('/readerAudioCache.js',(req,res)=>res.sendFile(join(rootDir,'app','readerAudioCache.js')));
+app.get('/glassesTypography.js',(req,res)=>res.sendFile(join(rootDir,'app','glassesTypography.js')));
+app.get('/fontTest.js',(req,res)=>res.sendFile(join(rootDir,'app','fontTest.js')));
 app.get('/api/quran/:surah', (req,res)=>{
  res.set('Access-Control-Allow-Origin','*');
  const lang=String(req.query.lang||'').trim();
  if(!LOCAL_TRANSLATION_LANGS.has(lang))return res.status(400).json({error:'Invalid translation language'});
- const chapter=readerChapter(Number(req.params.surah),lang);
+ const riwaya=String(req.query.riwaya||'hafs');
+ if(!['hafs','ad-duri'].includes(riwaya))return res.status(400).json({error:'Invalid reading'});
+ const chapter=readerChapter(Number(req.params.surah),lang,riwaya);
  if(!chapter)return res.status(400).json({error:'Invalid surah'});
  res.set('Cache-Control','public, max-age=86400').json(chapter);
 });

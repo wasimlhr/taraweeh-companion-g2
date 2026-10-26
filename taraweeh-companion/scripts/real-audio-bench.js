@@ -323,7 +323,7 @@ function report() {
     const OPENAI_RATE = { 'whisper-1': 0.006, 'gpt-4o-transcribe': 0.006,
       'gpt-4o-mini-transcribe': 0.003, 'gpt-transcribe': 0.0045 };
     const cost = LIVE_OPENAI
-      ? audioMin * (OPENAI_RATE[OPTS.model || 'gpt-4o-mini-transcribe'] ?? 0.006)
+      ? audioMin * (OPENAI_RATE[OPTS.model || 'whisper-1'] ?? 0.006)
       : OPTS.provider === 'deepgram' ? audioMin * 0.0043
         : (asrCalls.reduce((s2, c) => s2 + Math.max(10, c.windowMs / 1000), 0) / 3600) * 0.04;
     out(`cost                : ${asrCalls.length} calls, ${audioMin.toFixed(1)} audio-min = $${cost.toFixed(3)}`);

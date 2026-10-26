@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.39 - 2026-10-26
+
+- Keep Translate advancing on its reading timer through silence and delayed recognition; heard verses continue to correct timing and position.
+- Preserve Practice's recognition-driven verse holds and Taraweeh's separate prayer tracking.
+- Include the tested reading and listening controls, Arabic display preferences, Saad Al-Ghamdi recordings, and synchronized Noreen Al-Duri support.
+- Add timer regression coverage for continuous Normal, Fast, and Slow Translate modes.
+
 ## 3.4.13 - 2026-10-12
 
 - Add 70 complete Quran translations from the expanded risan/quran-json catalog, preserving existing editions.

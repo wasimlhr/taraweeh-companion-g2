@@ -178,6 +178,16 @@ describe('transcribe is independent', () => {
     }
   });
 
+  it('OpenAI defaults to Whisper with Arabic word and segment timestamps', async () => {
+    const original=globalThis.fetch;let body;
+    globalThis.fetch=mock.fn(async (url,init)=>{assert.match(String(url),/api\.openai\.com/);body=init.body;return {ok:true,status:200,json:async()=>({text:'الحمد لله',words:[{word:'الحمد',start:0,end:.5},{word:'لله',start:.5,end:1}]})};});
+    try{
+      const result=await transcribe(Buffer.alloc(3200),{provider:'openai',openaiApiKey:'sk_test'});
+      assert.equal(body.get('model'),'whisper-1');assert.equal(body.get('response_format'),'verbose_json');assert.equal(body.get('language'),'ar');
+      assert.deepEqual(body.getAll('timestamp_granularities[]'),['word','segment']);assert.equal(result.words.length,2);assert.equal(result.words[0].word,'الحمد');
+    }finally{globalThis.fetch=original;}
+  });
+
   it('OpenAI uses the requested model and json for gpt-*', async () => {
     const seen = { model: '', format: '', timestamps: false };
     const origFetch = globalThis.fetch;

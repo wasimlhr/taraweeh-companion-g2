@@ -1,5 +1,5 @@
 /**
- * OpenAI transcription API — default gpt-4o-mini-transcribe (faster, cheaper).
+ * OpenAI transcription API — default whisper-1, with word timestamps.
  * whisper-1 is the only OpenAI model that returns word timestamps.
  *
  * Docs: https://platform.openai.com/docs/api-reference/audio/createTranscription
@@ -9,7 +9,7 @@ import { httpError } from './httpRetry.js';
 import { providerDeadline } from './requestDeadline.js';
 
 const OPENAI_URL = 'https://api.openai.com/v1/audio/transcriptions';
-const OPENAI_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe';
+const OPENAI_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
 const supportsTimestamps = (model) => !/^gpt-/.test(model);
 
 /**

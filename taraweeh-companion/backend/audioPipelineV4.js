@@ -2223,13 +2223,16 @@ export class AudioPipeline {
       // ── Stop timer while behind: pause display advancement ────
       // When reciter is behind, don't keep advancing forward. Cancel timer and wait
       // for confirmation before resuming. This prevents runaway drift during repeats.
-      if (score >= REPEAT_BACK_CORRECT_MIN_CONF) {
+      if (this.taraweehMode && score >= REPEAT_BACK_CORRECT_MIN_CONF) {
         this._cancelReadAdvance();
         this._driftMult = Math.min(2.5, this._driftMult + 0.25);
         console.log(`[Pipeline] Timer paused: Whisper :${confirmedAyah} behind display :${this._displayAyah} (lag=${lag}, conf=${score}%, repeat=${this._behindRepeatCount}/${REPEAT_BACK_CORRECT_WINS}${refrainVerse ? ', refrain' : ''})`);
       } else {
         // Low confidence — keep timer running with drift multiplier
         this._driftMult = Math.min(2.5, this._driftMult + 0.25);
+        if (!this.taraweehMode && !this._displayAdvanceTimer) {
+          this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
+        }
         console.log(`[Pipeline] Whisper :${confirmedAyah} behind display :${this._displayAyah} (lag=${lag}, conf=${score}%, drift=${this._driftMult.toFixed(2)}x, repeat=${this._behindRepeatCount}/${REPEAT_BACK_CORRECT_WINS}${refrainVerse ? ', refrain' : ''})`);  
       }
       return;
@@ -2671,7 +2674,9 @@ export class AudioPipeline {
     // misfire during normal recitation, and end up switched off in Taraweeh.
     // The voice gate samples every ~85ms, so use it: hold through the breath,
     // and bound the hold so a mis-tuned gate can never freeze the display.
-    if (!onLastAyah && this._lastDetectedVoiceAt > 0) {
+    // Translate is a continuous pacer: microphone silence does not hold it.
+    // Heard verses correct timing and position independently of this clock.
+    if (this.taraweehMode && !onLastAyah && this._lastDetectedVoiceAt > 0) {
       const silenceMs = Date.now() - this._lastDetectedVoiceAt;
       if (silenceMs > DISPLAY_HOLD_SILENCE_MS && silenceMs < DISPLAY_HOLD_MAX_MS) {
         if (!this._lastSilenceLogMs || (Date.now() - this._lastSilenceLogMs) > 2000) {
@@ -2778,7 +2783,7 @@ export class AudioPipeline {
     // Force-unblock after BLOCKED_FORCE_UNBLOCK_MS to prevent freezing when
     // Whisper only returns noise (e.g. Ar-Rahman refrains).
     const nextAyah = this._displayAyah + 1;
-    if (this._whisperAyah > 0 && (nextAyah - this._whisperAyah) > this._maxDisplayLead) {
+    if (this.taraweehMode && this._whisperAyah > 0 && (nextAyah - this._whisperAyah) > this._maxDisplayLead) {
       const now = Date.now();
       if (!this._blockedSince) this._blockedSince = now;
       const blockedFor = now - this._blockedSince;
@@ -2812,7 +2817,7 @@ export class AudioPipeline {
 
     if (confidence < READ_ADVANCE_CONFIDENCE) {
       const lingeredMs = this._ayahStartTime ? Date.now() - this._ayahStartTime : 0;
-      if (lingeredMs > 30000) {
+      if (this.taraweehMode && lingeredMs > 30000) {
         console.log(`[Pipeline] Low-conf stall ${confidence}% on ${this._displaySurah}:${this._displayAyah} for ${Math.round(lingeredMs/1000)}s — releasing lock`);
         this.state = { ...createState(), mode: 'SEARCHING',
           lastLockedSurah: this.state.surah, lastLockedAyah: this.state.ayah };
@@ -2946,7 +2951,7 @@ export class AudioPipeline {
       this._updateWordProgress();
     }, 200);  // 5 FPS
     
-    this._displayAdvanceTimer = setTimeout(() => {
+    const advanceWhenReady = () => {
       this._displayAdvanceTimer = null;
       this._nextAdvanceMs  = 0;
       this._timerStartedAt = 0;
@@ -2956,6 +2961,16 @@ export class AudioPipeline {
         if (this._wordProgressInterval) {
           clearInterval(this._wordProgressInterval);
           this._wordProgressInterval = null;
+        }
+        // A breath can outlast the countdown. Keep checking the voice gate;
+        // dropping the expired timer here strands this verse indefinitely.
+        // Reuse the due advance rather than starting a full verse timer again.
+        if (this.active && !this.practiceMode && !this.followMode
+            && this._displaySurah > 0 && this._displayAyah > 0
+            && ['LOCKED', 'RESUMING', 'SEARCHING'].includes(this.state.mode)) {
+          this._nextAdvanceMs = 250;
+          this._timerStartedAt = Date.now();
+          this._displayAdvanceTimer = setTimeout(advanceWhenReady, 250);
         }
         return;
       }
@@ -3033,7 +3048,8 @@ export class AudioPipeline {
       if (nextAyahData) {
         this._scheduleReadAdvance(this.state.confidence);
       }
-    }, durationMs);
+    };
+    this._displayAdvanceTimer = setTimeout(advanceWhenReady, durationMs);
   }
 
   // ── Pause-triggered advance ────────────────────────────────────────────────

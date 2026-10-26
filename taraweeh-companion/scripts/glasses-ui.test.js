@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import { getAdvW, getTextWidth, pxTruncate } from '@evenrealities/pretext';
 import { validateEvenHubPageContainer } from '@evenrealities/even_hub_sdk';
 import { HOME_MODES, modeHomePage } from '../app/glassesHome.js';
+import * as typography from '../app/glassesTypography.js';
+import * as readerPagination from '../app/readerPagination.js';
 
 const html = readFileSync(new URL('../app/index.html', import.meta.url), 'utf8');
 const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -16,8 +18,8 @@ function harness() {
   function node(id) {
     if (!nodes.has(id)) nodes.set(id, {
       style: {}, dataset: {}, options: [], children: [], selectedIndex: 0, textContent: '', innerHTML: '', value: '',
-      classList: { add() {}, remove() {}, toggle() {} },
-      addEventListener() {}, setAttribute() {}, appendChild(child) {this.children.push(child);}, replaceChildren() {this.children=[];},
+      attributes:{},classList: { values:new Set(),add(...names){names.forEach(n=>this.values.add(n));},remove(...names){names.forEach(n=>this.values.delete(n));},contains(name){return this.values.has(name);},toggle(name,on){on=on===undefined?!this.values.has(name):on;if(on)this.values.add(name);else this.values.delete(name);return on;} },
+      addEventListener() {}, setAttribute(name,value) {this.attributes[name]=String(value);},getAttribute(name){return this.attributes[name];}, appendChild(child) {this.children.push(child);}, replaceChildren() {this.children=[];},
       querySelector(selector) { return node(id + selector); },
       querySelectorAll() { return []; },
     });
@@ -27,6 +29,7 @@ function harness() {
   let timerID = 0;
   const writes = [], messages = [];
   const context = vm.createContext({
+    modeHomeNative:modeHomePage,typography,readerPagination,
     console, performance, URL, TextEncoder, Uint8Array, Int16Array, Float32Array, ArrayBuffer,
     navigator: {}, location: { hostname: 'localhost', origin: 'http://localhost', search: '' },
     crypto: { randomUUID: () => 'glasses-ui-test' },
@@ -46,8 +49,11 @@ function harness() {
   context.window = context;
   context.addEventListener = () => {};
   const exported = `
+    _homeModule={modeHomePage:modeHomeNative};_typographyModule=typography;
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
+      drawFontTest,updatePhoneUI,setFontTest:(active,controls)=>{_fontTestActive=active;_fontTestUI=controls;},
       setAudioControls: controls=>{_audioMode=true;_audioUI=controls;},
+      setListenPages:(pages,page,state)=>{_readerModule=readerPagination;_readerPages=pages;_readerPage=page;_audioVisual=state;},
       recoverStartupIfBlank, glassesMenu, _writeGlasses, buildGlassesText,
       showModeHome, leaveModeHome, getHome:()=>({active:_homeActive,index:_homeIndex}),
       setReaderPicker:(kind,value,max)=>{_readerActive=true;_readerPicking=kind;_readerPick=value;_readerData={surah:2,verses:Array(max).fill({})};},
@@ -58,6 +64,7 @@ function harness() {
         _reciteMode = mode; _practiceMode = mode === 'practice'; _taraweehMode = mode === 'taraweeh';
       },
       setReciteMode: window.setReciteMode,
+      sttPayload,migrateModelDefaults,syncMicSourceUI,openGlassesSettings,
       applyLocalTranslation, fetchLangPack,
       setPack: function (lang, verses) { _langPacks[lang] = verses; },
       setPractice: function (value) { _practiceMode = value; _taraweehMode = !value; _reciteMode = value ? 'practice' : 'taraweeh'; },
@@ -96,6 +103,115 @@ test('switching local languages preserves the source state and English glasses f
   const urdu = h.ui.applyLocalTranslation(state);
   assert.equal(urdu.translation, 'Urdu');
   assert.equal(urdu.translationGlasses, 'English');
+});
+
+test('a Listen Quran phone group retains its selected translations when live-mode language differs',()=>{
+ const h=harness();h.ui.S.settings.lang='fr';h.ui.setPack('fr',Array.from({length:114},()=>Array(7).fill('French live-mode verse')));
+ const state={mode:'LOCKED',surah:1,ayah:6,arabic:'grouped Arabic',translation:'6. Guide us\n\n7. The path',numbered:false,isListeningGroup:true};
+ h.ui.updatePhoneUI(state,'');assert.equal(h.nodes.get('verseTrans').textContent,state.translation);
+ h.ui.updatePhoneUI({...state,isListeningGroup:false},'');assert.equal(h.nodes.get('verseTrans').textContent,'French live-mode verse');
+});
+
+test('OpenAI defaults and old Mini settings migrate to Whisper once without changing Groq',()=>{
+ const h=harness();
+ h.ui.S.settings=h.ui.migrateModelDefaults({transcriptionProvider:'groq',transcriptionModel:'whisper-large-v3',modelByProvider:{groq:'whisper-large-v3',openai:'gpt-4o-mini-transcribe'}});
+ h.context.setProvider('openai',false);assert.equal(h.ui.sttPayload().transcriptionModel,'whisper-1');
+ assert.match(h.nodes.get('settingTranscribeModel').innerHTML,/whisper-1 \(default\)/);
+ h.context.setProvider('groq',false);assert.equal(h.ui.sttPayload().transcriptionModel,'whisper-large-v3');
+ const oldActive=h.ui.migrateModelDefaults({transcriptionProvider:'openai',transcriptionModel:'gpt-4o-mini-transcribe',modelByProvider:{openai:'gpt-4o-mini-transcribe'}});
+ assert.equal(oldActive.transcriptionModel,'whisper-1');assert.equal(oldActive.modelByProvider.openai,'whisper-1');
+ h.ui.S.settings=h.ui.migrateModelDefaults({transcriptionProvider:'openai',transcriptionModel:'',modelByProvider:{}});
+ h.context.setProvider('openai',false);assert.equal(h.ui.sttPayload().transcriptionModel,'whisper-1');
+ // A deliberate alternative remains available after the one-time migration.
+ h.context.setTranscribeModel('gpt-4o-mini-transcribe');
+ h.ui.S.settings=h.ui.migrateModelDefaults(JSON.parse(JSON.stringify(h.ui.S.settings)));
+ h.context.setProvider('openai',false);assert.equal(h.ui.sttPayload().transcriptionModel,'gpt-4o-mini-transcribe');
+ const other=h.ui.migrateModelDefaults({transcriptionProvider:'openai',transcriptionModel:'gpt-4o-transcribe',modelByProvider:{openai:'gpt-4o-transcribe'}});
+ assert.equal(other.transcriptionModel,'gpt-4o-transcribe');assert.equal(other.modelByProvider.openai,'gpt-4o-transcribe');
+});
+
+function microphoneHarness(){
+ const h=harness(),calls=[],streams=[];h.context.navigator.userAgent='Android';
+ h.ui.S.bridge.audioControl=async open=>{calls.push(open?'glasses-open':'glasses-close');return true;};
+ const stream=()=>{const track={stopped:false,stop(){this.stopped=true;calls.push('phone-track-stop');}};const value={track,getTracks:()=>[track]};streams.push(value);return value;};
+ h.context.navigator.mediaDevices={getUserMedia:async options=>{calls.push(options.audio===true?'phone-permission':'phone-capture');return stream();}};
+ h.context.AudioContext=class{sampleRate=16000;state='running';destination={};createMediaStreamSource(){return {connect(){}};}createScriptProcessor(){return {connect(){},disconnect(){}};}createGain(){return {gain:{value:0},connect(){}};}close(){calls.push('phone-context-close');return Promise.resolve();}};
+ return {...h,calls,streams,stream};
+}
+
+test('home and settings microphone controls persist one selection immediately without opening capture',async()=>{
+ const h=microphoneHarness();h.ui.S.isRecording=false;h.ui.syncMicSourceUI();
+ assert.equal(h.nodes.get('homeMicLabel').textContent,'Glasses mic');
+ await h.context.toggleMicSource();assert.equal(h.ui.S.settings.forcePhoneMic,true);assert.equal(h.nodes.get('homeMicLabel').textContent,'Phone mic');assert.equal(h.nodes.get('btnPhoneMic').getAttribute('aria-pressed'),'true');assert.equal(h.nodes.get('recordBtn').textContent,'Start Listening');
+ assert.equal(h.messages.at(-1).source,'browser');assert.deepEqual(h.calls,[]);
+ await h.context.setMicSource('g2');assert.equal(h.ui.S.settings.forcePhoneMic,false);assert.equal(h.nodes.get('homeMicLabel').textContent,'Glasses mic');assert.equal(h.messages.at(-1).source,'g2');assert.deepEqual(h.calls,[]);
+});
+
+test('active microphone handoff stops the old capture and preserves the existing recognition session',async()=>{
+ const h=microphoneHarness();h.ui.S.pcmAccum=[1,2,3];
+ await h.context.setMicSource('phone');assert.equal(h.ui.S.isRecording,true);assert.equal(h.calls[0],'glasses-close');assert.equal(h.streams.at(-1).track.stopped,false);assert.equal(h.ui.S.pcmAccum.length,0);
+ const split=h.calls.length;await h.context.setMicSource('g2');
+ assert.ok(h.calls.indexOf('phone-track-stop',split)<h.calls.indexOf('glasses-open',split));assert.ok(h.streams.every(s=>s.track.stopped));assert.equal(h.calls.at(-1),'glasses-open');assert.equal(h.ui.S.isRecording,true);
+ assert.ok(h.messages.every(m=>m.type==='set_audio_source'),'A source handoff must not reset the pipeline or restart the prayer');
+});
+
+test('stopping during phone permission or capture acquisition cannot reopen a late microphone stream',async()=>{
+ for(const lateCapture of [false,true]){
+  const h=microphoneHarness();let release,requests=0;
+  h.context.navigator.mediaDevices.getUserMedia=()=>{requests++;if(lateCapture&&requests===1)return Promise.resolve(h.stream());return new Promise(r=>release=r);};
+  const switching=h.context.setMicSource('phone');for(let n=0;n<30&&!release;n++)await Promise.resolve();assert.ok(release);
+  h.ui.stopListening();const stream=h.stream();release(stream);await switching;await h.flush();
+  assert.equal(stream.track.stopped,true);assert.equal(h.ui.S.mediaStream,null);assert.equal(h.ui.S.isRecording,false);assert.equal(h.nodes.get('homeMicToggle').getAttribute('aria-busy'),'false');
+ }
+});
+
+test('microphone permission denial and rejected bridge requests leave capture stopped with a visible error',async()=>{
+ const phone=microphoneHarness();phone.context.navigator.mediaDevices.getUserMedia=async()=>{throw Error('Permission denied');};
+ assert.equal(await phone.context.setMicSource('phone'),false);assert.equal(phone.ui.S.isRecording,false);assert.match(phone.nodes.get('status').textContent,/Phone microphone unavailable/);
+ const glasses=microphoneHarness();glasses.ui.S.settings.forcePhoneMic=true;glasses.ui.S.bridge.audioControl=async()=>false;
+ assert.equal(await glasses.context.setMicSource('g2'),false);assert.equal(glasses.ui.S.isRecording,false);assert.match(glasses.nodes.get('status').textContent,/Glasses microphone unavailable/);
+});
+
+test('glasses Settings puts microphone first and toggles the shared source; disconnected glasses stay unavailable',async()=>{
+ const h=microphoneHarness();h.ui.S.isRecording=false;h.ui.openGlassesSettings();await h.flush();
+ assert.match(h.writes.at(-1).page.textObject[0].content,/> Microphone: Glasses/);h.ui.onG2Event({textEvent:{eventType:0}});await h.flush();
+ assert.equal(h.ui.S.settings.forcePhoneMic,true);assert.match(h.writes.at(-1).page.textObject[0].content,/> Microphone: Phone/);assert.equal(h.nodes.get('homeMicLabel').textContent,'Phone mic');assert.deepEqual(h.calls,[]);
+ const web=microphoneHarness();web.ui.S.isG2=false;web.ui.S.isRecording=false;web.ui.syncMicSourceUI();assert.equal(web.nodes.get('homeMicToggle').disabled,true);assert.equal(web.nodes.get('btnG2Mic').disabled,true);assert.equal(web.nodes.get('homeMicLabel').textContent,'Phone mic');assert.equal(await web.context.setMicSource('g2'),false);
+});
+
+test('glasses PCM is ignored for phone input and still reaches capture while the glasses settings menu is open',()=>{
+ const h=microphoneHarness();h.ui.S.lastSend=Date.now();h.ui.S.settings.forcePhoneMic=true;h.ui.S.pcmAccum=[];
+ h.ui.onG2Event({audioEvent:{audioPcm:new Uint8Array([1,0,2,0])}});assert.equal(h.ui.S.pcmAccum.length,0);
+ h.ui.S.settings.forcePhoneMic=false;h.ui.openGlassesSettings();h.ui.onG2Event({audioEvent:{audioPcm:new Uint8Array([1,0,2,0])}});assert.equal(h.ui.S.pcmAccum.length,2);
+});
+
+test('provider settings preserve each model and send the selected provider/model pair',()=>{
+ const h=harness();Object.assign(h.ui.S.settings,{keyMode:'byok',transcriptionProvider:'groq',transcriptionModel:'whisper-large-v3',modelByProvider:{}});
+ h.context.setProvider('groq',false);
+ assert.equal(h.ui.S.settings.transcriptionModel,'whisper-large-v3','Opening settings preserves the active model even without older per-provider memory');
+ assert.equal(h.nodes.get('settingTranscribeProvider').value,'groq');
+ assert.match(h.nodes.get('recognitionSummary').textContent,/Groq/);
+ assert.match(h.nodes.get('sPillModel').title,/Groq.*whisper-large-v3/);
+ h.context.setProvider('openai');h.context.setTranscribeModel('whisper-1');
+ assert.equal(h.nodes.get('settingTranscribeModel').value,'whisper-1');
+ h.context.setProvider('groq');assert.equal(h.ui.S.settings.transcriptionModel,'whisper-large-v3');
+ h.context.setProvider('openai');assert.equal(h.ui.S.settings.transcriptionModel,'whisper-1');
+ assert.equal(h.nodes.get('groqKeyRow').style.display,'none');assert.equal(h.nodes.get('openaiKeyRow').style.display,'');
+ for(const timer of [...h.timeouts.values()].filter(t=>t.ms===300))timer.fn();
+ const init=h.messages.filter(m=>m.type==='init').at(-1);
+ assert.equal(init.transcriptionProvider,'openai');assert.equal(init.transcriptionModel,'whisper-1');
+ assert.equal(h.ui.sttPayload().transcriptionProvider,'openai');
+ assert.equal(h.ui.sttPayload().transcriptionModel,'whisper-1');
+});
+
+test('provider status distinguishes connecting selection from the backend ready provider',()=>{
+ const h=harness();h.ui.S.settings.transcriptionProvider='openai';
+ h.ui.handleServerMsg({type:'connected'});
+ assert.equal(h.nodes.get('sPillModel.s-label').textContent,'Connecting · OpenAI');
+ h.ui.handleServerMsg({type:'sys_status',component:'model',status:'ready',provider:'openai'});
+ assert.equal(h.nodes.get('sPillModel.s-label').textContent,'Ready · OpenAI');
+ h.ui.handleServerMsg({type:'sys_status',component:'model',status:'ready',provider:'groq'});
+ assert.equal(h.nodes.get('sPillModel.s-label').textContent,'Ready · Groq');
 });
 
 test('a stalled pack source times out and falls through to the next source', async () => {
@@ -318,19 +434,43 @@ test('stop clears timers and stale verse; late state cannot repaint glasses',asy
  h.ui.startPageFlip({hdr:'An-Nas 114:1',pages:['Old verse']},60000);await h.flush();
  h.ui.stopListening();await h.flush();
  const stop=h.writes.filter(w=>w.page).at(-1);
- assert.match(stop.page.textObject.find(c=>c.containerName==='body').content,/Translate[\s\S]*Practice[\s\S]*Read Quran[\s\S]*Taraweeh/);
+ assert.match(stop.page.textObject.find(c=>c.containerName==='homeInput').content,/Translate[\s\S]*Practice[\s\S]*Read Quran[\s\S]*Taraweeh/);
  const count=h.writes.length;
  h.ui.handleServerMsg({type:'state',state:{mode:'LOCKED',surah:114,ayah:1,translation:'late verse'}});await h.flush();
  assert.equal(h.writes.length,count);assert.equal(h.ui.S.isRecording,false);
 });
 
-test('mode launcher fits four images and one full-screen gesture target inside G2 limits',()=>{
+test('mode launcher is one native text container with all six choices and no images',()=>{
  const page=modeHomePage({menuItems:[]});
  assert.equal(validateEvenHubPageContainer(page).valid,true);
- assert.equal(page.imageObject.length,4);
+ assert.equal(page.imageObject,undefined);assert.equal(page.containerTotalNum,1);
  assert.equal(page.textObject[0].isEventCapture,1);
- assert.equal(page.textObject[0].height,288);
+ assert.ok(page.textObject[0].height<=288);assert.match(page.textObject[0].content,/> Translate/);
  assert.deepEqual(HOME_MODES.map(m=>m.key),['listen','practice','reader','taraweeh','audio','settings']);
+});
+
+test('native mode menu selection and reader pickers transfer no images',async()=>{
+ const h=harness();h.ui.S.isRecording=false;let images=0;h.ui.S.bridge.updateImageRawData=async()=>images++;
+ h.ui.showModeHome();await h.flush();const builds=h.writes.filter(w=>w.type==='rebuild').length;
+ h.ui.onG2Event({textEvent:{eventType:2}});await h.flush();assert.equal(images,0);assert.equal(h.writes.filter(w=>w.type==='rebuild').length,builds);assert.match(h.writes.at(-1).data.content,/> Practice/);
+ h.ui.leaveModeHome();h.ui.setReaderPicker('ayah',12,286);h.ui.onG2Event({textEvent:{eventType:2}});await h.flush();assert.equal(images,0);const picker=h.writes.at(-1).page;assert.equal(picker.imageObject,undefined);assert.match(picker.textObject[0].content,/> 13/);
+ h.ui.onG2Event({textEvent:{eventType:2}});await h.flush();assert.equal(images,0);assert.equal(h.writes.at(-1).type,'text');assert.match(h.writes.at(-1).data.content,/> 14/);
+});
+
+test('startup opens the native mode menu directly without an intermediate ready screen',async()=>{
+ const h=harness();h.ui.S.isRecording=false;h.ui.glassesStartup();await h.flush();
+ const pages=h.writes.filter(w=>w.page);assert.equal(pages.length,1);assert.equal(pages[0].page.containerTotalNum,1);assert.match(pages[0].page.textObject[0].content,/Choose mode/);
+ assert.equal(h.ui.getHome().active,true);
+});
+
+test('double-tap keeps reader, audio and live recitation modes open; only launcher requests system exit',async()=>{
+ for(const mode of ['listen','practice','taraweeh']){
+  const h=harness();let exits=0;h.ui.S.bridge.shutDownPageContainer=async()=>exits++;h.ui.setMode(mode);h.ui.handleServerMsg({type:'state',state:{mode:'LOCKED',surah:114,ayah:1,arabic:'قل اعوذ برب الناس',translation:'Say, I seek refuge',timerMs:60000}});await h.flush();
+  h.ui.onG2Event({textEvent:{eventType:3}});await h.flush();assert.equal(h.ui.S.isRecording,true);assert.equal(h.ui.getHome().active,false);assert.equal(exits,0);assert.ok(!h.messages.some(m=>m.type==='stop'));
+ }
+ const audio=harness();let toggles=0;audio.ui.setAudioControls({toggle(){toggles++;}});audio.ui.onG2Event({textEvent:{eventType:3}});audio.ui.onG2Event({textEvent:{eventType:3}});assert.equal(toggles,1,'Duplicate double-taps are swallowed in audio mode');
+ const reader=harness();reader.ui.setReaderPicker(false,1,7);let steps=0;reader.context.readerStep=()=>steps++;reader.ui.onG2Event({textEvent:{eventType:3}});assert.equal(steps,1);
+ const root=harness();root.ui.S.isRecording=false;let exits=0;root.ui.S.bridge.shutDownPageContainer=async()=>exits++;root.ui.showModeHome();await root.flush();root.ui.onG2Event({textEvent:{eventType:3}});await root.flush();assert.equal(exits,1);
 });
 
 test('glasses ayah picker bounds swipes and ten-ayah jumps; omitted click type selects the ayah',async()=>{
@@ -347,9 +487,19 @@ test('glasses ayah picker bounds swipes and ten-ayah jumps; omitted click type s
  h.ui.onG2Event({menuItemClickEvent:{itemID:20}});assert.equal(selected,7);
  h.ui.S.settings.readerBookmark={surah:2,ayah:1};h.ui.setReaderPicker(false,1,7);
  assert.equal(h.ui.glassesMenu().menuItems.length,9);
- assert.ok(h.ui.glassesMenu().menuItems.some(item=>item.itemID===21&&item.itemName==='Show translation'));
+ assert.ok(h.ui.glassesMenu().menuItems.some(item=>item.itemID===21&&item.itemName==='Hide translation'));
  assert.equal(validateEvenHubPageContainer(modeHomePage(h.ui.glassesMenu())).valid,true);
  await h.flush();
+});
+
+test('Read Quran menu exposes both layouts and its translation toggle stays independent',()=>{
+ const h=harness();h.ui.setReaderPicker(false,1,7);h.ui.S.settings.readerLayout='maximum';
+ const menu=h.ui.glassesMenu();assert.ok(menu.menuItems.some(m=>m.itemID===22&&m.itemName==='Single verse'));assert.ok(menu.menuItems.some(m=>m.itemID===23&&m.itemName==='Fit multiple verses (selected)'));
+ assert.equal(validateEvenHubPageContainer(modeHomePage(menu)).valid,true);
+ const layouts=[];h.context.setReaderLayout=value=>layouts.push(value);
+ h.ui.onG2Event({menuItemClickEvent:{itemID:22}});h.ui.onG2Event({menuItemClickEvent:{itemID:23}});assert.deepEqual(layouts,['single','maximum']);
+ h.ui.S.settings.readerGlassesTranslation=false;assert.equal(h.ui.glassesMenu().menuItems.find(m=>m.itemID===21).itemName,'Show translation');
+ h.ui.S.settings.readerGlassesTranslation=true;assert.equal(h.ui.glassesMenu().menuItems.find(m=>m.itemID===21).itemName,'Hide translation');
 });
 
 test('idle swipes select a mode without verse navigation; tapping Read Quran opens the reader',async()=>{
@@ -526,6 +676,84 @@ test('combined layout sends Arabic tiles above a native translation container', 
  assert.ok(page.imageObject.every(c=>c.yPosition+c.height<=translation.yPosition));
 });
 
+// Synthetic pixels distinguish changed Arabic from unchanged tiles, while the
+// production renderer, timer callbacks and serialized bridge queue run normally.
+function liveArabicHarness() {
+ const h=harness(),create=h.context.document.createElement;
+ h.context.document.createElement=tag=>{
+  if(tag!=='canvas')return create(tag);
+  const canvas={ink:0};
+  const ctx={measureText:t=>({width:t.length*12}),fillRect(){canvas.ink=0;},
+   fillText(t){for(const c of t)canvas.ink=(canvas.ink+c.codePointAt(0))%251;},
+   drawImage(source){canvas.ink=source.ink;},getImageData(){return {data:new Uint8Array(288*112*4).fill(canvas.ink)};}};
+  canvas.getContext=()=>ctx;return canvas;
+ };
+ h.context.document.fonts={load:async()=>[{}]};
+ Object.assign(h.ui.S.settings,{arabicImage:true,glassesLayout:'arabic-translation'});
+ h.ui.S.bridge.updateImageRawData=async data=>{h.writes.push({type:'image',data});return 'success';};
+ return h;
+}
+
+test('candidate animation and lock reuse the Arabic page instead of clearing it every 400ms',async()=>{
+ const h=liveArabicHarness(),state={mode:'SEARCHING',isCandidate:true,surah:114,ayah:1,arabic:'قُلْ أَعُوذُ بِرَبِّ النَّاسِ',translation:'Say, I seek refuge in the Lord of mankind'};
+ h.ui.handleServerMsg({type:'state',state});await h.flush();
+ const builds=h.writes.filter(w=>w.type==='rebuild').length,images=h.writes.filter(w=>w.type==='image').length;
+ assert.equal(builds,1);assert.equal(images,2);
+ for(let i=0;i<5;i++){for(const timer of [...h.intervals.values()].filter(t=>t.ms===400))timer.fn();await h.flush();}
+ h.ui.handleServerMsg({type:'state',state:{...state,mode:'LOCKED',isCandidate:false}});await h.flush();
+ assert.equal(h.writes.filter(w=>w.type==='rebuild').length,builds);
+ assert.equal(h.writes.filter(w=>w.type==='image').length,images);
+ assert.equal(h.ui.S.settings.arabicImage,true);
+});
+
+test('slow Arabic transfers finish both tiles before the latest pending verse without another rebuild',async()=>{
+ const h=liveArabicHarness();let release,started;
+ const first=new Promise(resolve=>started=resolve),gate=new Promise(resolve=>release=resolve);
+ h.ui.S.bridge.updateImageRawData=async data=>{h.writes.push({type:'image',data});if(h.writes.filter(w=>w.type==='image').length===1){started();await gate;}return 'success';};
+ const state={mode:'SEARCHING',isCandidate:true,surah:114,ayah:1,arabic:'قُلْ أَعُوذُ بِرَبِّ النَّاسِ',translation:'First candidate'};
+ h.ui.handleServerMsg({type:'state',state});await first;
+ for(const timer of [...h.intervals.values()].filter(t=>t.ms===400))timer.fn();
+ h.ui.handleServerMsg({type:'state',state:{...state,ayah:2,arabic:'مَلِكِ النَّاسِ',translation:'Latest candidate'}});
+ release();await h.flush();
+ const images=h.writes.filter(w=>w.type==='image');
+ assert.deepEqual(images.map(w=>w.data.containerID),[10,11,10,11]);
+ assert.equal(images[0].data.imageData[0],images[1].data.imageData[0]);
+ assert.notEqual(images[1].data.imageData[0],images[2].data.imageData[0]);
+ assert.equal(h.writes.filter(w=>w.type==='rebuild').length,1);
+ assert.equal(h.writes.filter(w=>w.type==='text'&&w.data.containerName==='body').at(-1).data.content,'Latest candidate');
+});
+
+test('native translation changes retain Arabic tiles and recover a missing text container',async()=>{
+ const h=liveArabicHarness(),frame={hdr:'An-Nas',arabicImage:'قُلْ أَعُوذُ بِرَبِّ النَّاسِ',imageTranslation:'First translation'};
+ await h.ui._writeGlasses(frame);const before=h.writes.length;
+ await h.ui._writeGlasses({...frame,imageTranslation:'Updated translation'});
+ assert.deepEqual(h.writes.slice(before).map(w=>w.type),['text']);
+ assert.equal(h.writes.at(-1).data.content,'Updated translation');
+ let reject=true;h.ui.S.bridge.textContainerUpgrade=async data=>{h.writes.push({type:'text',data});if(reject){reject=false;return false;}return true;};
+ await h.ui._writeGlasses({...frame,imageTranslation:'Recovered translation'});
+ assert.equal(h.writes.filter(w=>w.type==='rebuild').length,2);
+ assert.equal(h.writes.filter(w=>w.type==='image').length,4);
+ assert.equal(h.writes.filter(w=>w.page).at(-1).page.textObject.find(c=>c.containerName==='body').content,'Recovered translation');
+});
+
+test('reused Arabic layout still refreshes contextual controls when the mode changes',async()=>{
+ const h=liveArabicHarness(),frame={hdr:'An-Nas',arabicImage:'قُلْ أَعُوذُ بِرَبِّ النَّاسِ',imageTranslation:'Translation'};
+ await h.ui._writeGlasses(frame);h.ui.setMode('taraweeh');await h.ui._writeGlasses(frame);
+ const pages=h.writes.filter(w=>w.page);assert.equal(pages.length,2);
+ assert.ok(pages.at(-1).page.menuObject.menuItems.some(item=>item.itemName==='Rakat +'));
+});
+
+test('stopping during an Arabic transfer cannot disable Arabic or repaint the new menu',async()=>{
+ const h=liveArabicHarness();let release,started;
+ const first=new Promise(resolve=>started=resolve),gate=new Promise(resolve=>release=resolve);
+ h.ui.S.bridge.updateImageRawData=async data=>{h.writes.push({type:'image',data});started();await gate;return 'invalid';};
+ const write=h.ui._writeGlasses({hdr:'An-Nas',arabicImage:'قُلْ أَعُوذُ بِرَبِّ النَّاسِ'});await first;
+ h.ui.stopListening();release();await write;await h.flush();
+ assert.equal(h.ui.S.settings.arabicImage,true);
+ assert.equal(h.writes.filter(w=>w.type==='image').length,1);
+ assert.equal(h.writes.filter(w=>w.page).at(-1).page.textObject[0].containerName,'homeInput');
+});
+
 
 test('manual Next and Back preserve the selected verse on both screens in every mode', async () => {
  for(const mode of ['listen','practice','taraweeh']) {
@@ -588,6 +816,23 @@ test('phone text sizing applies to all reading text and bounds invalid preferenc
  h.context.setPhoneTextSize('invalid');assert.equal(h.ui.S.settings.phoneTextSize,16);
 });
 
+test('Listen Quran swipes move by displayed group while ayah menu commands keep stepping recordings',()=>{
+ const h=harness(),selected=[],steps=[];
+ h.ui.setAudioControls({selectAyah:(...args)=>selected.push(args),step:d=>steps.push(d)});
+ const pages=[{ayahs:[1]},{ayahs:[2,3,4,5]},{ayahs:[6,7,8]},{ayahs:[9]}];
+ for(const ayah of [2,3,4,5]){
+  h.ui.setListenPages(pages,1,{ayah,canPlay:true});h.ui.onG2Event({textEvent:{eventType:2}});
+  assert.deepEqual(selected.at(-1),[6,0]);
+ }
+ h.ui.setListenPages(pages,2,{ayah:8,canPlay:true});h.ui.onG2Event({listEvent:{eventType:1}});assert.deepEqual(selected.at(-1),[2,0]);
+ const count=selected.length;
+ h.ui.setListenPages(pages,0,{ayah:1,canPlay:true});h.ui.onG2Event({textEvent:{eventType:1}});
+ h.ui.setListenPages(pages,3,{ayah:9,canPlay:true});h.ui.onG2Event({sysEvent:{eventType:2}});assert.equal(selected.length,count);
+ h.ui.setListenPages(pages,1,{ayah:2,canPlay:false});h.ui.onG2Event({textEvent:{eventType:2}});assert.equal(selected.length,count);
+ h.ui.onG2Event({menuItemClickEvent:{itemID:34}});h.ui.onG2Event({menuItemClickEvent:{itemID:35}});assert.deepEqual(steps,[1,-1]);
+ assert.equal(h.writes.length,0,'Navigation uses the existing display path, with no extra container rebuild');
+});
+
 test('Listen Quran handles omitted zero sys taps and seek menu commands',()=>{
  const h=harness();let taps=0;const seeks=[];
  h.ui.setAudioControls({toggle(){taps++;},seekBy(ms){seeks.push(ms);}});
@@ -596,4 +841,19 @@ test('Listen Quran handles omitted zero sys taps and seek menu commands',()=>{
  assert.equal(taps,2);
  h.ui.onG2Event({sysEvent:{eventType:4}});h.ui.onG2Event({sysEvent:{eventType:5}});assert.equal(taps,2);
  h.ui.onG2Event({menuItemClickEvent:{itemID:36}});h.ui.onG2Event({menuItemClickEvent:{itemID:37}});assert.deepEqual(seeks,[-10000,10000]);
+});
+
+
+test('font test uses an SDK-valid image layout and owns gestures while it is open',async()=>{
+ const h=harness(),events=[];h.ui.setFontTest(true,{event:e=>events.push(e)});h.ui.S.bridge.updateImageRawData=async data=>{h.writes.push({type:'image',data});return 'success';};
+ const canvas={getContext:()=>({getImageData:()=>({data:new Uint8Array(288*144*4)})})};
+ await h.ui.drawFontTest(canvas,typography.ARABIC_FONTS[0],{index:0,glassesArabicSize:32,glassesArabicRendering:'bright'});await h.flush();
+ const page=h.writes.find(w=>w.type==='rebuild').page;assert.equal(validateEvenHubPageContainer(page).valid,true);assert.equal(page.imageObject.length,4);assert.equal(h.writes.filter(w=>w.type==='image').length,4);
+ h.ui.onG2Event({menuItemClickEvent:{itemID:61}});assert.equal(events.length,1);
+ h.ui.setFontTest(false,null);const before=h.writes.length;await h.ui.drawFontTest(canvas,typography.ARABIC_FONTS[1],{index:1,glassesArabicSize:32,glassesArabicRendering:'standard'});assert.equal(h.writes.length,before);
+});
+
+test('a rejected font test page reports failure instead of claiming it is showing on glasses',async()=>{
+ const h=harness();h.ui.setFontTest(true,null);h.ui.S.bridge.rebuildPageContainer=async()=>false;
+ await assert.rejects(h.ui.drawFontTest({},typography.ARABIC_FONTS[0],{index:0,glassesArabicSize:28,glassesArabicRendering:'standard'}),/layout rejected/);
 });

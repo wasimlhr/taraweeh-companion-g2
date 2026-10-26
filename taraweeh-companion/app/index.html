@@ -8,6 +8,7 @@
 @font-face { font-family: 'Amiri'; src: url('./fonts/AmiriQuran.ttf') format('truetype'); font-display: swap; }
 @font-face { font-family: 'QuranIndoPak'; src: url('./fonts/DigitalKhattIndoPak.otf') format('opentype'); font-display: block; }
 @font-face { font-family: 'QuranBitmap'; src: url('./fonts/AmiriQuran.ttf') format('truetype'); font-display: block; }
+@font-face { font-family: 'QuranDuri'; src: url('./fonts/UthmanicDouri_V20.ttf') format('truetype'); font-display: block; }
 .reading-tools, .language-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
 .language-tools input { flex:1; min-width:140px; }
 .device-language { font-size:12px; line-height:1.5; margin:8px 0; color:var(--tc-1); }
@@ -208,6 +209,9 @@ html.g2-hosted body { padding-top:8px;padding-bottom:8px; }
 .verse-arabic {
   font-family: 'QuranBitmap', 'Amiri', serif;
   font-size: 32px;
+  font-weight: 400;
+  letter-spacing: normal;
+  word-spacing: normal;
   direction: rtl;
   text-align: right;
   color: var(--tc-1);
@@ -492,6 +496,7 @@ html.g2-hosted body { padding-top:8px;padding-bottom:8px; }
   min-width: 0;
 }
 .s-pill > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+#sPillModel { border:0;font-family:inherit;cursor:pointer;text-align:left; }
 /* Six stable slots: connection/model/match, then heard/shown/pace. */
 #statusBar { grid-template-rows: repeat(2, 20px); }
 #sPillG2 { grid-area: 1 / 1; }
@@ -729,6 +734,16 @@ html:not([data-recitation-mode="taraweeh"]) #rakatBar { display: none !important
 #settingsView .settings-about { display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;padding:16px 0;font-size:11px; }
 #settingsView .settings-about a { color:inherit; }
 #settingsView .settings-about span:last-child { flex-basis:100%; }
+#fontTestView[hidden] { display:none; }
+#fontTestView { max-width:640px;margin:auto; }
+#fontTestView h2 { font-size:20px;margin:0; }
+.font-test-controls { display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px; }
+.font-test-controls label { display:grid;gap:6px;font-size:13px;min-width:0; }
+.font-test-controls select { width:100%;min-width:0;min-height:44px;background:var(--bc-1);color:var(--tc-1);border:1px solid var(--bc-4);border-radius:8px;padding:8px;font:inherit; }
+.font-test-sample { border-top:1px solid var(--bc-4);padding:16px 0; }
+.font-test-sample h3 { font-size:16px;margin:0 0 8px; }
+.font-test-sample canvas { display:block;width:100%;height:auto;background:#000;margin-top:12px; }
+.font-test-sample button[aria-pressed="true"] { border-color:var(--tc-highlight); }
 .settings-header {
   display: flex;
   align-items: center;
@@ -1028,7 +1043,7 @@ html.standalone #status:not(.err):not(.error):not(.warn) { background: transpare
 html.standalone #statusBar { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; background: transparent; padding: 0; margin-bottom: 8px; }
 html.standalone #statusBar::-webkit-scrollbar { display: none; }
 html.standalone #statusBar .s-pill { flex: none; font-size: 11px; padding: 3px 8px; }
-html.standalone #statusBar #sPillG2, html.standalone #statusBar #sPillModel { display: none; }
+html.standalone #statusBar #sPillG2 { display: none; }
 html.standalone #verseCard { flex: 1; min-height: 260px; border-radius: 16px; padding: 18px 18px 14px; margin-bottom: 0; touch-action: pan-y; position: relative; overflow: hidden; }
 html.standalone #verseCard.swipe-anim { transition: transform .18s ease, opacity .18s ease; }
 html.standalone #matchIdle { padding: 24px 8px; }
@@ -1064,9 +1079,24 @@ html.standalone #verseCard { flex:0 0 auto;height:var(--verse-region-height,340p
 #mainControlsRow > #paceModeBtn { flex:0 1 auto !important;width:auto;min-width:132px !important;min-height:40px;padding:8px 12px;margin:0;font-size:13px; }
 #mainView[data-listening="true"] #reciteModeHint { display:none !important; }
 #mainView #waveRow { height:18px;margin-bottom:6px; }
-#mainView #versionEl { padding:2px 0;font-size:10px;line-height:14px;margin:0; }
+#versionEl,#reciteModeHint { display:none !important; }
 #mainView #verseCard { padding:12px;gap:8px; }
 #mainView #recordBtn { min-height:44px;padding:10px 16px; }
+#captureControls { display:flex;align-items:stretch;gap:8px;min-width:0; }
+#homePaceModeBtn { flex:none;min-height:44px;padding:8px 12px;font-size:12px;margin:0; }
+html[data-audio="true"] #homePaceModeBtn,html[data-recitation-mode="practice"] #homePaceModeBtn { display:none; }
+#captureControls #recordBtn { flex:1;min-width:0;margin:0; }
+#homeMicToggle { display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:34px;padding:6px;margin:0;border:1px solid var(--bc-4);border-radius:8px;background:var(--bc-2);color:var(--tc-1);cursor:pointer; }
+#homeMicToggle svg { width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round; }
+#homeMicToggle .mic-phone-icon,#homeMicToggle[data-source="phone"] .mic-glasses-icon { display:none; }
+#homeMicToggle[data-source="phone"] .mic-phone-icon { display:block; }
+#homeMicLabel { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
+#homeMicToggle:hover:not(:disabled) { background:var(--bc-3); }
+#homeMicToggle:focus-visible { outline:2px solid var(--tc-1);outline-offset:3px; }
+#homeMicToggle:disabled { opacity:.55;cursor:default; }
+html[data-audio="true"] #homeMicToggle { display:none; }
+html.standalone #captureControls { flex:1; }
+html.standalone #homeMicToggle { display:none; }
 #mainView #readingOptions { margin-top:6px !important; }
 #mainView #readingOptions > summary { padding:6px 0 !important; }
 #mainView .verse-nav-row { gap:8px;padding-top:6px; }
@@ -1100,21 +1130,34 @@ html[data-recitation-mode="practice"] #reciteModeHint { display:none; }
 .lq-embedded .lq-transport > [data-el="prev"]::before { content:'←';font-size:18px; }
 .lq-embedded .lq-transport > [data-el="next"]::before { content:'→';font-size:18px; }
 .lq-embedded .lq-fields { order:0;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1.2fr) minmax(60px,.65fr);gap:8px; }
+.lq-embedded .lq-fields[data-whole-surah="true"] { grid-template-columns:minmax(0,1.7fr) minmax(0,1fr); }
+.lq-embedded[data-load-error="true"] .lq-status { display:block; }
 .lq-embedded .lq-fields,.lq-embedded .lq-transport,.lq-embedded .lq-offline { flex-shrink:0; }
 .lq-embedded .lq-fields label { font-size:11px;gap:4px; }
 .lq-embedded .lq-fields select { padding:8px 5px;font-size:12px;min-height:44px; }
 .lq-embedded .lq-progress { order:3;margin:0; }
+.lq .lq-progress { display:grid;grid-template-columns:minmax(0,1fr) 66px;column-gap:8px;align-items:center;min-width:0; }
+.lq .lq-progress > input { grid-column:1;grid-row:1;min-width:0; }
+.lq .lq-times { display:contents; }
+.lq .lq-times span { font-size:12px;font-variant-numeric:tabular-nums;grid-column:1;grid-row:2; }
+.lq .lq-times [data-el="duration"] { justify-self:end; }
+.lq .lq-times [data-el="speed"] { grid-column:2;grid-row:1 / span 2;min-height:44px;padding:6px 3px;font-size:12px; }
 .lq-embedded .lq-offline { order:4;display:flex;align-items:center;flex-wrap:wrap;gap:6px;border:0;margin:0;padding:0; }
 .lq-embedded .lq-offline button { width:auto;font-size:12px;min-height:36px;padding:6px 10px; }
-.lq-embedded .lq-download-status { flex:1;font-size:11px; }
+.lq-embedded .lq-offline .lq-download-status { flex:1;font-size:11px; }
+.lq-embedded [data-el="recordingNote"] { flex:0 0 auto;margin:0;font-size:11px; }
 .lq-embedded .lq-confirm { flex-basis:100%; }
 #mainView[data-audio="true"] #lockedContent { order:1; }
+#mainView[data-audio="true"] #status { display:none; }
+#mainView[data-audio="true"] #status.error,#mainView[data-audio="true"] #status.warn { display:block; }
+#mainView[data-audio="true"] #verseTrans { white-space:pre-line; }
+#mainView[data-audio="true"] #verseArabic { line-height:1.9; }
 #mainView[data-audio="true"] #verseNavRow { order:2;margin-top:0; }
 #mainView[data-audio="true"] #practiceSurahRow,#mainView[data-audio="true"] #rakatBar,#mainView[data-audio="true"] #searchingContent,#mainView[data-audio="true"] #holdVerseBtn,#mainView[data-audio="true"] #holdVerseHint,#mainView[data-audio="true"] #swipeHint,#mainView[data-audio="true"] #verseStudyTools,#mainView[data-audio="true"] #waveRow,#mainView[data-audio="true"] #reciteModeHint,#mainView[data-audio="true"] #statusBar,#mainView[data-audio="true"] #verseNavRow { display:none !important; }
 #mainView[data-audio="true"] #statusBar > :not(#sPillG2) { display:none !important; }
 #mainView[data-audio="true"] #statusBar { min-height:0;padding:6px 8px; }
 @media (max-height:700px) {
- #mainView[data-audio="true"] #verseArabic { font-size:28px !important;line-height:2.1;padding-block:0 4px; }
+ #mainView[data-audio="true"] #verseArabic { font-size:28px !important;padding-block:0 4px; }
  #mainView[data-audio="true"] #lockedContent { gap:6px !important; }
 }
 html.standalone #modeTabs [aria-label="Recitation mode"] .mv-toggle-btn { font-size:12px;min-height:44px; }
@@ -1131,6 +1174,8 @@ html.standalone #studyPanel::before, html.standalone #moreSheet::before { conten
 html.standalone #qvtDock { display: flex; flex-direction: column; gap: 6px; position: fixed; left: 0; right: 0; bottom: var(--ad-h, 0px); z-index: 900; padding: 8px max(var(--screen-margin), env(safe-area-inset-left)) max(12px, env(safe-area-inset-bottom)); background: var(--bc-2); border-top: 1px solid var(--bc-4); }
 html.standalone #qvtDock[hidden] { display: none; }
 html.standalone #qvtDock .dock-row { display: flex; align-items: center; gap: 10px; max-width: 480px; width: 100%; margin: 0 auto; }
+html.standalone:not([data-audio="true"]):not([data-recitation-mode="practice"]) #qvtDock .dock-row { display:grid;grid-template-columns:minmax(0,1fr) 48px; }
+html.standalone:not([data-audio="true"]):not([data-recitation-mode="practice"]) #qvtDock #captureControls { grid-column:1 / -1;grid-row:1; }
 html.standalone #qvtDock #waveRow { height: 20px; margin: 0 auto; max-width: 480px; }
 html.standalone #qvtDock #waveRow:empty { display: none; }
 html.standalone #qvtDock #mainLang { flex: 0 1 34%; min-width: 0; height: 48px; padding: 0 12px; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
@@ -1186,6 +1231,7 @@ html.reader-open body { background:var(--reader-body,#fff);max-width:720px; }
 .reader-check input { accent-color:var(--read-accent); }
 .reader-jump { display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:var(--read-muted);font-size:12px;padding:8px 0; }
 .reader-jump select { min-height:32px !important;max-width:90px; }
+.reader-jump #readerLayout { flex:1;min-width:160px;max-width:none; }
 #readerStatus { color:var(--read-muted);font-size:12px;margin:0 0 12px; }
 #readerPaper { background:var(--read-bg);padding:0; }
 #readerSurahTitle { font:24px/1.6 var(--reader-font,'QuranIndoPak');color:var(--read-fg);text-align:center;padding:12px 0 16px;border-bottom:1px solid var(--read-rule); }
@@ -1236,6 +1282,7 @@ html.reader-open #qvtDock { display:none !important; }
   <div class="header">
     <h1>☽ Quran Verse Translator</h1>
     <div class="header-right">
+      <button type="button" id="homeMicToggle" onclick="toggleMicSource()" disabled aria-label="Microphone source is being detected"><svg class="mic-phone-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></svg><svg class="mic-glasses-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m3 10 1-5h3m14 5-1-5h-3M10 12c1-1 3-1 4 0"/><rect x="2" y="10" width="8" height="7" rx="2"/><rect x="14" y="10" width="8" height="7" rx="2"/></svg><span id="homeMicLabel" aria-live="polite">Glasses mic</span></button>
       <button id="helpBtn" onclick="showHelp()" title="How it works">?</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">◑</button>
       <button id="settingsBtn" onclick="showSettings()">⚙</button>
@@ -1252,9 +1299,9 @@ html.reader-open #qvtDock { display:none !important; }
     <div class="s-pill" id="sPillWs">
       <span class="s-dot"></span><span class="s-label">Service</span>
     </div>
-    <div class="s-pill" id="sPillModel" onclick="showModelDebug()" style="cursor:pointer" title="Tap for details">
+    <button type="button" class="s-pill" id="sPillModel" onclick="openRecognitionSettings()" aria-label="Speech recognition settings" title="Choose speech provider and model">
       <span class="s-dot"></span><span class="s-label">Model</span>
-    </div>
+    </button>
     <div class="s-pill" id="sPillConf">
       <span class="s-dot"></span><span class="s-label">Match: --</span>
     </div>
@@ -1370,7 +1417,10 @@ html.reader-open #qvtDock { display:none !important; }
 
   <div id="waveRow"></div>
 
-  <button id="recordBtn" disabled>Detecting glasses...</button>
+  <div id="captureControls">
+    <button id="recordBtn" disabled>Detecting glasses...</button>
+    <button type="button" id="homePaceModeBtn" class="back-btn" onclick="cyclePaceMode()" aria-label="Reciter speed: normal">Normal reciter ↔</button>
+  </div>
   <button id="wakeServerMainBtn" class="back-btn btn-primary btn-arrow" style="display:none;margin-top:8px;font-size:13px">Wake server</button>
 
 
@@ -1392,11 +1442,11 @@ html.reader-open #qvtDock { display:none !important; }
       <details id="practicePicker"><summary id="practicePickerLabel">Any surah</summary><div id="practicePickerPanel"><input id="practiceSearch" type="search" placeholder="Find surah by name or number" aria-label="Find practice surah" oninput="filterPracticeSurahs(this.value)"><div id="practiceChoices" aria-label="Practice surahs"></div></div></details>
       <select id="practiceSurah" onchange="setPracticeSurah(this.value)"><option value="0">Choose a surah (or practice any)</option></select>
     </div>
-    <span class="s-hint" id="reciteModeHint" style="display:block;margin:0 0 8px;font-size:11px;line-height:1.45">Translate follows Quran recitation and shows each verse in your selected language.</span>
+    <span id="reciteModeHint" hidden></span>
 
   </div>
 
-  <footer class="version" id="versionEl" style="text-align:center">v3.4.37</footer>
+  <span id="versionEl" hidden>v3.4.39</span>
 </div>
 
 <section id="readerView" hidden aria-label="Read Quran">
@@ -1405,18 +1455,18 @@ html.reader-open #qvtDock { display:none !important; }
     <select id="readerSurah" aria-label="Surah" onchange="loadReaderSurah(Number(this.value))"></select>
     <details id="readerDisplayOptions"><summary id="readerDisplaySummary" aria-label="Reading display settings" aria-expanded="false" aria-controls="readerOptionsPanel">Aa</summary><div id="readerOptionsPanel" class="reader-options" role="group" aria-label="Reading display settings">
       <label>Translation<select id="readerLanguage" onchange="setReaderLanguage(this.value)"></select></label>
-      <label>Glasses layout<select id="readerLayout" onchange="setReaderLayout(this.value)"><option value="maximum">Maximum ayahs</option><option value="single">Single ayah</option></select></label>
+      <label class="reader-check"><input id="readerGlassesTranslation" type="checkbox" onchange="setReaderGlassesTranslation(this.checked)" />Show translation on glasses</label>
       <label class="reader-check"><input id="readerRemoteToggle" type="checkbox" onchange="setReaderRemote(this.checked)" />Glasses controller</label>
       <label class="reader-check"><input id="readerAutoScroll" type="checkbox" onchange="setReaderAutoScroll(this.checked)" />Auto-scroll</label>
       <label>Seconds per page<select id="readerAutoSeconds" onchange="setReaderAutoSeconds(Number(this.value))"><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="30">30</option><option value="45">45</option><option value="60">60</option><option value="90">90</option><option value="120">120</option></select></label>
       <label>Arabic style<select id="readerScript" onchange="setReaderScript(this.value)"><option value="indopak">Indo-Pak</option><option value="madani">Madani</option></select></label>
       <label>Text size<input id="readerSize" type="range" min="24" max="40" step="2" oninput="setReaderDisplay('readerTextSize',Number(this.value))" /></label>
       <label>Theme<select id="readerTheme" onchange="setReaderDisplay('readerTheme',this.value)"><option value="app">Use app theme</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
-      <label class="reader-check"><input id="readerShowTranslation" type="checkbox" onchange="setReaderDisplay('readerShowTranslation',this.checked)" />Translation</label>
-      <label class="reader-check"><input id="readerShowTranslit" type="checkbox" onchange="setReaderDisplay('readerShowTranslit',this.checked)" />Transliteration</label>
+      <label class="reader-check"><input id="readerShowTranslation" type="checkbox" onchange="setReaderDisplay('readerShowTranslation',this.checked)" />Translation on phone</label>
+      <label class="reader-check"><input id="readerShowTranslit" type="checkbox" onchange="setReaderDisplay('readerShowTranslit',this.checked)" />Transliteration on phone</label>
     </div></details>
   </header>
-  <div class="reader-jump"><label for="readerAyah">Go to ayah</label><select id="readerAyah" onchange="jumpReaderAyah(Number(this.value))"></select><button type="button" id="readerBookmarkStar" class="reader-back" onclick="toggleReaderBookmark()" aria-label="Bookmark this page" aria-pressed="false">☆</button><button type="button" id="readerBookmarkResume" class="reader-back" onclick="resumeReaderBookmark()" hidden>Resume bookmark</button></div>
+  <div class="reader-jump"><label for="readerAyah">Go to ayah</label><select id="readerAyah" onchange="jumpReaderAyah(Number(this.value))"></select><button type="button" id="readerBookmarkStar" class="reader-back" onclick="toggleReaderBookmark()" aria-label="Bookmark this page" aria-pressed="false">☆</button><select id="readerLayout" aria-label="Glasses page layout" onchange="setReaderLayout(this.value)"><option value="single">Single verse</option><option value="maximum">Fit multiple verses</option></select><button type="button" id="readerBookmarkResume" class="reader-back" onclick="resumeReaderBookmark()" hidden>Resume bookmark</button></div>
   <p id="readerAutoStatus" class="s-hint" hidden></p>
   <p id="readerStatus" class="s-hint" role="status"></p>
   <div id="readerPaper"><div id="readerSurahTitle" lang="ar" dir="rtl"></div><div id="readerText" translate="no"></div></div>
@@ -1629,6 +1679,14 @@ html.reader-open #qvtDock { display:none !important; }
           <label class="reading-tools g2-only"><input type="checkbox" id="settingDimSecondary" onchange="setDimSecondary(this.checked)"> Dim secondary text on glasses</label>
           <label class="reading-tools" style="display:none"><input type="checkbox" id="settingArabicImage" onchange="setArabicImage(this.checked)"> Arabic verse image (experimental)</label>
           <span class="s-hint g2-only">Arabic uses shaped text images. Translation underneath uses the glasses font, with English fallback for unsupported languages. Physical-glasses readability is not yet verified.</span>
+          <label class="s-label" for="glassesArabicSize">Arabic size on glasses</label>
+          <select id="glassesArabicSize" onchange="setGlassesTypography('glassesArabicSize',this.value)"><option value="24">24 px</option><option value="28">28 px (default)</option><option value="32">32 px</option><option value="36">36 px</option></select>
+          <label class="s-label" for="glassesArabicFont">Arabic font</label>
+          <select id="glassesArabicFont" onchange="setGlassesTypography('glassesArabicFont',this.value)"><option value="auto">Use reading style (default)</option><option value="indopak">Indo-Pak</option><option value="amiri">Amiri Quran</option></select>
+          <label class="s-label" for="glassesArabicRendering">Arabic rendering</label>
+          <select id="glassesArabicRendering" onchange="setGlassesTypography('glassesArabicRendering',this.value)"><option value="standard">Standard (default)</option><option value="bright">Brighter edges</option><option value="supersampled">Smooth (2×)</option></select>
+          <span class="s-hint">Applies to Arabic on glasses in every mode. Larger sizes use more pages. Noreen keeps the Al-Duri font for its reading.</span>
+          <button type="button" class="back-btn" onclick="openFontTest()">Arabic font test on glasses</button>
           <div id="previewLanguages" class="device-language g2-only"></div>
           <canvas id="glassesPreview" class="glasses-preview g2-only" width="576" height="288" aria-label="Glasses layout preview"></canvas>
           <div id="previewCaption" class="preview-caption g2-only" role="status">Layout preview</div>
@@ -1640,6 +1698,47 @@ html.reader-open #qvtDock { display:none !important; }
   <section id="settings-live" data-settings-panel="live" aria-labelledby="settings-live-title" hidden="">
     <h3 id="settings-live-title" class="settings-panel-title">Live recitation</h3>
     <p class="settings-panel-hint">Microphone and tracking settings for Translate, Practice and Taraweeh.</p>
+    <details class="settings-group" id="recognitionSettings" open>
+      <summary id="recognitionSummary">Speech recognition</summary>
+      <div class="s-card">
+        <div class="s-row">
+          <label class="s-label" for="settingTranscribeProvider">Provider</label>
+          <select id="settingTranscribeProvider" onchange="setProvider(this.value)" aria-describedby="engineHint">
+            <option value="groq">Groq</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          <span class="s-hint" id="engineHint" style="font-size:11px;display:block;margin-top:8px;line-height:1.5"></span>
+        </div>
+        <div class="s-row" id="transcribeModelRow">
+          <label class="s-label" for="settingTranscribeModel">Model</label>
+          <select id="settingTranscribeModel" onchange="setTranscribeModel(this.value)"></select>
+          <span class="s-hint" id="modelHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
+        </div>
+        <div class="s-row">
+          <div id="groqKeyRow" style="margin-top:10px">
+            <label class="s-label" for="settingGroqKey">Groq API key</label>
+            <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false">
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+              <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testSttKey('groq')" style="font-size:13px">Test key</button>
+              <span id="groqTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
+              <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
+            </div>
+          </div>
+          <div id="openaiKeyRow" style="margin-top:10px;display:none">
+            <label class="s-label" for="settingOpenAIKey">OpenAI API key</label>
+            <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false">
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+              <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testSttKey('openai')" style="font-size:13px">Test key</button>
+              <span id="openaiTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
+            </div>
+          </div>
+          <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
+        Your key stays on this device and is sent to the server only while listening.
+      </span>
+        </div>
+      </div>
+    </details>
     <section id="modeSettings" aria-labelledby="modeSettingsTitle">
       <h3 id="modeSettingsTitle" class="s-section">Translate settings</h3>
       <div class="s-card">
@@ -1669,7 +1768,7 @@ html.reader-open #qvtDock { display:none !important; }
       <div class="s-card">
         <div class="s-row">
           <div class="toggle-group g2-only" role="group">
-            <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">G2 mic</button>
+            <button type="button" class="toggle-btn active" id="btnG2Mic" onclick="setMicSource('g2')">Glasses mic</button>
             <button type="button" class="toggle-btn" id="btnPhoneMic" onclick="setMicSource('phone')">Phone mic</button>
           </div>
           <span class="s-hint" id="micStatusHint" style="margin-top:6px;display:block">—</span>
@@ -1681,50 +1780,20 @@ html.reader-open #qvtDock { display:none !important; }
         </div>
       </div>
     </details>
-    <details class="settings-group">
-      <summary>Transcription engine</summary>
-      <div class="s-card">
-        <div class="s-row">
-          <div class="toggle-group" role="group" style="display:flex;flex-wrap:wrap;gap:6px">
-            <button type="button" class="toggle-btn active" id="btnProviderGroq" onclick="setProvider('groq')">Groq</button>
-            <button type="button" class="toggle-btn" id="btnProviderOpenAI" onclick="setProvider('openai')">OpenAI</button>
-          </div>
-          <span class="s-hint" id="engineHint" style="font-size:11px;display:block;margin-top:8px;line-height:1.5"></span>
-          <div id="groqKeyRow" style="margin-top:10px">
-            <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false">
-            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
-              <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testSttKey('groq')" style="font-size:13px">Test key</button>
-              <span id="groqTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
-              <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
-            </div>
-          </div>
-          <div id="openaiKeyRow" style="margin-top:10px;display:none">
-            <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false">
-            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
-              <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testSttKey('openai')" style="font-size:13px">Test key</button>
-              <span id="openaiTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
-              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
-            </div>
-          </div>
-          <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
-        Your key stays on this device and is sent to the server only while listening.
-      </span>
-        </div>
-        <div class="s-row" id="transcribeModelRow">
-          <label class="s-label" for="settingTranscribeModel">Model</label>
-          <select id="settingTranscribeModel" onchange="setTranscribeModel(this.value)"></select>
-          <span class="s-hint" id="modelHint" style="font-size:11px;display:block;margin-top:6px;line-height:1.5"></span>
-        </div>
-      </div>
-    </details>
+
   </section>
   <section id="settings-audio" data-settings-panel="audio" aria-labelledby="audioDownloadTitle" hidden="">
     <h3 id="audioDownloadTitle" class="settings-panel-title">Listen Quran</h3>
     <p class="settings-panel-hint">Manage the recording selected in Listen Quran. Playback continues while you browse settings.</p>
+    <button type="button" class="back-btn" onclick="openFontTest()">Arabic size, rendering &amp; font test</button>
     <div class="s-card">
       <div class="s-row">
         <label class="s-label" for="listenGlassesDisplay">Show on glasses</label>
-        <select id="listenGlassesDisplay" onchange="setListenGlassesDisplay(this.value)"><option value="arabic-translation">Arabic + translation</option><option value="translation">Translation only</option></select>
+        <select id="listenGlassesDisplay" onchange="setListenGlassesDisplay(this.value)"><option value="arabic-translation">Arabic + translation</option><option value="arabic">Arabic only</option><option value="translation">Translation only</option></select>
+      </div>
+      <div class="s-row">
+        <label class="s-label" for="listenPlaybackSpeed">Playback speed</label>
+        <select id="listenPlaybackSpeed" onchange="setListenPlaybackSpeed(this.value)"><option value="1">1× (default)</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
       </div>
       <div class="s-row">
         <label class="s-label" for="listenTranslationLanguage">Translation language</label>
@@ -1807,6 +1876,7 @@ html.reader-open #qvtDock { display:none !important; }
           <span class="s-label">Diagnostics</span>
           <button type="button" class="back-btn btn-arrow" onclick="openAudioPlaybackTest()" style="font-size:13px">Audio playback test</button>
           <button type="button" class="back-btn btn-arrow" onclick="copyDiagLog()" style="font-size:13px">Copy diagnostic log</button>
+          <button type="button" class="back-btn btn-arrow" onclick="showModelDebug()" style="font-size:13px">Speech recognition diagnostics</button>
           <span class="s-hint" id="diagCopyHint" style="margin-top:6px;display:block">Last 500 events. Paste into an issue when reporting a bug.</span>
         </div>
         <div class="s-row">
@@ -1848,6 +1918,7 @@ html.reader-open #qvtDock { display:none !important; }
 </div>
 
 <!-- Help view -->
+<section id="fontTestView" hidden aria-label="Arabic font test"></section>
 <div id="helpView" style="display:none">
   <div class="settings-header">
     <button class="back-btn" onclick="hideHelp()">← Back</button>
@@ -1863,12 +1934,15 @@ html.reader-open #qvtDock { display:none !important; }
         <li><strong>Single tap (ready / stopped)</strong> — start or resume listening</li>
         <li><strong>Single tap (while listening)</strong> — pause listening</li>
         <li><strong>Swipe up / down</strong> — previous / next ayah</li>
+        <li><strong>Swipe up / down (Listen Quran)</strong> — previous / next displayed page; audio follows the selected page</li>
         <li><strong>Tap then long press</strong> — open the glasses menu for rak'ah − / +</li>
-        <li><strong>Double tap (ready / stopped)</strong> — system exit confirmation
+        <li><strong>Double tap (main mode menu only)</strong> — system exit confirmation
           <span class="help-sub">Cancel keeps you in the app. Confirm closes glasses and phone WebView.</span>
         </li>
-        <li><strong>Double tap (while listening)</strong> — pause / stop listening</li>
+        <li><strong>Double tap (Translate / Practice / Taraweeh)</strong> — hold or resume the verse without stopping capture</li>
         <li><strong>Double tap (long ayah)</strong> — next page when the translation spans screens</li>
+        <li><strong>Double tap (Read Quran)</strong> — next reading page; in a picker, return to reading</li>
+        <li><strong>Double tap (Listen Quran)</strong> — play or pause; stay in Listen Quran</li>
       </ul>
     </div>
   </div>
@@ -1890,7 +1964,7 @@ html.reader-open #qvtDock { display:none !important; }
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.37';
+  const APP_VERSION = 'v3.4.39';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -2058,21 +2132,78 @@ html.reader-open #qvtDock { display:none !important; }
   window.toggleFastMode = function () { cyclePaceMode(); };
 
   function _updatePaceButton() {
-    var btn = document.getElementById('paceModeBtn');
-    if (!btn) return;
-    btn.textContent = (PACE_LABELS[_paceMode] || PACE_LABELS.normal) + ' ↔';
-    btn.setAttribute('aria-label', 'Reciter speed: ' + _paceMode);
-    btn.title = 'Switch to ' + (_paceMode === 'normal' ? 'fast' : _paceMode === 'fast' ? 'slow' : 'normal') + ' reciter';
-    btn.classList.add('active');
+    for(const id of ['paceModeBtn','homePaceModeBtn']){
+      const btn=document.getElementById(id);if(!btn)continue;
+      btn.textContent = _paceMode.charAt(0).toUpperCase()+_paceMode.slice(1)+' reciter ↔';
+      btn.setAttribute('aria-label', 'Reciter speed: ' + _paceMode);
+      btn.title = 'Switch to ' + (_paceMode === 'normal' ? 'fast' : _paceMode === 'fast' ? 'slow' : 'normal') + ' reciter';
+      if(id==='paceModeBtn')btn.classList.add('active');
+    }
   }
   _updatePaceButton();
 
 
+  var _typographyModule=null,_fontTestActive=false,_fontTestUI=null,_fontTestEpoch=0,_fontTestLayout=false,_fontTestReturn=null;
+  function glassesArabicSize(){const n=Number(S.settings.glassesArabicSize);return [24,28,32,36].includes(n)?n:28;}
+  function glassesArabicFamily(fallback){return S.settings.glassesArabicFont==='indopak'?'QuranIndoPak':S.settings.glassesArabicFont==='amiri'?'QuranBitmap':fallback;}
+  async function ensureTypography(){if(!_typographyModule)_typographyModule=await import('./glassesTypography.js');return _typographyModule;}
+  function glassesArabicCanvas(width,height){if(_typographyModule)return _typographyModule.createArabicCanvas(width,height,S.settings,document);const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;return canvas;}
+  function finishGlassesArabicCanvas(canvas){return _typographyModule?_typographyModule.finishArabicCanvas(canvas,document):canvas;}
+  function syncTypographySettings(){
+    document.getElementById('glassesArabicSize').value=String(glassesArabicSize());
+    document.getElementById('glassesArabicFont').value=['indopak','amiri'].includes(S.settings.glassesArabicFont)?S.settings.glassesArabicFont:'auto';
+    document.getElementById('glassesArabicRendering').value=['bright','supersampled'].includes(S.settings.glassesArabicRendering)?S.settings.glassesArabicRendering:'standard';
+  }
+  window.setGlassesTypography=async function(key,value){
+    const module=await ensureTypography(),next=module.arabicPreferences({...S.settings,[key]:value});
+    Object.assign(S.settings,{glassesArabicSize:next.size,glassesArabicFont:next.font,glassesArabicRendering:next.rendering});saveSettings();syncTypographySettings();
+    if(next.font!=='auto'){S.settings.readerScript=next.font==='amiri'?'madani':'indopak';document.getElementById('readerScript').value=S.settings.readerScript;saveSettings();}
+    if(_fontTestActive)return;
+    if(_audioMode&&_audioVisual?.ayah)await followListenAyah(_audioVisual,true);
+    else if(_readerActive&&_readerData)await loadReaderSurah(_readerData.surah,0,Number(document.getElementById('readerAyah').value)||1);
+    else if(S.isRecording||_manualBrowse){_arabicFontReady=null;_liveArabicTiles=[];if(_manualBrowse)mirrorManualNavOnGlasses();else refreshGlassesPreferences();}
+    updateGlassesPreview();
+  };
+  async function drawFontTest(canvas,font,state){
+    if(!_fontTestActive||!S.isG2||!S.bridge)return false;
+    const epoch=++_fontTestEpoch,title='Font test '+(state.index+1)+'/3 · '+font.label+'\n'+state.glassesArabicSize+' px · '+_typographyModule.ARABIC_RENDERINGS.find(o=>o.id===state.glassesArabicRendering).label;
+    const menuItems=[{itemID:61,itemName:'Next font'},{itemID:62,itemName:'Previous font'},{itemID:63,itemName:'Larger Arabic'},{itemID:64,itemName:'Smaller Arabic'},{itemID:65,itemName:'Next rendering'},{itemID:66,itemName:'Save preview settings'},{itemID:67,itemName:'Back'}];
+    let failure=null;
+    await queueBridgeCall('fontTest',async()=>{try{
+      if(!_fontTestActive||epoch!==_fontTestEpoch)return;
+      if(!_fontTestLayout){const ok=await S.bridge.rebuildPageContainer({containerTotalNum:6,textObject:[{containerID:70,containerName:'fontTitle',xPosition:16,yPosition:8,width:544,height:64,content:title,isEventCapture:1,paddingLength:0,zOrderIndex:5},{containerID:71,containerName:'fontHelp',xPosition:16,yPosition:252,width:544,height:32,content:'Swipe: font · Tap: size · Menu: options',paddingLength:0,zOrderIndex:6}],imageObject:Array.from({length:4},(_,i)=>({containerID:80+i,containerName:'font'+i,xPosition:i%2*288,yPosition:Math.floor(i/2)*144,width:288,height:144,zOrderIndex:i+1})),menuObject:{menuItems}});if(ok===false)throw Error('Font test layout rejected');_fontTestLayout=true;}
+      else{await S.bridge.textContainerUpgrade({containerID:70,containerName:'fontTitle',content:title});}
+      for(let i=0;i<4;i++){if(!_fontTestActive||epoch!==_fontTestEpoch)return;const data=canvas.getContext('2d').getImageData(i%2*288,Math.floor(i/2)*144,288,144).data,gray=new Uint8Array(288*144);for(let n=0;n<gray.length;n++)gray[n]=data[n*4];const result=await S.bridge.updateImageRawData({containerID:80+i,containerName:'font'+i,imageData:gray});if(result!=null&&result!==0&&result!=='success')throw Error('Font test image transfer failed');}
+    }catch(error){failure=error;throw error;}});
+    if(failure)throw failure;
+    return true;
+  }
+  window.openFontTest=async function(){
+    if(_fontTestActive)return;
+    await ensureTypography();if(S.isRecording)await stopListening();if(_audioMode)_audioUI?.pause();
+    _fontTestReturn={settings:document.getElementById('settingsView').style.display==='block',reader:_readerActive&&!_audioMode};
+    _fontTestActive=true;leaveModeHome();stopPageFlip();stopCountdown();_fontTestLayout=false;++_readerEpoch;_readerImageLayout=false;_readerNativeLastContent=null;stopReaderAutoTimer();
+    document.getElementById('mainView').style.display='none';document.getElementById('settingsView').style.display='none';document.getElementById('readerView').hidden=true;
+    const host=document.getElementById('fontTestView');host.hidden=false;
+    if(!_fontTestUI){const module=await import('./fontTest.js');_fontTestUI=module.mountFontTest({host,onDraw:drawFontTest,onClose:closeFontTest,onApply:async values=>{Object.assign(S.settings,values);if(values.glassesArabicFont!=='auto'){S.settings.readerScript=values.glassesArabicFont==='amiri'?'madani':'indopak';document.getElementById('readerScript').value=S.settings.readerScript;}saveSettings();syncTypographySettings();}});}
+    const family=_audioMode&&_audioVisual?.riwaya==='ad-duri'?'duri':S.settings.glassesArabicFont==='amiri'?'amiri':S.settings.glassesArabicFont==='indopak'?'indopak':_readerActive&&document.getElementById('readerScript').value!=='madani'?'indopak':'amiri';
+    await _fontTestUI.open(S.settings,family);window.scrollTo({top:0,behavior:'auto'});
+  };
+  window.closeFontTest=async function(){
+    _fontTestActive=false;++_fontTestEpoch;_fontTestUI?.close();document.getElementById('fontTestView').hidden=true;
+    _readerImageLayout=false;_audioFrame=null;_arabicFontReady=null;_liveArabicTiles=[];
+    if(_fontTestReturn?.settings)showSettings();else if(_fontTestReturn?.reader)document.getElementById('readerView').hidden=false;else document.getElementById('mainView').style.display='';
+    if(_audioMode&&_audioVisual?.ayah)await followListenAyah(_audioVisual,true);
+    else if(_readerActive)await loadReaderSurah(_readerData?.surah||Number(document.getElementById('readerSurah').value)||1,0,Number(document.getElementById('readerAyah').value)||1);
+    else if(_glassesSettings)renderGlassesSettings();else showModeHome();
+  };
   var _readerActive=false, _readerPicking=false, _readerPick=1, _readerData=null;
+  var _readerPickerLayout=null;
   var _readerLoading=false, _readerStudyAyah=0, _readerImageLayout=false, _readerLastTiles=[];
   var _readerPages=[], _readerPage=0, _readerEpoch=0, _readerAbort=null, _readerModule=null, _readerArtworkModule=null, _readerDirection=0;
   let _readerAutoEnabled=false,_readerAutoTimer=null,_readerAutoDeadline=0;
   let _readerNativeText='',_readerNativeY=48,_readerNativeKey='',_readerCountdownLast='';
+  let _readerNativeLastContent=null;
   let _readerCountdownFrame=null;
   function readerNativeContent(seconds){return _readerAutoEnabled&&!_readerPicking?seconds+'s':' ';}
   function updateReaderCountdown(seconds){
@@ -2102,12 +2233,14 @@ html.reader-open #qvtDock { display:none !important; }
     tick();_readerAutoTimer=setInterval(tick,250);
   }
   window.setReaderAutoScroll=function(enabled){_readerAutoEnabled=!!enabled;document.getElementById('readerAutoScroll').checked=_readerAutoEnabled;resetReaderAutoTimer();if(!enabled)updateReaderCountdown(0);};
-  window.toggleReaderGlassesTranslation=function(){S.settings.readerGlassesTranslation=!S.settings.readerGlassesTranslation;saveSettings();_readerImageLayout=false;loadReaderSurah(_readerData.surah,0,Number(document.getElementById('readerAyah').value)||1);};
+  function readerGlassesTranslationEnabled(){return S.settings.readerGlassesTranslation!==false;}
+  window.setReaderGlassesTranslation=async function(enabled){S.settings.readerGlassesTranslation=!!enabled;saveSettings();applyReaderDisplay();if(_readerActive&&!_audioMode&&_readerData)await loadReaderSurah(_readerData.surah,0,Number(document.getElementById('readerAyah').value)||1);};
+  window.toggleReaderGlassesTranslation=function(){return setReaderGlassesTranslation(!readerGlassesTranslationEnabled());};
   window.setReaderAutoSeconds=function(seconds){S.settings.readerAutoSeconds=[5,10,15,20,30,45,60,90,120].includes(seconds)?seconds:15;saveSettings();document.getElementById('readerAutoSeconds').value=String(S.settings.readerAutoSeconds);resetReaderAutoTimer();};
   function readerBookmarkMatches(){const b=S.settings.readerBookmark;return !!(b&&_readerData&&b.surah===_readerData.surah&&b.page===_readerPage&&b.layout===(S.settings.readerLayout==='single'?'single':'maximum')&&b.script===(S.settings.readerScript==='madani'?'madani':'indopak'));}
   function updateReaderBookmarkUI(){const b=S.settings.readerBookmark,selected=readerBookmarkMatches();const star=document.getElementById('readerBookmarkStar');star.textContent=selected?'★':'☆';star.setAttribute('aria-pressed',String(selected));star.setAttribute('aria-label',selected?'Remove bookmark':'Bookmark this page');const resume=document.getElementById('readerBookmarkResume');resume.hidden=!b;resume.textContent=b?'Resume '+b.surah+':'+b.ayah:'Resume bookmark';}
-  window.toggleReaderBookmark=function(){if(!_readerData||_readerLoading)return;if(readerBookmarkMatches())delete S.settings.readerBookmark;else S.settings.readerBookmark={surah:_readerData.surah,ayah:_readerPages[_readerPage].ayahs[0],page:_readerPage,layout:S.settings.readerLayout==='single'?'single':'maximum',script:S.settings.readerScript==='madani'?'madani':'indopak',pagination:2};saveSettings();updateReaderBookmarkUI();_readerImageLayout=false;renderReaderPage();log(S.settings.readerBookmark?'Reading bookmark saved':'Reading bookmark removed','ok');};
-  window.resumeReaderBookmark=async function(){const b=S.settings.readerBookmark;if(!b||!Number.isInteger(b.surah)||b.surah<1||b.surah>114)return;setReaderAutoScroll(false);S.settings.readerSurah=b.surah;S.settings.readerAyah=b.ayah;S.settings.readerLayout=b.layout==='single'?'single':'maximum';S.settings.readerScript=b.script==='madani'?'madani':'indopak';saveSettings();if(!_readerActive)await openQuranReader();document.getElementById('readerScript').value=S.settings.readerScript;applyReaderDisplay();await loadReaderSurah(b.surah,Number(b.page)||0,b.pagination===2?0:b.ayah);};
+  window.toggleReaderBookmark=function(){if(!_readerData||_readerLoading)return;if(readerBookmarkMatches())delete S.settings.readerBookmark;else S.settings.readerBookmark={surah:_readerData.surah,ayah:_readerPages[_readerPage].ayahs[0],page:_readerPage,layout:S.settings.readerLayout==='single'?'single':'maximum',script:S.settings.readerScript==='madani'?'madani':'indopak',glassesTranslation:readerGlassesTranslationEnabled(),pagination:3};saveSettings();updateReaderBookmarkUI();_readerImageLayout=false;renderReaderPage();log(S.settings.readerBookmark?'Reading bookmark saved':'Reading bookmark removed','ok');};
+  window.resumeReaderBookmark=async function(){const b=S.settings.readerBookmark;if(!b||!Number.isInteger(b.surah)||b.surah<1||b.surah>114)return;setReaderAutoScroll(false);S.settings.readerSurah=b.surah;S.settings.readerAyah=b.ayah;S.settings.readerLayout=b.layout==='single'?'single':'maximum';if(typeof b.glassesTranslation==='boolean')S.settings.readerGlassesTranslation=b.glassesTranslation;S.settings.readerScript=b.script==='madani'?'madani':'indopak';saveSettings();if(!_readerActive)await openQuranReader();document.getElementById('readerScript').value=S.settings.readerScript;applyReaderDisplay();await loadReaderSurah(b.surah,Number(b.page)||0,b.pagination===3?0:b.ayah);};
   function closeReaderDisplayOptions(restoreFocus=false){
     const details=document.getElementById('readerDisplayOptions');
     if(!details.open)return;
@@ -2132,7 +2265,7 @@ html.reader-open #qvtDock { display:none !important; }
     stopPageFlip();stopCountdown();stopSearchingDots();stopLockingDots();
     _readerActive=true;_readerPicking=false;_readerImageLayout=false;_readerLastTiles=[];
     document.documentElement.classList.add('reader-open');
-    document.getElementById('mainView').style.display='none';document.getElementById('readerView').hidden=false;
+    document.getElementById('mainView').style.display='none';document.getElementById('readerView').style.removeProperty('display');document.getElementById('readerView').hidden=false;
     const select=document.getElementById('readerSurah');
     if(!select.options.length)SURAHS.slice(1).forEach((name,i)=>select.add(new Option((i+1)+' · '+name,String(i+1))));
     document.getElementById('readerScript').value=S.settings.readerScript==='madani'?'madani':'indopak';
@@ -2160,7 +2293,8 @@ html.reader-open #qvtDock { display:none !important; }
     const controller=_readerAbort;const timeout=setTimeout(()=>controller.abort(),20000);
     try {
       const lang=_audioMode?listenTranslationLanguage():S.settings.lang||'en';
-      const url=backendBase()+'/api/quran/'+surah+'?lang='+encodeURIComponent(lang)+'&edition=verse-list';
+      const riwaya=_audioMode&&_audioVisual?.riwaya==='ad-duri'?'ad-duri':'hafs';
+      const url=backendBase()+'/api/quran/'+surah+'?lang='+encodeURIComponent(lang)+'&edition=verse-list'+(riwaya==='ad-duri'?'&riwaya=ad-duri&readingVersion=2':'');
       let cache=null,response=null;try{cache=await caches.open('quran-reader-translations');response=await cache.match(url);}catch(_){}
       if(!response){response=await fetch(url,{signal:_readerAbort.signal});if(!response.ok)throw Error('Surah unavailable');if(cache)try{await cache.put(url,response.clone());}catch(_){}}
       const data=await response.json();if(!data.verses?.length)throw Error('Empty surah');
@@ -2168,13 +2302,11 @@ html.reader-open #qvtDock { display:none !important; }
       if(!_readerArtworkModule)_readerArtworkModule=await import('./readerArtwork.js');
       await ensureReaderFont();if(!_readerActive||epoch!==_readerEpoch)return;
       _readerData=data;
-      const ctx=document.createElement('canvas').getContext('2d');ctx.font='28px '+readerFont();
-      const measureArabic=t=>{ctx.font='28px '+readerFont();return ctx.measureText(displayArabic(t)).width;};
-      const measureTranslation=t=>{if((_audioMode||S.settings.readerGlassesTranslation)&&_pretext)return _pretext.getTextWidth(t);ctx.font='20px sans-serif';return ctx.measureText(t).width;};
-      if(_audioMode)_readerPages=listenGlassesDisplay()==='translation'?_readerModule.readerTranslationPages(data.verses,measureTranslation):_readerModule.readerInterleavedPages(data.verses,measureArabic,measureTranslation,520,!!data.basmala,4,true);
-      else if(S.settings.readerGlassesTranslation)_readerPages=_readerModule.readerInterleavedPages(data.verses,measureArabic,measureTranslation,520,!!data.basmala,4);
-      else if(S.settings.readerLayout==='single')_readerPages=S.settings.readerShowTranslation===false?_readerModule.readerVerseWindows(data.verses,measureArabic):_readerModule.readerSinglePages(data.verses,measureArabic,measureTranslation,520,!!data.basmala);
-      else _readerPages=_readerModule.readerPackedWindows(data.verses,measureArabic,520,4,!!data.basmala,data.surah===1);
+      const ctx=document.createElement('canvas').getContext('2d');ctx.font=glassesArabicSize()+'px '+readerFont();
+      const measureArabic=t=>{ctx.font=glassesArabicSize()+'px '+readerFont();return ctx.measureText(displayArabic(t)).width;};
+      const measureTranslation=t=>{if(_pretext)return _pretext.getTextWidth(t);ctx.font='20px sans-serif';return ctx.measureText(t).width;};
+      if(_audioMode)_readerPages=_readerModule.readerListeningPages(data.verses,measureArabic,measureTranslation,{translationOnly:listenGlassesDisplay()==='translation',arabicOnly:listenGlassesDisplay()==='arabic',hasBasmala:!!data.basmala,arabicSize:glassesArabicSize()});
+      else _readerPages=_readerModule.readerReadingPages(data.verses,measureArabic,measureTranslation,{layout:S.settings.readerLayout,showTranslation:readerGlassesTranslationEnabled(),hasBasmala:!!data.basmala,numberedBasmala:data.surah===1,arabicSize:glassesArabicSize()});
       _readerPage=focusAyah?Math.max(0,_readerPages.findIndex(p=>p.ayahs.includes(focusAyah))):Math.max(0,Math.min(page,_readerPages.length-1));
       const ayah=document.getElementById('readerAyah');ayah.replaceChildren();data.verses.forEach(v=>ayah.add(new Option(String(v.ayah),String(v.ayah))));
       document.getElementById('readerStatus').textContent=data.name+' · '+data.totalAyahs+' ayahs'+(S.isG2?' · Tap Arabic to show on glasses':'');
@@ -2191,8 +2323,8 @@ html.reader-open #qvtDock { display:none !important; }
     _readerDirection=direction;_readerPage=next;renderReaderPage(0,true);
   };
   async function renderReaderPage(phoneAyah=0,scrollPhone=false){
-    if(!_readerActive||!_readerPages.length||_listenLanguagePicking)return;
-    _readerPicking=false;_readerStudyAyah=0;const epoch=++_readerEpoch, page=_readerPages[_readerPage];
+    if(_fontTestActive||!_readerActive||!_readerPages.length||_listenLanguagePicking||_listenOptionsPicking)return;
+    _readerPicking=false;_readerPickerLayout=null;_readerStudyAyah=0;const epoch=++_readerEpoch, page=_readerPages[_readerPage];
     document.getElementById('readerPaper').style.setProperty('--reader-font',readerFont());
     document.getElementById('readerSurahTitle').textContent='سورة '+(_readerData.arabicName||_readerData.name);
     const packed=S.settings.readerLayout!=='single'&&!_audioMode;
@@ -2209,12 +2341,14 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('readerNext').disabled=_readerData.surah===114&&_readerPage===_readerPages.length-1;
     updateReaderBookmarkUI();
     S.settings.readerSurah=_readerData.surah;S.settings.readerPage=_readerPage;S.settings.readerAyah=currentAyah;saveSettings();
+    if(_audioMode&&_audioVisual)renderListenPhonePage(_audioVisual);
     if(!S.isG2||!S.bridge){resetReaderAutoTimer();return;}
-    const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;
+    const canvas=glassesArabicCanvas(576,288),metrics=_typographyModule.arabicMetrics(glassesArabicSize());
     const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,576,288);
     _readerNativeText='';_readerNativeY=48;
     const number=String(currentAyah).replace(/[0-9]/g,d=>String.fromCharCode(0x660+Number(d)));
-    const range=page.ayahs[0]+(page.ayahs.length>1?'–'+page.ayahs.at(-1):'');
+    let range=page.ayahs[0]+(page.ayahs.length>1?'–'+page.ayahs.at(-1):'');
+    if(_readerData.riwaya==='ad-duri'){const shown=_readerData.verses.filter(v=>page.ayahs.includes(v.ayah)),numbers=shown.flatMap(v=>v.sourceAyahs);range=numbers.length?numbers[0]+(numbers.length>1?'–'+numbers.at(-1):''):'';}
     const showHeader=page.header!==false;
     _readerArtworkModule.drawReaderFrame(ctx,'سورة '+(_readerData.arabicName||_readerData.name),readerFont(),range,showHeader);
     if(page.kind==='translation-only'){
@@ -2225,25 +2359,29 @@ html.reader-open #qvtDock { display:none !important; }
     const opening=packed?page.opening:currentAyah===1&&page.part===1;
     const basmala=opening?_readerData.basmala:'';
     ctx.fillStyle='#fff';ctx.direction='rtl';
-    if(basmala){ctx.font='24px '+readerFont();ctx.textAlign='center';ctx.fillText(displayArabic(basmala),288,91);}
+    if(basmala){ctx.font='24px '+readerFont();ctx.textAlign='center';ctx.fillText(displayArabic(basmala),288,91-Math.max(0,metrics.size-28));}
+    if(page.kind==='arabic-only'){
+      ctx.font=metrics.size+'px '+readerFont();ctx.textAlign='right';
+      page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,(showHeader?(basmala?metrics.openingY:metrics.headerY):metrics.compactY)+i*metrics.step));
+      await sendReaderCanvas(canvas,epoch);return;
+    }
     if(page.kind==='interleaved'){
-      ctx.font='28px '+readerFont();ctx.textAlign='right';
-      page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,(showHeader?(basmala?128:94):54)+i*36));
+      ctx.font=metrics.size+'px '+readerFont();ctx.textAlign='right';
+      page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),548,(showHeader?(basmala?metrics.openingY:metrics.headerY):metrics.compactY)+i*metrics.step));
       _readerNativeText=page.translationLines.join('\n');_readerNativeY=144;
       await sendReaderCanvas(canvas,epoch);if(epoch===_readerEpoch)resetReaderAutoTimer();return;
     }
     if(page.kind){
-      ctx.font='28px '+readerFont();ctx.textAlign='right';
+      ctx.font=metrics.size+'px '+readerFont();ctx.textAlign='right';
       const base=page.arabicY??(basmala?132:96);
-      page.lines.forEach((line,i)=>{const numberedOpening=_readerData.surah===1&&page.ayah===1&&i===0;ctx.textAlign=numberedOpening?'center':'right';ctx.fillText(displayArabic(line),numberedOpening?288:548,base+i*44);});
-      if(page.translationLines.length){if(S.settings.readerGlassesTranslation){_readerNativeText=page.translationLines.join('\n');_readerNativeY=Math.max(56,page.translationY-20);}else{const firstLetter=page.translationLines.join(' ').match(/\p{L}/u)?.[0]||'';const rtl=/[\u0590-\u08ff]/u.test(firstLetter);ctx.font='20px sans-serif';ctx.direction=rtl?'rtl':'ltr';ctx.textAlign=rtl?'right':'left';page.translationLines.forEach((line,i)=>ctx.fillText(line,rtl?548:28,page.translationY+i*26));}}
+      page.lines.forEach((line,i)=>{const numberedOpening=_readerData.surah===1&&page.ayah===1&&i===0;ctx.textAlign=numberedOpening?'center':'right';ctx.fillText(displayArabic(line),numberedOpening?288:548,base+i*Math.max(44,Math.ceil(metrics.size*44/28)));});
+      if(page.translationLines.length){_readerNativeText=page.translationLines.join('\n');_readerNativeY=Math.max(56,page.translationY-20);}
       await sendReaderCanvas(canvas,epoch);if(epoch===_readerEpoch)resetReaderAutoTimer();return;
     }
-    ctx.font=(page.lines.length===1?'32px ':'28px ')+readerFont();ctx.textAlign='right';
-    if(page.lines.length===1&&ctx.measureText(displayArabic(page.lines[0])).width>520)ctx.font='28px '+readerFont();
+    ctx.font=metrics.size+'px '+readerFont();ctx.textAlign='right';
     // Al-Fatihah's Bismillah remains its numbered first ayah, displayed once below the title.
-    if(!packed&&opening&&_readerData.surah===1){ctx.textAlign='center';page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),288,112+i*46));}
-    else page.lines.forEach((line,i)=>{const numberedOpening=packed&&opening&&_readerData.surah===1&&i===0;ctx.textAlign=numberedOpening?'center':'right';ctx.fillText(displayArabic(line),numberedOpening?288:548,basmala?126+(4-page.lines.length)*20+i*40:108+(4-page.lines.length)*23+i*46);});
+    if(!packed&&opening&&_readerData.surah===1){ctx.textAlign='center';page.lines.forEach((line,i)=>ctx.fillText(displayArabic(line),288,112+i*Math.ceil(46*metrics.size/28)));}
+    else page.lines.forEach((line,i)=>{const numberedOpening=packed&&opening&&_readerData.surah===1&&i===0;ctx.textAlign=numberedOpening?'center':'right';const y=metrics.size===28?(basmala?126+(4-page.lines.length)*20+i*40:108+(4-page.lines.length)*23+i*46):(basmala?126:96)+i*Math.ceil(46*metrics.size/28);ctx.fillText(displayArabic(line),numberedOpening?288:548,y);});
     await sendReaderCanvas(canvas,epoch);
     if(epoch===_readerEpoch)resetReaderAutoTimer();
   }
@@ -2254,13 +2392,14 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('readerPaper').style.setProperty('--reader-size',(Number(S.settings.readerTextSize)||28)+'px');
     document.getElementById('readerAutoScroll').checked=_readerAutoEnabled;document.getElementById('readerAutoSeconds').value=String(Number(S.settings.readerAutoSeconds)||15);
     document.getElementById('readerLayout').value=S.settings.readerLayout==='single'?'single':'maximum';
+    document.getElementById('readerGlassesTranslation').checked=readerGlassesTranslationEnabled();
     document.getElementById('readerSize').value=String(Number(S.settings.readerTextSize)||28);document.getElementById('readerTheme').value=choice;
     document.getElementById('readerShowTranslation').checked=S.settings.readerShowTranslation!==false;document.getElementById('readerShowTranslit').checked=S.settings.readerShowTranslit!==false;
   }
   window.setReaderRemote=function(enabled){S.settings.readerRemote=!!enabled;saveSettings();applyReaderDisplay();document.getElementById('readerDisplayOptions').open=false;window.scrollTo({top:0,behavior:'auto'});if(enabled)document.getElementById('readerRemotePad').focus({preventScroll:true});};
   let _readerRemoteStart=null;
   window.readerRemotePointer=function(event){if(event.target.closest('button'))return;const pad=document.getElementById('readerRemotePad');if(event.type==='pointerdown'){_readerRemoteStart={id:event.pointerId,y:event.clientY};pad.setPointerCapture(event.pointerId);}else if(event.type==='pointercancel'){_readerRemoteStart=null;}else if(event.type==='pointerup'&&_readerRemoteStart?.id===event.pointerId){const delta=_readerRemoteStart.y-event.clientY;_readerRemoteStart=null;if(Math.abs(delta)>=40)readerStep(delta>0?1:-1);}};
-  window.setReaderDisplay=function(field,value){if(!['readerTheme','readerTextSize','readerShowTranslation','readerShowTranslit'].includes(field))return;S.settings[field]=value;if(field==='readerTheme')S.settings.readerThemeExplicit=true;saveSettings();applyReaderDisplay();if(field==='readerShowTranslation'&&_readerActive&&S.settings.readerLayout==='single')loadReaderSurah(Number(document.getElementById('readerSurah').value),0,Number(document.getElementById('readerAyah').value)||1);};
+  window.setReaderDisplay=function(field,value){if(!['readerTheme','readerTextSize','readerShowTranslation','readerShowTranslit'].includes(field))return;S.settings[field]=value;if(field==='readerTheme')S.settings.readerThemeExplicit=true;saveSettings();applyReaderDisplay();};
   window.setReaderLanguage=async function(lang){const clean=sanitizeTranslationLang(lang);S.settings.lang=clean;document.getElementById('readerLanguage').value=clean||'en';document.getElementById('settingLang').value=clean;syncMainLang();saveSettings();await loadReaderSurah(Number(document.getElementById('readerSurah').value),_readerPage);};
   window.setReaderLayout=async function(value){S.settings.readerLayout=value==='single'?'single':'maximum';saveSettings();applyReaderDisplay();await loadReaderSurah(Number(document.getElementById('readerSurah').value),0,Number(document.getElementById('readerAyah').value)||1);};
   function renderPhoneReaderChapter(page=null){
@@ -2284,9 +2423,9 @@ html.reader-open #qvtDock { display:none !important; }
   let _readerTouchY=null;
   window.addEventListener('touchstart',event=>{_readerTouchY=event.touches[0]?.clientY??null;},{passive:true});
   window.addEventListener('touchend',event=>{if(!_readerActive||_readerLoading||S.settings.readerLayout==='single'||_readerTouchY===null||event.target.closest?.('select,details,#studyPanel,#readerRemotePad'))return;const delta=_readerTouchY-(event.changedTouches[0]?.clientY??_readerTouchY);_readerTouchY=null;const root=document.scrollingElement;if(Math.abs(delta)>40&&((delta>0&&root.scrollTop+innerHeight>=root.scrollHeight-3)||(delta<0&&root.scrollTop<=1))&&Date.now()-_readerScrollAt>700){_readerScrollAt=Date.now();readerStep(delta>0?1:-1);}},{passive:true});
-  function readerFont(){return document.getElementById('readerScript').value==='madani'?'QuranBitmap':'QuranIndoPak';}
-  async function ensureReaderFont(){const faces=await document.fonts.load('28px '+readerFont());if(!faces.length)throw Error('Reader font unavailable');}
-  window.setReaderScript=async function(script){S.settings.readerScript=script==='madani'?'madani':'indopak';document.getElementById('readerScript').value=S.settings.readerScript;saveSettings();const ayah=Number(document.getElementById('readerAyah').value)||1;await loadReaderSurah(Number(document.getElementById('readerSurah').value),0,ayah);};
+  function readerFont(){if(_audioMode&&_audioVisual?.riwaya==='ad-duri')return 'QuranDuri';return glassesArabicFamily(document.getElementById('readerScript').value==='madani'?'QuranBitmap':'QuranIndoPak');}
+  async function ensureReaderFont(){await ensureTypography();const faces=await document.fonts.load(glassesArabicSize()+'px '+readerFont());if(!faces.length)throw Error('Reader font unavailable');}
+  window.setReaderScript=async function(script){S.settings.readerScript=script==='madani'?'madani':'indopak';if(['indopak','amiri'].includes(S.settings.glassesArabicFont))S.settings.glassesArabicFont=S.settings.readerScript==='madani'?'amiri':'indopak';document.getElementById('readerScript').value=S.settings.readerScript;syncTypographySettings();saveSettings();const ayah=Number(document.getElementById('readerAyah').value)||1;await loadReaderSurah(Number(document.getElementById('readerSurah').value),0,ayah);};
   async function showReaderSplash(){
     const epoch=++_readerEpoch, image=new Image();image.src='./artwork/quran-splash.png';
     try{await image.decode();const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,576,288);
@@ -2295,29 +2434,34 @@ html.reader-open #qvtDock { display:none !important; }
       const data=ctx.getImageData(0,0,576,288);for(let i=0;i<data.data.length;i+=4){const ink=255-(data.data[i]*.2126+data.data[i+1]*.7152+data.data[i+2]*.0722);data.data[i]=data.data[i+1]=data.data[i+2]=ink;}ctx.putImageData(data,0,0);await sendReaderCanvas(canvas,epoch,{splash:true});await new Promise(resolve=>setTimeout(resolve,650));}catch(error){trace('reader.splash',String(error));}
   }
   async function sendReaderCanvas(canvas,epoch,{splash=false}={}){
+    canvas=finishGlassesArabicCanvas(canvas);
     const ctx=canvas.getContext('2d');let failure=null;
-    const interleaved=!splash&&(_audioMode||!!S.settings.readerGlassesTranslation)&&!_readerPicking&&!!_readerNativeText;
+    const interleaved=!splash&&!_readerPicking&&!!_readerNativeText;
     const miniPlayer=!splash&&_audioMode&&!_readerPicking&&!!_audioVisualModule;
     _readerCountdownFrame=interleaved&&!miniPlayer?canvas:null;
     if(_readerCountdownFrame){const content=readerNativeContent(Number(S.settings.readerAutoSeconds)||15);_readerArtworkModule.drawReaderCountdown(ctx,content);_readerCountdownLast=content;}
     // Full lower tiles retain the frame beside native translation text.
     if(miniPlayer){_audioFrame=canvas;_audioFooterLayout=false;ctx.save();ctx.translate(0,256);_audioVisualModule.drawAudioPlayer(ctx,_audioVisual||{});ctx.restore();}
     const tiles=Array.from({length:4},(_,i)=>({x:i%2*288,y:Math.floor(i/2)*144,height:144}));
-    const nativeKey=splash+':'+miniPlayer+':'+interleaved+':'+_readerNativeY+':'+_readerNativeText;
+    const nativeText=_readerNativeText,nativeY=_readerNativeY;
+    // Content changes are native text upgrades, not layout changes. Rebuilding
+    // here used to resend every Arabic tile for each translation continuation.
+    const nativeKey=splash+':'+miniPlayer+':'+interleaved+':'+nativeY;
     if(nativeKey!==_readerNativeKey){_readerImageLayout=false;_readerNativeKey=nativeKey;}
     await queueBridgeCall('readerPage',async()=>{
-      if(!_readerActive||epoch!==_readerEpoch)return;
-      if(!_readerImageLayout){
+      if(_fontTestActive||!_readerActive||epoch!==_readerEpoch)return;
+      const rebuild=async()=>{
       const images=tiles.map((tile,i)=>({containerID:20+i,containerName:'reader'+i,xPosition:tile.x,yPosition:tile.y,width:288,height:tile.height,zOrderIndex:i+1}));
       const content=readerNativeContent(Number(S.settings.readerAutoSeconds)||15);_readerCountdownLast=content;
       const textObject=miniPlayer||splash||interleaved?[]:[{containerID:1,containerName:'readerInput',xPosition:360,yPosition:27,width:44,height:24,content,isEventCapture:1,zOrderIndex:5,paddingLength:0}];
-      if(interleaved)textObject.push({containerID:1,containerName:'readerInput',xPosition:_readerModule.READER_TRANSLATION_INSET,yPosition:_readerNativeY,width:_readerModule.READER_TRANSLATION_WIDTH,height:(miniPlayer?252:272)-_readerNativeY,content:_readerNativeText,isEventCapture:1,zOrderIndex:5,paddingLength:0});
+      if(interleaved)textObject.push({containerID:1,containerName:'readerInput',xPosition:_readerModule.READER_TRANSLATION_INSET,yPosition:nativeY,width:_readerModule.READER_TRANSLATION_WIDTH,height:(miniPlayer?252:272)-nativeY,content:nativeText,isEventCapture:1,zOrderIndex:5,paddingLength:0});
       else if(miniPlayer||splash)textObject.push({containerID:1,containerName:'readerInput',xPosition:0,yPosition:0,width:576,height:288,content:' ',isEventCapture:1,zOrderIndex:0,paddingLength:0});
       const ok=await S.bridge.rebuildPageContainer({containerTotalNum:images.length+textObject.length,textObject,imageObject:images,menuObject:glassesMenu()});
       if(ok===false){failure=Error('Reader layout rejected');throw failure;}
-      _readerImageLayout=true;_readerLastTiles=[];
-      }
-      for(let i=0;i<tiles.length;i++){
+      _readerImageLayout=true;_readerLastTiles=[];_readerNativeLastContent=interleaved?nativeText:null;
+      };
+      if(!_readerImageLayout)await rebuild();
+      const transfer=async()=>{for(let i=0;i<tiles.length;i++){
         if(!_readerActive||epoch!==_readerEpoch)return;
         const tile=tiles[i],rgba=ctx.getImageData(tile.x,tile.y,288,tile.height).data;
         const gray=new Uint8Array(288*tile.height);for(let n=0;n<gray.length;n++)gray[n]=rgba[n*4];
@@ -2327,6 +2471,12 @@ html.reader-open #qvtDock { display:none !important; }
         const result=await S.bridge.updateImageRawData({containerID:20+i,containerName:'reader'+i,imageData:gray});
         if(result!=null&&result!==0&&result!=='success'){failure=Error('Reader image transfer failed: '+result);throw failure;}
         _readerLastTiles[i]=gray;
+      }};
+      await transfer();
+      if(interleaved&&nativeText!==_readerNativeLastContent&&_readerActive&&epoch===_readerEpoch){
+        let ok=false;try{ok=await S.bridge.textContainerUpgrade({containerID:1,containerName:'readerInput',content:nativeText});}catch(_){}
+        if(ok===false){_readerImageLayout=false;await rebuild();await transfer();}
+        else _readerNativeLastContent=nativeText;
       }
     });
     if(failure)throw failure;
@@ -2343,25 +2493,21 @@ html.reader-open #qvtDock { display:none !important; }
     const ayah=_readerPicking==='ayah',max=ayah?_readerData.verses.length:114;
     const start=Math.max(1,Math.min(_readerPick-2,max-4));
     const lines=[ayah?'Choose ayah · '+SURAHS[_readerData.surah]:'Choose surah',''];for(let n=start;n<=Math.min(max,start+4);n++)lines.push((n===_readerPick?'> ':'  ')+n+(ayah?'':' '+SURAHS[n]));lines.push('','Tap to read · Double-tap back');
-    if(S.bridge.updateImageRawData){
-      const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;const ctx=canvas.getContext('2d');
-      ctx.fillStyle='#000';ctx.fillRect(0,0,576,288);ctx.fillStyle='#ddd';ctx.font='20px sans-serif';ctx.fillText(lines[0],16,29);
-      for(let n=start;n<=Math.min(max,start+4);n++){
-        const y=48+(n-start)*35,selected=n===_readerPick;
-        if(selected){ctx.fillStyle='#222';ctx.fillRect(10,y,556,33);ctx.strokeStyle='#fff';ctx.strokeRect(10,y,556,33);}
-        ctx.fillStyle=selected?'#fff':'#aaa';ctx.font='22px sans-serif';ctx.fillText((selected?'> ':'  ')+n+(ayah?'':' '+SURAHS[n]),22,y+24);
-      }
-      ctx.fillStyle='#999';ctx.font='15px sans-serif';ctx.fillText('Swipe to choose · Tap to read · Double-tap back',16,270);
-      sendReaderCanvas(canvas,_readerEpoch).catch(error=>trace('reader.picker',error.message));return;
-    }
-    queueBridgeCall('readerSurahPicker',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'surahPicker',xPosition:8,yPosition:4,width:560,height:280,content:lines.join('\n'),isEventCapture:1,paddingLength:2}],menuObject:glassesMenu()}));
+    const epoch=_readerEpoch,kind=_readerPicking,content=lines.join('\n');
+    const page={containerTotalNum:1,textObject:[{containerID:1,containerName:'surahPicker',xPosition:12,yPosition:6,width:552,height:276,content,isEventCapture:1,paddingLength:0}],menuObject:glassesMenu()};
+    const reuse=_readerPickerLayout===kind;_readerPickerLayout=kind;
+    queueBridgeCall('readerSurahPicker',async()=>{
+      if(!_readerActive||_readerPicking!==kind||epoch!==_readerEpoch)return;
+      if(reuse){try{const ok=await S.bridge.textContainerUpgrade({containerID:1,containerName:'surahPicker',content});if(ok!==false)return;}catch(_){}}
+      return S.bridge.rebuildPageContainer(page);
+    });
   }
   function readerEvent(event){
-    if(event.menuItemClickEvent){const id=event.menuItemClickEvent.itemID;if(id===20&&_readerPicking){readerEvent({textEvent:{eventType:0}});return;}if(id===21)toggleReaderGlassesTranslation();else if(id===15)toggleReaderBookmark();else if(id===16)resumeReaderBookmark();else if(id===10||id===11||id===12){closeQuranReader();setReciteMode(id===10?'listen':id===11?'practice':'taraweeh');}else if(id===14)setReaderAutoScroll(!_readerAutoEnabled);else if(id===13)pickReaderSurah();else if(id===17)pickReaderAyah();else if((id===18||id===19)&&_readerPicking){const max=_readerPicking==='ayah'?_readerData.verses.length:114;_readerPick=Math.max(1,Math.min(max,_readerPick+(id===18?10:-10)));renderReaderPicker();}else if(id===6)renderReaderPage();else if(id===7)readerStep(1);else if(id===8)readerStep(-1);else if(id===9)closeQuranReader();return;}
+    if(event.menuItemClickEvent){const id=event.menuItemClickEvent.itemID;if(id===20&&_readerPicking){readerEvent({textEvent:{eventType:0}});return;}if(id===21)toggleReaderGlassesTranslation();else if(id===22||id===23)setReaderLayout(id===22?'single':'maximum');else if(id===15)toggleReaderBookmark();else if(id===16)resumeReaderBookmark();else if(id===10||id===11||id===12){closeQuranReader();setReciteMode(id===10?'listen':id===11?'practice':'taraweeh');}else if(id===14)setReaderAutoScroll(!_readerAutoEnabled);else if(id===13)pickReaderSurah();else if(id===17)pickReaderAyah();else if((id===18||id===19)&&_readerPicking){const max=_readerPicking==='ayah'?_readerData.verses.length:114;_readerPick=Math.max(1,Math.min(max,_readerPick+(id===18?10:-10)));renderReaderPicker();}else if(id===6)renderReaderPage();else if(id===7)readerStep(1);else if(id===8)readerStep(-1);else if(id===9)closeQuranReader();return;}
     const e=event.textEvent||event.listEvent||event.sysEvent;if(!e)return;const t=e.eventType==null?0:e.eventType;
     if(event.sysEvent&&(t===6||t===7)){stopReaderAutoTimer();_readerAutoEnabled=false;_readerActive=false;_readerEpoch++;if(_readerAbort)_readerAbort.abort();_cleanupBridgeResources();return;}
     if(_readerPicking){if(t===1||t===2){const max=_readerPicking==='ayah'?_readerData.verses.length:114;_readerPick=Math.max(1,Math.min(max,_readerPick+(t===1?-1:1)));renderReaderPicker();}else if(t===0){if(_readerPicking==='ayah')jumpReaderAyah(_readerPick);else loadReaderSurah(_readerPick);}else if(t===3)renderReaderPage();return;}
-    if(t===1||t===2)readerStep(t===1?-1:1);else if(t===0)pickReaderSurah();else if(t===3)requestSystemExit();
+    if(t===1||t===2)readerStep(t===1?-1:1);else if(t===0)pickReaderSurah();else if(t===3)readerStep(1);
   }
 
   // ── Recitation mode ─────────────────────────────────────────────────────────
@@ -3279,23 +3425,23 @@ html.reader-open #qvtDock { display:none !important; }
     if (p === 'auto' || p === 'shared') return 'groq';
     return STT_PROVIDERS.indexOf(p) >= 0 ? p : 'groq';
   }
-  // Mirrors ALLOWED_MODELS in server.js. Notes are measured, not marketing.
+  // Model IDs mirror ALLOWED_MODELS in server.js.
   var TRANSCRIBE_MODELS = {
     groq: [
       { id: 'whisper-large-v3-turbo', label: 'whisper-large-v3-turbo (default)',
-        note: 'Fastest measured: ~350ms, word timings, ~$0.12 per 90min session.' },
+        note: 'Groq-hosted Whisper with word timings. Long G2 searches can retry with Whisper Large v3.' },
       { id: 'whisper-large-v3', label: 'whisper-large-v3',
-        note: 'Slightly lower error rate than turbo, ~3x the price.' },
+        note: 'Uses the full Whisper Large v3 model for every request, with word timings.' },
     ],
     openai: [
-      { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe (default)',
-        note: '~450ms and half the price of whisper-1. No word timings; the timer re-phases from text.' },
+      { id: 'whisper-1', label: 'whisper-1 (default)',
+        note: 'OpenAI-hosted Whisper with word timings.' },
+      { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe',
+        note: 'OpenAI transcription without word timings; verse timing follows the recognized text.' },
       { id: 'gpt-transcribe', label: 'gpt-transcribe',
-        note: "OpenAI's newer default. ~465ms, no word timings." },
+        note: 'OpenAI transcription without word timings.' },
       { id: 'gpt-4o-transcribe', label: 'gpt-4o-transcribe',
-        note: '~1.4s, no word timings. Higher accuracy claim than mini.' },
-      { id: 'whisper-1', label: 'whisper-1 (legacy)',
-        note: 'The only OpenAI model returning word timings, but ~1.25s and dearest.' },
+        note: 'OpenAI transcription without word timings; verse timing follows the recognized text.' },
     ],
   };
 
@@ -3321,6 +3467,18 @@ html.reader-open #qvtDock { display:none !important; }
     p = sanitizeProvider(p);
     if (!S.settings.modelByProvider) S.settings.modelByProvider = {};
     S.settings.modelByProvider[p] = normalizeModel(p, model);
+  }
+
+  function migrateModelDefaults(settings) {
+    if (settings.openaiWhisperDefault === 1) return settings;
+    const models = settings.modelByProvider;
+    settings.modelByProvider = models && typeof models === 'object' && !Array.isArray(models) ? { ...models } : {};
+    // Old builds persisted the Mini default even without an explicit choice.
+    // Move that former default once; subsequent user choices stay remembered.
+    if (!settings.modelByProvider.openai || settings.modelByProvider.openai === 'gpt-4o-mini-transcribe') settings.modelByProvider.openai = 'whisper-1';
+    if (sanitizeProvider(settings.transcriptionProvider) === 'openai' && (!settings.transcriptionModel || settings.transcriptionModel === 'gpt-4o-mini-transcribe')) settings.transcriptionModel = 'whisper-1';
+    settings.openaiWhisperDefault = 1;
+    return settings;
   }
 
   function sttPayload() {
@@ -3449,8 +3607,8 @@ html.reader-open #qvtDock { display:none !important; }
       merged.dimSecondary = merged.dimSecondary === true;
       merged.phoneTextSize = normalizePhoneTextSize(merged.phoneTextSize);
       delete merged.whisperUnlocked;
-      return merged;
-    } catch { return { ...DEFAULT_SETTINGS, pipelineVersion: 'v4', lang: '' }; }
+      return migrateModelDefaults(merged);
+    } catch { return migrateModelDefaults({ ...DEFAULT_SETTINGS, pipelineVersion: 'v4', lang: '' }); }
   }
 
   function saveSettings() {
@@ -3920,36 +4078,24 @@ html.reader-open #qvtDock { display:none !important; }
 
   function renderModeHome() {
     if(!_homeActive||_readerActive||S.isRecording||!S.bridge)return;
-    if(!S.bridge.updateImageRawData){
-      showGlassesPage({hdr:'Choose mode',pages:[['Translate','Practice','Read Quran','Taraweeh','Listen Quran','Settings'].map((name,i)=>(i===_homeIndex?'> ':'  ')+name).join('\n')]},0);return;
-    }
     const epoch=++_homeEpoch;
     queueBridgeCall('mode-home',async function(){
       const current=()=>_homeActive&&!_readerActive&&!S.isRecording&&epoch===_homeEpoch;
       if(!current())return;
       _homeModule ||= await import('./glassesHome.js');
       if(!current())return;
-      const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;
-      const ctx=canvas.getContext('2d');_homeModule.drawModeHome(ctx,_homeIndex);
+      const page=_homeModule.modeHomePage(glassesMenu(),_homeIndex);
       if(!_homeLayout){
-        const ok=await S.bridge.rebuildPageContainer(_homeModule.modeHomePage(glassesMenu()));
+        const ok=await S.bridge.rebuildPageContainer(page);
         if(ok===false)throw Error('Glasses rejected mode home');
         _homeLayout=true;_homeLastTiles=[];_readerImageLayout=false;_imagePageActive=false;
       }
-      for(let i=0;i<4;i++){
-        if(!current())return;
-        const rgba=ctx.getImageData(i%2*288,Math.floor(i/2)*144,288,144).data;
-        const gray=new Uint8Array(288*144);for(let n=0;n<gray.length;n++)gray[n]=rgba[n*4];
-        const previous=_homeLastTiles[i];if(previous&&gray.every((v,n)=>v===previous[n]))continue;
-        const result=await S.bridge.updateImageRawData({containerID:30+i,containerName:'home'+i,imageData:gray});
-        if(result!=null&&result!==0&&result!=='success')throw Error('Mode home image transfer failed: '+result);
-        _homeLastTiles[i]=gray;
-      }
+      else if(current()){let ok=false;try{ok=await S.bridge.textContainerUpgrade({containerID:1,containerName:'homeInput',content:page.textObject[0].content});}catch(_){}if(ok===false){_homeLayout=false;await S.bridge.rebuildPageContainer(page);if(current())_homeLayout=true;}}
     });
   }
 
   function showModeHome() {
-    _homeActive=true;_homeLayout=false;_homeLastTiles=[];_pendingGlasses=null;
+    _glassesSessionId++;_homeActive=true;_homeLayout=false;_homeLastTiles=[];_pendingGlasses=null;_readerImageLayout=false;
     renderModeHome();
   }
 
@@ -3965,19 +4111,24 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   let _audioMode=false,_audioUI=null,_audioSyncKey='',_audioSyncEpoch=0;
+  let _listenPhonePageKey='';
   let _audioReinitPending=false;
   let _audioVisual=null,_audioVisualModule=null,_audioFrame=null,_audioFooterLayout=false,_audioFooterKey='',_audioFooterPending=false;
   let _listenLanguagePicking=false,_listenLanguageIndex=0;
+  let _listenOptionsPicking='',_listenOptionsIndex=0;
   function listenLanguageOptions(){return Object.entries(LANGUAGE_CATALOG).filter(([code,info])=>info.glasses&&code!=='uzc').map(([value,info])=>({value,label:info.label})).sort((a,b)=>a.label.localeCompare(b.label));}
   function listenTranslationLanguage(){const lang=S.settings.listenTranslationLang??S.settings.lang??'en';return lang==='uzc'?'uz':listenLanguageOptions().some(o=>o.value===lang)?lang:'en';}
-  function listenGlassesDisplay(){return S.settings.listenGlassesDisplay==='translation'?'translation':'arabic-translation';}
+  function listenGlassesDisplay(){return ['arabic','translation'].includes(S.settings.listenGlassesDisplay)?S.settings.listenGlassesDisplay:'arabic-translation';}
+  function listenPlaybackSpeed(){const rate=Number(S.settings.listenPlaybackSpeed);return [1,1.25,1.5,2].includes(rate)?rate:1;}
   function syncListenPreferences(){
     const language=document.getElementById('listenTranslationLanguage');
     if(!language.options.length)for(const option of listenLanguageOptions())language.add(new Option(option.label,option.value));
     language.value=listenTranslationLanguage();document.getElementById('listenGlassesDisplay').value=listenGlassesDisplay();
+    document.getElementById('listenPlaybackSpeed').value=String(listenPlaybackSpeed());
   }
+  window.setListenPlaybackSpeed=function(value){const rate=Number(value);S.settings.listenPlaybackSpeed=[1,1.25,1.5,2].includes(rate)?rate:1;saveSettings();syncListenPreferences();_audioUI?.setPlaybackRate(listenPlaybackSpeed());};
   window.setListenGlassesDisplay=async function(value){
-    S.settings.listenGlassesDisplay=value==='translation'?'translation':'arabic-translation';saveSettings();syncListenPreferences();
+    S.settings.listenGlassesDisplay=['arabic','translation'].includes(value)?value:'arabic-translation';saveSettings();syncListenPreferences();
     if(_audioMode&&_audioVisual?.ayah)await followListenAyah(_audioVisual,true);
   };
   window.setListenTranslationLanguage=async function(value){
@@ -4000,31 +4151,78 @@ html.reader-open #qvtDock { display:none !important; }
     if(t===1||t===2){_listenLanguageIndex=(_listenLanguageIndex+(t===1?-1:1)+options.length)%options.length;renderListenLanguagePicker();}
     else if(t===0)setListenTranslationLanguage(options[_listenLanguageIndex].value);
   }
+  function listenSyncKey(state){return state.reciter+':'+state.surah+':'+state.ayah;}
+  function renderListenPhonePage(state){
+    if(!_audioMode||_readerLoading||!_readerData||_readerData.surah!==state.surah||(_readerData.riwaya||'hafs')!==(state.riwaya||'hafs'))return;
+    const content=_readerModule.readerListeningContent(_readerData,_readerPages[_readerPage]);if(!content)return;
+    const key=JSON.stringify([state.reciter,state.surah,state.riwaya,content]);if(key===_listenPhonePageKey)return;_listenPhonePageKey=key;
+    clearVerseArabic();
+    updatePhoneUI({mode:'LOCKED',surah:state.surah,ayah:state.ayah,surahName:_readerData.name,ayahTotal:_readerData.totalAyahs,arabic:content.arabic,translation:content.translation,transliteration:content.transliteration,riwaya:state.riwaya,numbered:false,isListeningGroup:true},'');
+    // Listen Quran has its own language selection, independent of live mode.
+    document.getElementById('verseTrans').textContent=content.translation;
+    document.getElementById('verseArabic').style.fontFamily=state.riwaya==='ad-duri'?'QuranDuri':'';
+    document.getElementById('versePos').textContent=_readerData.name+(state.riwaya==='ad-duri'?' · Al-Duri':'')+' · '+(content.label==='Bismillah'?content.label:(content.multiple?'Ayahs ':'Ayah ')+content.label);
+    document.getElementById('verseStudyTools').hidden=true;document.getElementById('wordProgress').style.display='none';document.getElementById('lockedContent').scrollTop=0;
+  }
+  function listenOptions(){
+    if(_listenOptionsPicking==='speed')return [1,1.25,1.5,2].map(value=>({value,label:value+'×'+(value===listenPlaybackSpeed()?' (selected)':'')}));
+    if(_listenOptionsPicking==='display')return [{value:'arabic-translation',label:'Arabic + translation'},{value:'arabic',label:'Arabic only'},{value:'translation',label:'Translation only'}].map(o=>({...o,label:o.label+(o.value===listenGlassesDisplay()?' (selected)':'')}));
+    return [{value:1,label:'Next reading page'},{value:-1,label:'Previous reading page'},{value:0,label:'Back to playback'}];
+  }
+  function renderListenOptions(){
+    const title={speed:'Playback speed',display:'Show on glasses',pages:'Reading pages'}[_listenOptionsPicking];
+    const text=title+'\n\n'+listenOptions().map((o,i)=>(i===_listenOptionsIndex?'> ':'  ')+o.label).join('\n')+'\n\nSwipe to choose · Tap to select';
+    _readerImageLayout=false;_audioFrame=null;++_readerEpoch;
+    queueBridgeCall('listenOptions',()=>{if(!_listenOptionsPicking)return;return S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'listenOptions',xPosition:16,yPosition:8,width:544,height:272,content:text,isEventCapture:1,paddingLength:0}],menuObject:{menuItems:[{itemID:40,itemName:'Back to playback'}]}});});
+  }
+  function openListenOptions(kind){_listenOptionsPicking=kind;const selected=kind==='speed'?listenPlaybackSpeed():kind==='display'?listenGlassesDisplay():1;_listenOptionsIndex=Math.max(0,listenOptions().findIndex(o=>o.value===selected));renderListenOptions();}
+  function listenOptionsEvent(event){
+    const e=event.textEvent||event.listEvent||event.sysEvent,t=e?.eventType??0;
+    if(event.sysEvent&&(t===6||t===7)){closeListenQuran();return;}
+    if(event.menuItemClickEvent?.itemID===40||t===3){_listenOptionsPicking='';if(_audioVisual)followListenAyah(_audioVisual,true);return;}
+    if(!e||event.sysEvent&&(t===4||t===5))return;
+    const options=listenOptions();
+    if(t===1||t===2){_listenOptionsIndex=(_listenOptionsIndex+(t===1?-1:1)+options.length)%options.length;renderListenOptions();}
+    else if(t===0){const kind=_listenOptionsPicking,value=options[_listenOptionsIndex].value;_listenOptionsPicking='';
+      if(kind==='display')setListenGlassesDisplay(value);
+      else if(kind==='speed'){setListenPlaybackSpeed(value);if(_audioVisual)followListenAyah(_audioVisual,true);}
+      else{const next=Math.max(0,Math.min(_readerPages.length-1,_readerPage+value));if(_readerPages[next]?.ayahs.includes(_audioVisual?.ayah))_readerPage=next;renderReaderPage();}
+    }
+  }
   function syncListenPage(state){
-    if(!_audioMode||_listenLanguagePicking||!_readerActive||_readerLoading||_readerPicking||!_readerModule||state.state==='loading'||state.state==='error'||_readerData?.surah!==state.surah||_audioSyncKey!==state.surah+':'+state.ayah)return false;
+    if(!_audioMode||_listenLanguagePicking||_listenOptionsPicking||!_readerActive||_readerLoading||_readerPicking||!_readerModule||state.state==='loading'||state.state==='error'||_readerData?.surah!==state.surah||_audioSyncKey!==listenSyncKey(state))return false;
     const page=_readerModule.readerAudioPage(_readerPages,state.ayah,state.positionMs,state.durationMs);
     if(page<0||page===_readerPage)return false;
     _readerPage=page;
     renderReaderPage(state.ayah,false).catch(error=>trace('audio.page',error.message));
     return true;
   }
+  function stepListenPage(direction){
+    if(!_audioVisual?.canPlay||_readerLoading)return;
+    if(_audioVisual.playbackMode==='surah')return _audioUI?.step(direction);
+    const target=_readerModule?.readerAudioPageTarget(_readerPages,_readerPage+Math.sign(direction));
+    if(target)return _audioUI?.selectAyah(target.ayah,target.progress);
+  }
   function updateAudioMiniPlayer(state){
     _audioVisual=state;
     if(_audioMode){
       const button=document.getElementById('recordBtn'),playing=state.state==='playing';
       const output=S.isG2?'G2 glasses':'phone audio';
-      button.disabled=!state.canPlay;button.textContent=playing?'Pause Playing ('+output+')':state.canPlay?'Start Playing ('+output+')':'Preparing audio…';
+      button.disabled=!state.canPlay;button.textContent=playing?'Pause Playing ('+output+')':state.canPlay?'Start Playing ('+output+')':state.state==='error'?'Audio unavailable':'Preparing audio…';
       button.classList.toggle('stop',playing);
-      const label=playing?'Playing':state.state==='paused'?'Paused':state.canPlay?'Ready to play':'Preparing audio';
-      setStatus(label+(state.surah?' · '+SURAHS[state.surah]+(state.ayah?' · '+state.ayah:''):''),playing?'result':'');
+      const label=playing?'Playing':state.state==='error'?'Audio unavailable · select the surah to retry':state.state==='paused'?'Paused':state.canPlay?'Ready to play':'Preparing audio';
+      setStatus(label+(state.surah?' · '+SURAHS[state.surah]+(state.ayah?' · '+(state.ayahLabel||state.ayah):''):''),state.state==='error'?'error':playing?'result':'');
     }
+    // Keep the previous frame intact while its replacement is being prepared.
+    // Footer updates must not cancel that replacement or mix in the new clock.
+    if(_fontTestActive||!state.canPlay||state.state==='loading')return;
     if(syncListenPage(state))return;
-    const key=[state.state,Math.floor(state.positionMs/1000),Math.floor(state.durationMs/1000)].join(':');
+    const key=[state.surah,state.ayah,state.state,Math.floor(state.positionMs/1000),Math.floor(state.durationMs/1000)].join(':');
     if(!_audioMode||!_readerActive||!_readerImageLayout||!_audioFrame||!_audioVisualModule||key===_audioFooterKey)return;
     if(_audioFooterPending)return;
     _audioFooterKey=key;_audioFooterPending=true;const epoch=_readerEpoch;
     queueBridgeCall('audioMiniPlayer',async()=>{
-      if(!_audioMode||epoch!==_readerEpoch||!_readerImageLayout)return;
+      if(_fontTestActive||!_audioMode||epoch!==_readerEpoch||!_readerImageLayout)return;
       const canvas=_audioFrame,ctx=canvas.getContext('2d');ctx.save();ctx.translate(0,256);_audioVisualModule.drawAudioPlayer(ctx,_audioVisual);ctx.restore();
       for(let i=2;i<4;i++){
         if(!_audioMode||epoch!==_readerEpoch)return;
@@ -4041,36 +4239,62 @@ html.reader-open #qvtDock { display:none !important; }
     if(_audioMode){document.getElementById('mainView').style.display='';return;}
     if(S.isRecording)await stopListening();
     if(_readerActive)closeQuranReader();
-    leaveModeHome();_audioMode=true;_audioSyncKey='';_listenLanguagePicking=false;syncListenPreferences();
+    leaveModeHome();_audioMode=true;_audioSyncKey='';_listenPhonePageKey='';_listenLanguagePicking=false;_listenOptionsPicking='';syncListenPreferences();
     _audioFrame=null;_audioFooterKey='';_audioVisualModule=await import('./glassesAudioPlayer.js');
     const main=document.getElementById('mainView');main.style.display='';main.dataset.audio='true';document.documentElement.dataset.audio='true';
     document.getElementById('settingsView').style.display='none';
     document.querySelectorAll('[aria-label="Recitation mode"] .mv-toggle-btn').forEach(button=>button.classList.remove('active'));
     document.getElementById('btnModeAudio').classList.add('active');
     document.getElementById('searchingContent').style.display='none';document.getElementById('lockedContent').style.display='flex';
-    document.getElementById('verseArabic').replaceChildren();document.getElementById('verseTrans').textContent='';document.getElementById('verseTranslit').textContent='';document.getElementById('versePos').textContent='Choose a reciter and surah';
+    clearVerseArabic();document.getElementById('verseTrans').textContent='';document.getElementById('verseTranslit').textContent='';document.getElementById('versePos').textContent='Choose a reciter and surah';
     document.getElementById('listenQuranView').hidden=false;
-    if(!_audioUI){const module=await import('./listenQuran.js');_audioUI=module.mountListenQuran({host:document.getElementById('listenQuranView'),baseUrl:backendBase(),surahs:SURAHS,embedded:true,downloadHost:document.getElementById('listenDownloadControls'),onPackChange:pack=>{document.getElementById('audioPackLabel').textContent=pack?SURAHS[pack.surah]+' · '+({'alafasy':'Mishary Rashid Alafasy','husary':'Mahmoud Khalil Al-Husary','abdul-basit-murattal':'Abdul Basit Murattal'}[pack.reciter]||pack.reciter):'Choose a reciter and surah in Listen Quran to manage its download here.';},language:()=>S.settings.lang||'en',onChange:updateAudioMiniPlayer,onAyah:followListenAyah,onExit:closeListenQuran});}
-    await _audioUI.open();
-    if(S.isG2&&!_readerActive)queueBridgeCall('audioReady',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'audioReady',xPosition:12,yPosition:8,width:552,height:272,content:'Listen Quran\nChoose a reciter and surah on your phone.\nTap to play or pause.\nSwipe for previous or next ayah.',isEventCapture:1}],menuObject:{menuItems:[{itemID:30,itemName:'Back to modes'}]}}));
+    if(!_audioUI){const module=await import('./listenQuran.js');_audioUI=module.mountListenQuran({host:document.getElementById('listenQuranView'),baseUrl:backendBase(),surahs:SURAHS,embedded:true,playbackRate:listenPlaybackSpeed(),onRateChange:setListenPlaybackSpeed,downloadHost:document.getElementById('listenDownloadControls'),onPackChange:pack=>{document.getElementById('audioPackLabel').textContent=pack?SURAHS[pack.surah]+' · '+(pack.reciterName||pack.reciter):'Choose a reciter and surah in Listen Quran to manage its download here.';},language:()=>S.settings.lang||'en',onChange:updateAudioMiniPlayer,onAyah:followListenAyah,onExit:closeListenQuran});}
+    _audioUI.setPlaybackRate(listenPlaybackSpeed());await _audioUI.open();
+    if(S.isG2&&!_readerActive)queueBridgeCall('audioReady',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'audioReady',xPosition:12,yPosition:8,width:552,height:272,content:'Listen Quran\nChoose a reciter and surah on your phone.\nTap to play or pause.\nSwipe for previous or next page.',isEventCapture:1}],menuObject:{menuItems:[{itemID:30,itemName:'Back to modes'}]}}));
     window.scrollTo({top:0,behavior:'auto'});
   };
   async function followListenAyah(state,force=false){
+    if(_fontTestActive)return;
+    if(_audioMode&&state.playbackMode==='surah')return followListenSurah(state,force);
     if(!_audioMode||!state.surah||!state.ayah)return;
-    const key=state.surah+':'+state.ayah;if(key===_audioSyncKey&&!force)return;const initial=!_audioSyncKey||force;_audioSyncKey=key;
+    const key=listenSyncKey(state);if(key===_audioSyncKey&&!force)return;const initial=!_audioSyncKey||force;
+    const reciterChanged=!!_audioSyncKey&&!_audioSyncKey.startsWith(state.reciter+':');_audioSyncKey=key;
+    // A different recording must refresh native text even when its reading
+    // page is unchanged. The glasses may still hold the previous text frame.
+    if(reciterChanged)_readerNativeLastContent=null;
     const epoch=++_audioSyncEpoch;
     _readerActive=true;_readerPicking=false;_readerAutoEnabled=false;stopReaderAutoTimer();
-    if(initial||!_readerData||_readerData.surah!==state.surah)await loadReaderSurah(state.surah,0,state.ayah);
-    else jumpReaderAyah(state.ayah,false);
+    if(initial||!_readerData||_readerData.surah!==state.surah||(_readerData.riwaya||'hafs')!==(state.riwaya||'hafs'))await loadReaderSurah(state.surah,0,state.ayah);
+    else {
+      const page=_readerModule.readerAudioPage(_readerPages,state.ayah,state.positionMs,state.durationMs);
+      // Retain grouped pages across ayahs, but explicitly refresh a reciter
+      // change. Byte caching keeps unchanged Arabic tiles off the bridge.
+      if(page>=0&&(page!==_readerPage||reciterChanged)){_readerPage=page;await renderReaderPage(state.ayah,false);}
+      document.getElementById('readerAyah').value=String(state.ayah);
+    }
     if(epoch!==_audioSyncEpoch)return;
-    document.getElementById('readerView').style.display='none';
-    const verse=_readerData?.verses.find(verse=>verse.ayah===state.ayah);
-    if(verse){updatePhoneUI({mode:'LOCKED',surah:state.surah,ayah:state.ayah,surahName:_readerData.name,ayahTotal:_readerData.totalAyahs,arabic:verse.arabic,translation:verse.translation,transliteration:verse.transliteration},'');document.getElementById('lockedContent').scrollTop=0;if(_audioVisual)updateAudioMiniPlayer(_audioVisual);}
+    if(!_readerData||_readerData.surah!==state.surah||(_readerData.riwaya||'hafs')!==(state.riwaya||'hafs'))throw Error('Listening text could not load');
+    if(S.settings.readerAyah!==state.ayah){S.settings.readerAyah=state.ayah;saveSettings();}
+    document.getElementById('readerView').hidden=true;
+    renderListenPhonePage(state);if(_audioVisual)updateAudioMiniPlayer(_audioVisual);
+  }
+  async function followListenSurah(state,force=false){
+    const key=state.reciter+':'+state.surah+':surah';if(_audioSyncKey===key&&!force)return;_audioSyncKey=key;++_audioSyncEpoch;
+    _readerActive=true;_readerPicking=false;_readerAutoEnabled=false;stopReaderAutoTimer();_readerAbort?.abort();_readerLoading=false;_readerData=null;_readerPages=[];
+    const epoch=++_readerEpoch;
+    if(!_readerModule)_readerModule=await import('./readerPagination.js');if(!_readerArtworkModule)_readerArtworkModule=await import('./readerArtwork.js');
+    if(!_audioMode||epoch!==_readerEpoch)return;
+    clearVerseArabic();document.getElementById('verseTranslit').textContent='';document.getElementById('verseTrans').textContent='Full-surah listening';
+    document.getElementById('versePos').textContent=SURAHS[state.surah]+' · Noreen Muhammad Siddiq';document.getElementById('verseStudyTools').hidden=true;document.getElementById('readerView').hidden=true;
+    const canvas=document.createElement('canvas');canvas.width=576;canvas.height=288;const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,576,288);
+    _readerArtworkModule.drawReaderFrame(ctx,'',readerFont(),'',false);
+    _readerNativeY=40;_readerNativeText='Noreen Muhammad Siddiq\n'+SURAHS[state.surah]+' · Al-Duri\n\nFull-surah audio\nVerse sync unavailable';
+    _readerImageLayout=false;await sendReaderCanvas(canvas,epoch);
   }
   window.closeListenQuran=function(){
-    _audioMode=false;_listenLanguagePicking=false;++_audioSyncEpoch;_audioSyncKey='';_audioFrame=null;_audioUI?.close();document.getElementById('listenQuranView').hidden=true;
+    _audioMode=false;_listenLanguagePicking=false;_listenOptionsPicking='';++_audioSyncEpoch;_audioSyncKey='';_listenPhonePageKey='';_audioFrame=null;_audioUI?.close();document.getElementById('listenQuranView').hidden=true;
     document.getElementById('mainView').dataset.audio='false';document.documentElement.dataset.audio='false';document.getElementById('recordBtn').classList.remove('stop');
-    document.getElementById('recordBtn').textContent=S.isG2?'Start Listening (G2 mic)':'Start Listening';document.getElementById('recordBtn').disabled=false;
+    document.getElementById('recordBtn').textContent='Start Listening';document.getElementById('recordBtn').disabled=false;
     _updateReciteModeUI();
     updatePhoneUI({mode:'SEARCHING'},'');
     if(_readerActive)closeQuranReader();else{document.getElementById('mainView').style.display='';showModeHome();}
@@ -4081,7 +4305,7 @@ html.reader-open #qvtDock { display:none !important; }
   function renderGlassesSettings(){
     if(!S.isG2||!S.bridge)return;
     const select=document.getElementById('settingLang'),options=Array.from(select.options).filter(o=>o.value);
-    const entries=_glassesLanguagePicking?options.map(o=>o.textContent):['Translation language','Reading layout','Reciter speed','Back to modes'];
+    const entries=_glassesLanguagePicking?options.map(o=>o.textContent):['Microphone: '+(_micSwitchPending?'switching…':S.settings.forcePhoneMic?'Phone':'Glasses'),'Translation language','Reading layout','Reciter speed','Arabic font test','Back to modes'];
     const start=Math.max(0,_glassesSettingIndex-2);const lines=entries.slice(start,start+6).map((name,i)=>(start+i===_glassesSettingIndex?'> ':'  ')+name);
     queueBridgeCall('modeSettings',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'modeSettings',xPosition:12,yPosition:8,width:552,height:272,content:(_glassesLanguagePicking?'Translation language':'Settings')+'\n\n'+lines.join('\n')+'\n\nSwipe to choose · Tap to select',isEventCapture:1}],menuObject:{menuItems:[{itemID:30,itemName:'Back to modes'}]}}));
   }
@@ -4089,12 +4313,14 @@ html.reader-open #qvtDock { display:none !important; }
     const input=event.textEvent||event.listEvent;const t=input?.eventType??0;
     if(event.menuItemClickEvent?.itemID===30||t===3){_glassesSettings=false;hideSettings();showModeHome();return;}
     const options=Array.from(document.getElementById('settingLang').options).filter(o=>o.value);
-    if(t===1||t===2){const max=_glassesLanguagePicking?options.length:4;_glassesSettingIndex=(_glassesSettingIndex+(t===1?max-1:1))%max;renderGlassesSettings();return;}
+    if(t===1||t===2){const max=_glassesLanguagePicking?options.length:6;_glassesSettingIndex=(_glassesSettingIndex+(t===1?max-1:1))%max;renderGlassesSettings();return;}
     if(!input||t!==0)return;
     if(_glassesLanguagePicking){setMainLang(options[_glassesSettingIndex].value);_glassesLanguagePicking=false;_glassesSettingIndex=0;}
-    else if(_glassesSettingIndex===0){_glassesLanguagePicking=true;_glassesSettingIndex=Math.max(0,options.findIndex(o=>o.value===S.settings.lang));}
-    else if(_glassesSettingIndex===1){const choices=['arabic-translation','translation-pronunciation','custom'];setReadingPreset(choices[(choices.indexOf(S.settings.readingPreset)+1)%3]);}
-    else if(_glassesSettingIndex===2)cyclePaceMode();
+    else if(_glassesSettingIndex===0){toggleMicSource();return;}
+    else if(_glassesSettingIndex===1){_glassesLanguagePicking=true;_glassesSettingIndex=Math.max(0,options.findIndex(o=>o.value===S.settings.lang));}
+    else if(_glassesSettingIndex===2){const choices=['arabic-translation','translation-pronunciation','custom'];setReadingPreset(choices[(choices.indexOf(S.settings.readingPreset)+1)%3]);}
+    else if(_glassesSettingIndex===3)cyclePaceMode();
+    else if(_glassesSettingIndex===4){openFontTest();return;}
     else{_glassesSettings=false;hideSettings();showModeHome();return;}
     renderGlassesSettings();
   }
@@ -4112,7 +4338,7 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   function refreshGlassesWelcomeText() {
-    if(_audioMode||_glassesSettings)return;
+    if(_fontTestActive||_audioMode||_glassesSettings)return;
     if (_readerActive || !S.bridge || !S.startupPageCreated) return;
     if(_homeActive){renderModeHome();return;}
     var body = _startupBodyText();
@@ -4221,10 +4447,11 @@ html.reader-open #qvtDock { display:none !important; }
 
   // Menu actions are separate from temple taps and survive every page rebuild.
   function glassesMenu() {
-    if(_audioMode)return {menuItems:[{itemID:33,itemName:'Play / Pause'},{itemID:36,itemName:'Seek back 10 seconds'},{itemID:37,itemName:'Seek forward 10 seconds'},{itemID:38,itemName:listenGlassesDisplay()==='translation'?'Show Arabic + translation':'Show translation only'},{itemID:39,itemName:'Translation language'},{itemID:34,itemName:'Next ayah'},{itemID:35,itemName:'Previous ayah'},{itemID:31,itemName:'Next reading page'},{itemID:32,itemName:'Previous reading page'},{itemID:30,itemName:'Back to modes'}]};
+    if(_audioMode&&_audioVisual?.playbackMode==='surah')return {menuItems:[{itemID:33,itemName:'Play / Pause'},{itemID:36,itemName:'Seek back 10 seconds'},{itemID:37,itemName:'Seek forward 10 seconds'},{itemID:34,itemName:'Next surah'},{itemID:35,itemName:'Previous surah'},{itemID:30,itemName:'Back to modes'}]};
+    if(_audioMode)return {menuItems:[{itemID:33,itemName:'Play / Pause'},{itemID:36,itemName:'Seek back 10 seconds'},{itemID:37,itemName:'Seek forward 10 seconds'},{itemID:38,itemName:'Show on glasses'},{itemID:41,itemName:'Playback speed'},{itemID:39,itemName:'Translation language'},{itemID:34,itemName:'Next ayah'},{itemID:35,itemName:'Previous ayah'},{itemID:31,itemName:'Reading pages'},{itemID:30,itemName:'Back to modes'}]};
     const modes=[{itemID:10,itemName:'Translate'},{itemID:11,itemName:'Practice'},{itemID:12,itemName:'Taraweeh'}];
     if(_readerActive&&_readerPicking)return {menuItems:[{itemID:13,itemName:'Choose surah'},{itemID:17,itemName:'Choose ayah'},{itemID:18,itemName:'Jump +10'},{itemID:19,itemName:'Jump -10'},{itemID:20,itemName:'Read selection'},{itemID:6,itemName:'Back to reading'},...modes]};
-    if(_readerActive)return {menuItems:[{itemID:13,itemName:'Choose surah'},{itemID:17,itemName:'Choose ayah'},{itemID:21,itemName:S.settings.readerGlassesTranslation?'Hide translation':'Show translation'},{itemID:15,itemName:'Bookmark page'},{itemID:14,itemName:'Toggle auto-scroll'},...(S.settings.readerBookmark?[{itemID:16,itemName:'Resume bookmark'}]:[]),...modes]};
+    if(_readerActive)return {menuItems:[{itemID:13,itemName:'Choose surah'},{itemID:17,itemName:'Choose ayah'},{itemID:22,itemName:'Single verse'+(S.settings.readerLayout==='single'?' (selected)':'')},{itemID:23,itemName:'Fit multiple verses'+(S.settings.readerLayout!=='single'?' (selected)':'')},{itemID:21,itemName:readerGlassesTranslationEnabled()?'Hide translation':'Show translation'},{itemID:15,itemName:'Bookmark page'},{itemID:14,itemName:'Toggle auto-scroll'},...(S.settings.readerBookmark?[{itemID:16,itemName:'Resume bookmark'}]:[]),{itemID:9,itemName:'Back to modes'}]};
     var items = [
       { itemID: 3, itemName: S.isRecording ? 'Stop listening' : 'Start listening' },
       { itemID: 4, itemName: _readingHeld ? 'Resume verse' : 'Hold verse' },
@@ -4244,43 +4471,21 @@ html.reader-open #qvtDock { display:none !important; }
     if (!S.bridge) return;
     _homeActive=!_readerActive&&!S.isRecording;_homeLayout=false;_homeLastTiles=[];
     S.startupPageCreated = false;
-    // Per SDK: createStartUpPageContainer may be called ONLY ONCE ever; all
-    // subsequent page ops must use rebuildPageContainer. On reload/reconnect
-    // the first call returns non-zero (container already exists) — fall
-    // through to rebuildPageContainer instead of throwing + needing recovery.
-    queueBridgeCall('createStartUpPageContainer', function () {
-      return S.bridge.createStartUpPageContainer({
-        containerTotalNum: 4,
-        textObject: _startupTextContainers(),
-        menuObject: glassesMenu(),
-      }).then(function (result) {
-        // Protobuf zero-omission: success code 0 arrives as undefined.
-        var code = (result == null) ? 0 : result;
-        if (code === 0) {
-          S.startupPageCreated = true;
-          S.displayRebuilt = false;
-          _lastRakHdr = rakatHdr();
-          _lastClkHdr = clockHdr();
-          log('G2: startup page created', 'ok');
-          refreshGlassesWelcomeText();
-          glassesTopBarUpdate();
-          return;
-        }
-        log('G2: startup container already exists (code=' + code + ') — rebuilding', 'w');
-        return S.bridge.rebuildPageContainer({
-          containerTotalNum: 4,
-          textObject: _startupTextContainers(),
-          menuObject: glassesMenu(),
-        }).then(function () {
-          S.startupPageCreated = true;
-          S.displayRebuilt = true;   // just rebuilt — ready for text upgrades
-          _lastRakHdr = rakatHdr();
-          _lastClkHdr = clockHdr();
-          log('G2: startup page rebuilt', 'ok');
-          refreshGlassesWelcomeText();
-          glassesTopBarUpdate();
-        });
-      });
+    const home=_homeActive,epoch=_homeEpoch;
+    queueBridgeCall('createStartUpPageContainer', async function () {
+      const current=()=>home?_homeActive&&epoch===_homeEpoch:!_homeActive;
+      if(!current())return;
+      if(home){_homeModule ||= await import('./glassesHome.js');if(!current())return;}
+      const page=home?_homeModule.modeHomePage(glassesMenu(),_homeIndex):{containerTotalNum:4,textObject:_startupTextContainers(),menuObject:glassesMenu()};
+      let created=false;
+      if(!S.startupAttempted){S.startupAttempted=true;const result=await S.bridge.createStartUpPageContainer(page);created=result==null||result===0;}
+      if(!created){const ok=await S.bridge.rebuildPageContainer(page);if(ok===false)throw Error('Startup layout rejected');}
+      S.startupPageCreated=true;S.displayRebuilt=!home;
+      if(!current())return;
+      _lastRakHdr=rakatHdr();_lastClkHdr=clockHdr();
+      if(home){_homeLayout=true;_readerImageLayout=false;_imagePageActive=false;}
+      else if(!_readerActive){refreshGlassesWelcomeText();glassesTopBarUpdate();}
+      log('G2: '+(home?'native mode menu':'startup page')+' ready','ok');
     });
   }
 
@@ -4288,21 +4493,7 @@ html.reader-open #qvtDock { display:none !important; }
   // If that happens, force a plain text rebuild so the glasses never stay blank.
   function recoverStartupIfBlank() {
     if (_readerActive || !S.bridge || S.startupPageCreated) return;
-    queueBridgeCall('recover-startup-rebuild', function () {
-      return S.bridge.rebuildPageContainer({
-        containerTotalNum: 4,
-        textObject: _startupTextContainers(),
-        menuObject: glassesMenu(),
-      }).then(function () {
-        S.startupPageCreated = true;
-        S.displayRebuilt = true;
-        _lastRakHdr = rakatHdr();
-        _lastClkHdr = clockHdr();
-        log('G2: startup recovery rebuild applied', 'ok');
-        refreshGlassesWelcomeText();
-        glassesTopBarUpdate();
-      });
-    });
+    glassesStartup();
   }
 
   // glassesUpdate receives { hdr, body } object from buildGlassesText
@@ -4317,7 +4508,7 @@ html.reader-open #qvtDock { display:none !important; }
   var _glassesDraining = false;
 
   function glassesUpdate(display) {
-    if(_readerActive)return;
+    if(_fontTestActive||_readerActive||(_homeActive&&!S.isRecording&&!_manualBrowse))return;
     if (!S.bridge) return;
     if (typeof display === 'string') display = { hdr: '', body: display };
     _pendingGlasses = display;
@@ -4326,7 +4517,7 @@ html.reader-open #qvtDock { display:none !important; }
     queueBridgeCall('glassesUpdate', function drain() {
       var next = _pendingGlasses;
       _pendingGlasses = null;
-      if (!next || _readerActive) { _glassesDraining = false; return; }
+      if (!next || _fontTestActive || _readerActive) { _glassesDraining = false; return; }
       return _writeGlasses(next).then(function () {
         if (_pendingGlasses) return drain();
         _glassesDraining = false;
@@ -4340,10 +4531,10 @@ html.reader-open #qvtDock { display:none !important; }
   /** Header-only repaint. The countdown ticks twice a minute per ayah and only
    *  ever changes the header, so it must not force a full container rebuild. */
   function glassesHeaderUpdate(hdr) {
-    if(_homeActive)return;
+    if(_fontTestActive||_homeActive)return;
     if (!S.bridge || !S.displayRebuilt) return;   // no container yet: skip, a full write is coming
     queueBridgeCall('glassesHeader', function () {
-      return S.bridge.textContainerUpgrade({
+      return upgradeLiveGlassesText({
         containerID: 1, containerName: 'hdr', content: (hdr || '').slice(0, 500),
       });
     });
@@ -4351,8 +4542,10 @@ html.reader-open #qvtDock { display:none !important; }
 
   function _writeGlasses(display) {
     return Promise.resolve().then(function () {
-      if(_homeActive&&_homeLayout&&!S.isRecording&&!_manualBrowse)return;
+      if(_fontTestActive||_homeActive&&!S.isRecording&&!_manualBrowse)return;
+      var imageSession = _glassesSessionId;
       if (display.arabicImage) return writeArabicImage(display).catch(function (error) {
+        if (imageSession !== _glassesSessionId || (!S.isRecording && !_manualBrowse) || !S.settings.arabicImage) return;
         // An experimental transfer failure must leave a readable display.
         S.settings.arabicImage = false; saveSettings();
         var checkbox = document.getElementById('settingArabicImage');
@@ -4451,7 +4644,7 @@ html.reader-open #qvtDock { display:none !important; }
    * short BLE write, so they must never force a full page rebuild.
    */
   function glassesTopBarUpdate() {
-    if(_audioMode||_glassesSettings)return;
+    if(_fontTestActive||_audioMode||_glassesSettings)return;
     if(_homeActive)return;
     // Gate on the containers existing, not on a rebuild having happened. The
     // startup page creates them too, and gating on displayRebuilt left the
@@ -4462,13 +4655,13 @@ html.reader-open #qvtDock { display:none !important; }
     if (rak !== _lastRakHdr) {
       _lastRakHdr = rak;
       queueBridgeCall('glassesRakat', function () {
-        return S.bridge.textContainerUpgrade({ containerID: 2, containerName: 'rak', content: centerPx(rak, G2_RAK_W - 10) });
+        return upgradeLiveGlassesText({ containerID: 2, containerName: 'rak', content: centerPx(rak, G2_RAK_W - 10) });
       });
     }
     if (clk !== _lastClkHdr) {
       _lastClkHdr = clk;
       queueBridgeCall('glassesClock', function () {
-        return S.bridge.textContainerUpgrade({ containerID: 4, containerName: 'clk', content: clk });
+        return upgradeLiveGlassesText({ containerID: 4, containerName: 'clk', content: clk });
       });
     }
   }
@@ -4643,7 +4836,7 @@ html.reader-open #qvtDock { display:none !important; }
         var transForPaused = glassesTranslationText(state.translationGlasses ?? state.translation);
         var pBody = transForPaused || 'Single-tap to resume';
         var pPages = buildPages(pBody, state.transliteration, 2);
-        pPages[pPages.length - 1] += '\n' + g2Divider() + '\nSingle-tap resume \u00B7 Double-tap exit';
+        pPages[pPages.length - 1] += '\n' + g2Divider() + '\nSingle-tap resume';
         return { hdr: pHdr, pages: pPages };
       }
 
@@ -4902,17 +5095,24 @@ html.reader-open #qvtDock { display:none !important; }
 
 
 
+  function clearVerseArabic() {
+    document.getElementById('verseArabic').replaceChildren();
+    document.getElementById('verseArabic').style.fontFamily='';
+    _kState.key='';_kState.count=0;_kState.lastIdx=-1;_lastVerseState=null;
+    ++_meaningRequest;document.getElementById('wordMeaning').hidden=true;
+  }
+
   function renderVerseArabic(state) {
     var el = document.getElementById('verseArabic');
     if (!el) return;
     _lastVerseState = state;
     var text = displayArabic(state.arabic);
-    var key = (state.surah || 0) + ':' + (state.ayah || 0)
+    var key = (state.riwaya || 'hafs') + ':' + (state.surah || 0) + ':' + (state.ayah || 0)
       + (S.settings.showTashkeel === false ? ':p' : ':t');
     // Karaoke only when truly locked — a forming candidate must not pretend
     // word-level certainty. Not in Practice either: nothing advances the
     // word position there, so the verse would sit dimmed on word one forever.
-    var karaoke = state.mode === 'LOCKED' && !state.isCandidate && !_practiceMode && text;
+    var karaoke = state.mode === 'LOCKED' && !state.isCandidate && !state.isListeningGroup && !_practiceMode && text;
     if (!karaoke) key = 'plain:' + key;
     if (_kState.key !== key) {
       _meaningRequest++;
@@ -4924,15 +5124,17 @@ html.reader-open #qvtDock { display:none !important; }
         s.className = 'k-word';
         s.textContent = words[i];
         s.dataset.wordIndex = String(i);
-        s.setAttribute('role','button');s.tabIndex=0;
-        s.setAttribute('aria-label','Meaning of '+words[i]);
-        s.onclick = function(){openWordMeaning(Number(this.dataset.wordIndex));};
-        s.onkeydown = function(event){if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}};
+        if(state.riwaya!=='ad-duri'&&!state.isListeningGroup){
+          s.setAttribute('role','button');s.tabIndex=0;
+          s.setAttribute('aria-label','Meaning of '+words[i]);
+          s.onclick = function(){openWordMeaning(Number(this.dataset.wordIndex));};
+          s.onkeydown = function(event){if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}};
+        }
         el.appendChild(s);
         if (i < words.length - 1) el.appendChild(document.createTextNode(' '));
       }
       _kState.key = key; _kState.count = words.length; _kState.lastIdx = -1;
-      if (state.ayah && !text.includes('۝')) {
+      if (state.ayah && state.numbered !== false && !text.includes('۝')) {
         var end = document.createElement('span');end.className='ayah-end';
         // QPC Hafs Arabic-Indic digits already include the ayah rosette.
         end.textContent = '۝'+String(state.ayah).replace(/[0-9]/g,function(d){return String.fromCharCode(0x660+Number(d));});
@@ -4969,7 +5171,7 @@ html.reader-open #qvtDock { display:none !important; }
     _lastPhoneState = state;
     syncHoldControl(state);
     syncDeviceLanguages();
-    state = applyLocalTranslation(state);
+    state = state.isListeningGroup ? state : applyLocalTranslation(state);
     _lastPhoneWhisper = whisper;
     S.mode = state.mode;
 
@@ -5427,19 +5629,10 @@ html.reader-open #qvtDock { display:none !important; }
   function handleServerMsg(msg) {
     if (msg.type === 'connected') {
       log('Backend ready', 'ok');
-      // Groq has no warmup; in Groq mode skip the "Server waking…" flash that
-      // was designed for the HF endpoint cold-start path.
-      var usingGroq = S.settings && S.settings.transcriptionProvider === 'groq';
-      _modelProvider = usingGroq ? 'groq' : '';
-      if (usingGroq) {
-        setPill('sPillModel', 'ok', 'Ready');
-        // Hide the HF-specific endpoint pill (whisper-v3) left over from a prior
-        // Whisper session — it's not relevant in Groq mode.
-        var fePill = document.getElementById('sPillEndpoint');
-        if (fePill) fePill.style.display = 'none';
-      } else {
-        setPill('sPillModel', 'warn', 'Server waking\u2026');
-      }
+      _modelProvider = '';
+      setPill('sPillModel', 'warn', 'Connecting · ' + providerLabel(sanitizeProvider(S.settings.transcriptionProvider)));
+      var fePill = document.getElementById('sPillEndpoint');
+      if (fePill) fePill.style.display = 'none';
       setPill('sPillConf', '', 'Match: --');
     } else if (msg.type === 'backend_version') {
       // Never write this to #status. That element is the app's only status
@@ -5735,10 +5928,18 @@ html.reader-open #qvtDock { display:none !important; }
     }
   }
 
+  var _micCaptureEpoch=0;
+  function microphoneBridgeCall(name,action){
+    let failure;
+    return queueBridgeCall(name,()=>Promise.resolve().then(action).catch(error=>{failure=error;throw error;})).then(result=>{if(failure)throw failure;if(result===false)throw Error('Glasses microphone request was rejected');return result;});
+  }
   function startG2Mic() {
     if (!S.bridge || !S.startupPageCreated) return;
-    queueBridgeCall('audioControl(true)', function () {
-      return S.bridge.audioControl(true).then(function () {
+    const epoch=_micCaptureEpoch;
+    return microphoneBridgeCall('audioControl(true)', function () {
+      if(!S.isRecording||S.settings.forcePhoneMic||epoch!==_micCaptureEpoch)return;
+      return S.bridge.audioControl(true).then(function (opened) {
+        if(opened===false)throw Error('Glasses microphone request was rejected');
         S.g2MicPermissionState = 'granted';
         log('G2 mic opened', 'ok');
       });
@@ -5746,8 +5947,9 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   function stopG2Mic() {
+    _micCaptureEpoch++;
     if (!S.bridge || !S.startupPageCreated) return;
-    queueBridgeCall('audioControl(false)', function () {
+    return microphoneBridgeCall('audioControl(false)', function () {
       return S.bridge.audioControl(false);
     });
   }
@@ -5756,10 +5958,12 @@ html.reader-open #qvtDock { display:none !important; }
     if (!S.bridge || !S.isG2 || !S.startupPageCreated) {
       return Promise.reject(new Error('G2 bridge not ready'));
     }
-    return queueBridgeCall('audioControl(true)-preflight', function () {
-      return S.bridge.audioControl(true).then(function () {
+    return microphoneBridgeCall('audioControl(true)-preflight', function () {
+      return S.bridge.audioControl(true).then(function (opened) {
+        if(opened===false)throw Error('Glasses microphone permission was rejected');
         S.g2MicPermissionState = 'granted';
-        return S.bridge.audioControl(false).then(function () {
+        return S.bridge.audioControl(false).then(function (closed) {
+          if(closed===false)throw Error('Glasses microphone could not be closed');
           log('G2 mic permission preflight complete', 'ok');
           return true;
         });
@@ -5789,8 +5993,10 @@ html.reader-open #qvtDock { display:none !important; }
       log('No mic API', 'err'); return;
     }
     log('Requesting mic...');
-    navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false } })
+    const epoch=_micCaptureEpoch;
+    return navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false } })
       .then(function (stream) {
+        if(!S.isRecording||epoch!==_micCaptureEpoch||(!S.settings.forcePhoneMic&&S.isG2)){stream.getTracks().forEach(t=>t.stop());return;}
         S.mediaStream = stream;
         // Ask for a 16 kHz graph: the browser's own resampler is properly
         // band-limited, so no manual decimation is needed when it honours this.
@@ -5824,10 +6030,12 @@ html.reader-open #qvtDock { display:none !important; }
       .catch(function (err) {
         log('Mic denied: ' + err.message, 'err');
         log('Tip: Check browser Settings → Site → Microphone, or try "Use phone mic" in Settings', 'info');
+        throw err;
       });
   }
 
   function stopBrowserMic() {
+    _micCaptureEpoch++;
     if (S.scriptProcessor) { try { S.scriptProcessor.disconnect(); } catch (_) {} S.scriptProcessor = null; }
     if (S.audioContext) { try { S.audioContext.close(); } catch (_) {} S.audioContext = null; }
     if (S.mediaStream) { S.mediaStream.getTracks().forEach(function (t) { t.stop(); }); S.mediaStream = null; }
@@ -5845,18 +6053,23 @@ html.reader-open #qvtDock { display:none !important; }
   var _scrollBurstTimer = null;
   var _lastDoubleTapTime = 0;   // debounce double-tap (G2 sometimes fires twice)
 
-  // Root = not recording (ready / stopped / paused). Double-tap opens system exit dialog.
+  // Only the actual mode launcher is the root; paused/read/audio modes are not.
   function isG2Root() {
-    return !S.isRecording;
+    return _homeActive&&!_readerActive&&!_audioMode&&!_glassesSettings&&!S.isRecording;
   }
 
   function onG2Event(event) {
+    if(event.audioEvent?.audioPcm){if(!S.settings.forcePhoneMic&&!_micSwitchPending)sendPcm(event.audioEvent.audioPcm);return;}
+    const input=event.textEvent||event.listEvent||event.sysEvent;
+    if(input?.eventType===3){const now=Date.now();if(now-(_lastDoubleTapTime||0)<700)return;_lastDoubleTapTime=now;}
+    if(_fontTestActive){_fontTestUI?.event(event);return;}
     if(_glassesSettings){glassesSettingsEvent(event);return;}
     if(_listenLanguagePicking){listenLanguageEvent(event);return;}
+    if(_listenOptionsPicking){listenOptionsEvent(event);return;}
     if(_audioMode){
       trace('g2.audio',JSON.stringify(event));
-      if(event.menuItemClickEvent){const id=event.menuItemClickEvent.itemID;if(id===30)closeListenQuran();else if(id===33)_audioUI?.toggle();else if(id===38)setListenGlassesDisplay(listenGlassesDisplay()==='translation'?'arabic-translation':'translation');else if(id===39)openListenLanguagePicker();else if(id===36||id===37)_audioUI?.seekBy(id===36?-10000:10000);else if(id===34||id===35)_audioUI?.step(id===34?1:-1);else if(id===31||id===32){const next=Math.max(0,Math.min(_readerPages.length-1,_readerPage+(id===31?1:-1)));if(_readerPages[next]?.ayahs.includes(Number(document.getElementById('readerAyah').value))){_readerPage=next;renderReaderPage();}}return;}
-      const e=event.textEvent||event.listEvent||event.sysEvent;if(e){const t=e.eventType??0;if(event.sysEvent&&(t===6||t===7)){closeListenQuran();return;}if(event.sysEvent&&(t===4||t===5))return;if(t===0)_audioUI?.toggle?.();else if(t===1||t===2)_audioUI?.step?.(t===1?-1:1);else if(t===3)closeListenQuran();return;}
+      if(event.menuItemClickEvent){const id=event.menuItemClickEvent.itemID;if(id===30)closeListenQuran();else if(id===33)_audioUI?.toggle();else if(id===38)openListenOptions('display');else if(id===41)openListenOptions('speed');else if(id===31)openListenOptions('pages');else if(id===39)openListenLanguagePicker();else if(id===36||id===37)_audioUI?.seekBy(id===36?-10000:10000);else if(id===34||id===35)_audioUI?.step(id===34?1:-1);else if(id===31||id===32){const next=Math.max(0,Math.min(_readerPages.length-1,_readerPage+(id===31?1:-1)));if(_readerPages[next]?.ayahs.includes(Number(document.getElementById('readerAyah').value))){_readerPage=next;renderReaderPage();}}return;}
+      const e=event.textEvent||event.listEvent||event.sysEvent;if(e){const t=e.eventType??0;if(event.sysEvent&&(t===6||t===7)){closeListenQuran();return;}if(event.sysEvent&&(t===4||t===5))return;if(t===0||t===3)_audioUI?.toggle?.();else if(t===1||t===2)stepListenPage(t===1?-1:1);return;}
       if(event.sysEvent&&(event.sysEvent.eventType===6||event.sysEvent.eventType===7)){closeListenQuran();return;}
     }
     if(_readerActive){readerEvent(event);return;}
@@ -5873,10 +6086,6 @@ html.reader-open #qvtDock { display:none !important; }
         if (S.settings.arabicImage) setArabicImage(false);
         else setGlassesBottom(S.settings.glassesBottom === 'translation-only' ? 'transliteration' : 'translation-only');
       }
-      return;
-    }
-    if (event.audioEvent && event.audioEvent.audioPcm) {
-      sendPcm(event.audioEvent.audioPcm);
       return;
     }
     // Trace everything except the high-frequency audio stream.
@@ -5914,7 +6123,7 @@ html.reader-open #qvtDock { display:none !important; }
       renderModeHome();return;
     }
     if(_homeActive&&t===0){openSelectedHomeMode().catch(error=>{log(error.message,'err');showModeHome();});return;}
-    if (_readingHeld && (t === 1 || t === 2 || t === 3)) {
+    if (_readingHeld && (t === 1 || t === 2)) {
       var heldDisplay = buildGlassesText(_heldState);
       _heldPage = Math.max(0, Math.min(heldDisplay.pages.length - 1, _heldPage + (t === 1 ? -1 : 1)));
       showGlassesPage(heldDisplay, _heldPage);
@@ -5923,7 +6132,7 @@ html.reader-open #qvtDock { display:none !important; }
 
     // TAP (Click) - start/resume on root; pause while listening
     if (t === 0 || t === undefined) {
-      if (isG2Root()) {
+      if (!S.isRecording) {
         startListening();
       } else {
         stopListening();
@@ -5931,18 +6140,13 @@ html.reader-open #qvtDock { display:none !important; }
       return;
     }
 
-    // DOUBLE TAP → exit confirm on root; next page on multi-page ayah; pause while listening
+    // Double-tap exits only from the launcher; inside a mode it stays there.
     if (t === 3) {
-      // Debounce: G2 bridge can fire the same double-tap twice in quick
-      // succession. Swallow repeats within 700ms.
-      var nowDt = Date.now();
-      if (nowDt - (_lastDoubleTapTime || 0) < 700) return;
-      _lastDoubleTapTime = nowDt;
-      // Root (ready / stopped / paused): system exit confirmation (EvenHub Make15).
       if (isG2Root()) {
         requestSystemExit();
         return;
       }
+      if(_readingHeld){toggleVerseHold();return;}
       // Multi-page ayah: double-tap advances pages (not pause).
       if (_pageDisplay && _pageDisplay.pages && _pageDisplay.pages.length > 1 && _pageIdx < _pageDisplay.pages.length - 1) {
         // Multi-page ayah, not on last page — advance to next page
@@ -5963,8 +6167,8 @@ html.reader-open #qvtDock { display:none !important; }
         }
         return;
       }
-      // Listening on single/last page — pause back to root.
-      stopListening();
+      // Hold/resume a verse without stopping capture or leaving its mode.
+      if(S.isRecording)toggleVerseHold();
       return;
     }
 
@@ -6007,6 +6211,7 @@ html.reader-open #qvtDock { display:none !important; }
 
   // ─── Record button ────────────────────────────────────────────────────────
   function startListening() {
+    if(_micSwitchPending)return;
     _manualBrowse = false;
     resetVerseHold();
     clearGlassesPreamble();
@@ -6021,7 +6226,7 @@ html.reader-open #qvtDock { display:none !important; }
       if (!keyForProv) {
         setStatus(providerLabel(provSel) + ' API key required — opening settings', 'warn');
         if (typeof log === 'function') log('No STT key set — open Settings and enter one', 'warn');
-        setTimeout(function () { try { showSettings(); } catch (_) {} }, 400);
+        openRecognitionSettings(true);
         return;
       }
     }
@@ -6063,12 +6268,14 @@ html.reader-open #qvtDock { display:none !important; }
 
     var btn = document.getElementById('recordBtn');
     btn.disabled = true;
-    ensureMicPermissionForCurrentSource().then(function () {
-      if (!S.isRecording || startSessionId !== _glassesSessionId) return;
+    const captureStartEpoch=_micCaptureEpoch;
+    ensureMicPermissionForCurrentSource().then(async function () {
+      if (!S.isRecording || startSessionId !== _glassesSessionId || captureStartEpoch!==_micCaptureEpoch) return;
       acquireWakeLock();
       var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
-      if (useBrowserMic) startBrowserMic();
-      else startG2Mic();
+      if (useBrowserMic) await startBrowserMic();
+      else await startG2Mic();
+      if (!S.isRecording || startSessionId !== _glassesSessionId) return;
 
       // Show matching panel, hide idle state
       document.getElementById('matchIdle').style.display = 'none';
@@ -6078,6 +6285,7 @@ html.reader-open #qvtDock { display:none !important; }
       btn.textContent = '\u2192 Stop Listening';
       btn.classList.add('recording');
     }).catch(function (err) {
+      if(startSessionId!==_glassesSessionId||captureStartEpoch!==_micCaptureEpoch)return;
       stopListening();
       var msg = err && err.message ? err.message : 'Microphone permission failed';
       setStatus('Mic permission required', 'error');
@@ -6112,7 +6320,7 @@ html.reader-open #qvtDock { display:none !important; }
 
     var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
     if (useBrowserMic) stopBrowserMic();
-    else stopG2Mic();
+    else stopG2Mic()?.catch(error=>log('Glasses microphone close failed: '+error.message,'err'));
     // Leave the socket open. "stop" already idles the pipeline server-side, and
     // keeping it means resume is one message instead of a reconnect plus a full
     // pipeline re-init — that round-trip was most of the lag on a resume tap.
@@ -6163,7 +6371,7 @@ html.reader-open #qvtDock { display:none !important; }
       try { S.unsubs.launchSource(); } catch (_) {}
       S.unsubs.launchSource = null;
     }
-    try { stopG2Mic(); } catch (_) {}
+    try { stopG2Mic()?.catch(()=>{}); } catch (_) {}
     try { stopBrowserMic(); } catch (_) {}
     _flushSessionState();
   }
@@ -6281,7 +6489,7 @@ html.reader-open #qvtDock { display:none !important; }
 
     if (S.isG2) {
       _updateG2StatusPill();
-      btn.textContent = '\u25CF Start Listening (G2 mic)';
+      btn.textContent = 'Start Listening';
       btn.disabled = false;
 
       // Register event handler (store unsubscribe for cleanup)
@@ -6310,6 +6518,7 @@ html.reader-open #qvtDock { display:none !important; }
       btn.textContent = '\u2192 Start Listening';
       btn.disabled = false;
     }
+    syncMicSourceUI();
   }
 
   // ─── Standalone phone app ─────────────────────────────────────────────────
@@ -6322,6 +6531,7 @@ html.reader-open #qvtDock { display:none !important; }
     var btn = document.getElementById('recordBtn');
     btn.textContent = '\u2192 Start Listening';
     btn.disabled = false;
+    syncMicSourceUI();
 
     // Android back button: close Settings / Help first. On the main screen,
     // background the app rather than exit so the rak'ah count survives.
@@ -6358,7 +6568,7 @@ html.reader-open #qvtDock { display:none !important; }
 
     var lang = document.getElementById('mainLang');
     dockRow.insertBefore(lang, moreBtn);
-    dockRow.insertBefore(document.getElementById('recordBtn'), moreBtn);
+    dockRow.insertBefore(document.getElementById('captureControls'), moreBtn);
     document.getElementById('qvtDock').insertBefore(document.getElementById('waveRow'), dockRow);
 
     function section(title, node) {
@@ -6368,9 +6578,6 @@ html.reader-open #qvtDock { display:none !important; }
       sheet.appendChild(h);
       sheet.appendChild(node);
     }
-    var hint = document.getElementById('reciteModeHint');
-    section('Mode', hint);
-
     var more = document.createElement('button');
     more.type = 'button';
     more.className = 'back-btn btn-arrow';
@@ -6389,6 +6596,7 @@ html.reader-open #qvtDock { display:none !important; }
 
     // The dock belongs to the main screen only.
     var dock = document.getElementById('qvtDock');
+    new ResizeObserver(()=>document.body.style.setProperty('--dock-h',dock.offsetHeight+'px')).observe(dock);
     new MutationObserver(function () { dock.hidden = main.style.display === 'none'; })
       .observe(main, { attributes: true, attributeFilter: ['style'] });
 
@@ -6571,11 +6779,44 @@ html.reader-open #qvtDock { display:none !important; }
   };
 
   // ─── Settings UI ──────────────────────────────────────────────────────────
-  window.setMicSource = function (src) {
-    if (_backendStatusInfo.mobileOnlyMode) src = 'phone';
-    var isPhone = src === 'phone';
-    document.getElementById('btnG2Mic').classList.toggle('active', !isPhone);
-    document.getElementById('btnPhoneMic').classList.toggle('active', isPhone);
+  var _micSwitchPending=false;
+  function syncMicSourceUI() {
+    const phone=!!S.settings.forcePhoneMic||!S.isG2||!!_backendStatusInfo.mobileOnlyMode;
+    const available=S.isG2&&!_backendStatusInfo.mobileOnlyMode;
+    for(const [id,selected]of [['btnG2Mic',!phone],['btnPhoneMic',phone]]){
+      const button=document.getElementById(id);button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));button.disabled=_micSwitchPending||(id==='btnG2Mic'&&!available);
+    }
+    const toggle=document.getElementById('homeMicToggle');toggle.disabled=_micSwitchPending||!available;
+    toggle.dataset.source=phone?'phone':'g2';toggle.setAttribute('aria-busy',String(_micSwitchPending));
+    toggle.title=_micSwitchPending?'Switching microphone':available?'Switch to '+(phone?'glasses':'phone')+' microphone':'Phone microphone · connect glasses to switch';
+    toggle.setAttribute('aria-label','Microphone: '+(phone?'Phone':'Glasses')+'. '+toggle.title);
+    document.getElementById('homeMicLabel').textContent=_micSwitchPending?'Switching…':phone?'Phone mic':'Glasses mic';
+    const record=document.getElementById('recordBtn');if(!S.isRecording&&!_audioMode&&!record.disabled)record.textContent='Start Listening';
+    if(_glassesSettings)renderGlassesSettings();
+  }
+  window.toggleMicSource=function(){return setMicSource(S.settings.forcePhoneMic?'g2':'phone');};
+  window.setMicSource = async function (src) {
+    if(_micSwitchPending)return false;
+    const phone=src==='phone'||!!_backendStatusInfo.mobileOnlyMode;
+    if(!phone&&!S.isG2){syncMicSourceUI();return false;}
+    if(!!S.settings.forcePhoneMic===phone){syncMicSourceUI();return true;}
+    const previous=!!S.settings.forcePhoneMic||!S.isG2,active=S.isRecording&&previous!==phone,session=_glassesSessionId;
+    _micSwitchPending=active;syncMicSourceUI();
+    try{
+      if(active){if(previous)stopBrowserMic();else await stopG2Mic();}
+      S.settings.forcePhoneMic=phone;saveSettings();S.pcmAccum=[];
+      if(S.ws?.readyState===WebSocket.OPEN){const source=currentAudioSource();S.ws.send(JSON.stringify({type:'set_audio_source',source}));_lastSentAudioSource=source;}
+      syncMicSourceUI();updateMicStatus();
+      if(active&&S.isRecording&&session===_glassesSessionId){
+        await ensureMicPermissionForCurrentSource();
+        if(!S.isRecording||session!==_glassesSessionId)return false;
+        if(phone)await startBrowserMic();else await startG2Mic();
+      }
+      return true;
+    }catch(error){
+      if(S.isRecording&&session===_glassesSessionId)stopListening();
+      setStatus((phone?'Phone':'Glasses')+' microphone unavailable — check mic permission and tap Start','error');log('Microphone switch failed: '+error.message,'err');return false;
+    }finally{_micSwitchPending=false;syncMicSourceUI();}
   };
 
   // Free vs BYOK key mode. Shared mode = no client key sent → backend uses
@@ -6607,8 +6848,8 @@ html.reader-open #qvtDock { display:none !important; }
   };
 
   var ENGINE_NOTES = {
-    groq: 'Fastest (~350ms) with word timings. Sign-ups may be closed.',
-    openai: 'Reliable and widely available. ~450ms on the default model.',
+    groq: 'Groq runs Whisper models. Uses your Groq API key for Translate, Practice and Taraweeh.',
+    openai: 'Uses your OpenAI API key for Translate, Practice and Taraweeh.',
   };
 
   function refreshModelChoices() {
@@ -6621,6 +6862,16 @@ html.reader-open #qvtDock { display:none !important; }
     if (eHint) eHint.textContent = ENGINE_NOTES[p] || '';
     if (row) row.style.display = list.length ? '' : 'none';
     S.settings.transcriptionModel = normalizeModel(p, S.settings.transcriptionModel);
+    var provider = document.getElementById('settingTranscribeProvider');
+    if (provider) provider.value = p;
+    var summary = document.getElementById('recognitionSummary');
+    if (summary) summary.textContent = 'Speech recognition · ' + providerLabel(p);
+    var pill = document.getElementById('sPillModel');
+    if (pill) {
+      var selection = 'Selected: ' + providerLabel(p) + ' · ' + S.settings.transcriptionModel;
+      pill.title = selection + ' — change provider or model';
+      pill.setAttribute('aria-label', selection + '. Open speech recognition settings');
+    }
     if (!sel) return;
     sel.innerHTML = list.map(function (m) {
       return '<option value="' + m.id + '">' + m.label + '</option>';
@@ -6649,7 +6900,8 @@ html.reader-open #qvtDock { display:none !important; }
     // Pick this engine's model BEFORE persisting. Saving first stored the
     // outgoing engine's model against the incoming one, so a reload came back
     // with a mismatched pair that the server silently discarded.
-    S.settings.transcriptionModel = rememberedModel(p);
+    S.settings.transcriptionModel = same ? normalizeModel(p, S.settings.transcriptionModel || rememberedModel(p)) : rememberedModel(p);
+    rememberModel(p, S.settings.transcriptionModel);
     var ids = {
       groq: ['btnProviderGroq', 'btnProviderGroqMain'],
       openai: ['btnProviderOpenAI', 'btnProviderOpenAIMain'],
@@ -6668,6 +6920,7 @@ html.reader-open #qvtDock { display:none !important; }
     try { saveSettings(); } catch (_) {}
     if (reinitialize === false) return;
     if (same && reinitialize !== true) return;   // tapping the live engine must not tear down the session
+    setPill('sPillModel', 'warn', 'Connecting · ' + providerLabel(p));
     scheduleReinit('Engine → ' + providerLabel(p)
       + (S.settings.transcriptionModel ? ' (' + S.settings.transcriptionModel + ')' : ''));
   };
@@ -6787,6 +7040,14 @@ html.reader-open #qvtDock { display:none !important; }
   var _languageOptions = null;
   var _previewRevision = 0;
   var _imagePageActive = false;
+  var _liveArabicLayoutKey = '', _liveArabicTiles = [], _liveArabicTexts = {};
+
+  function upgradeLiveGlassesText(data) {
+    return Promise.resolve(S.bridge.textContainerUpgrade(data)).then(function(ok) {
+      if (ok !== false && _imagePageActive) _liveArabicTexts[data.containerID] = data.content;
+      return ok;
+    });
+  }
   var _splitPageActive = false;
   var _arabicFontReady = null;
 
@@ -6954,7 +7215,7 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   function ensureArabicFont() {
-    if (!_arabicFontReady) _arabicFontReady = document.fonts.load('28px QuranBitmap').then(function (faces) {
+    if (!_arabicFontReady) _arabicFontReady = ensureTypography().then(()=>document.fonts.load(glassesArabicSize()+'px '+glassesArabicFamily('QuranBitmap'))).then(function (faces) {
       if (!faces.length) throw new Error('Bundled Quran font unavailable');
     }).catch(function (error) { _arabicFontReady = null; throw error; });
     return _arabicFontReady;
@@ -6970,7 +7231,7 @@ html.reader-open #qvtDock { display:none !important; }
   }
   function arabicImageLines(arabic) {
     var canvas = document.createElement('canvas');
-    var ctx = canvas.getContext('2d'); ctx.font = '28px QuranBitmap';
+    var ctx = canvas.getContext('2d'); ctx.font = glassesArabicSize()+'px '+glassesArabicFamily('QuranBitmap');
     var lines = [], current = '';
     String(arabic).trim().split(/\s+/).forEach(function (word) {
       var candidate = current ? current + ' ' + word : word;
@@ -6986,18 +7247,19 @@ html.reader-open #qvtDock { display:none !important; }
     var bottom = S.settings.glassesLayout === 'arabic-pronunciation' ? (state.transliteration ?? state.translation) : (state.translationGlasses ?? state.translation);
     var translation = combined ? wrapText(glassesTranslationText(bottom), G2_BODY_PX) : [];
     var arabic = arabicImageLines(quranArabicDisplay(state));
-    return {arabic:arabic,translation:translation,combined:combined,count:Math.max(1,Math.ceil(arabic.length/(combined?2:5)),Math.ceil(translation.length/4))};
+    const size=glassesArabicSize(),step=Math.ceil(40*size/28),base=size+10,perPage=combined?Math.min(2,Math.floor((110-Math.ceil(size*.43)-base)/step)+1):Math.min(5,Math.floor((221-Math.ceil(size*.43)-base)/step)+1);
+    return {arabic:arabic,translation:translation,combined:combined,perPage,step,base,count:Math.max(1,Math.ceil(arabic.length/perPage),Math.ceil(translation.length/4))};
   }
   async function arabicImageCanvas(arabic, page, translation) {
     await ensureArabicFont();
-    var canvas = document.createElement('canvas'); canvas.width = 576; canvas.height = 224;
+    var canvas = glassesArabicCanvas(576,224);
     var ctx = canvas.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 576, 224);
-    ctx.fillStyle = '#fff'; ctx.font = '28px QuranBitmap'; ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#fff'; ctx.font = glassesArabicSize()+'px '+glassesArabicFamily('QuranBitmap'); ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
     var layout = arabicLayoutPages({arabic:arabic,translation:translation}); var lines = layout.arabic; var count = layout.count;
     var index = Math.min(Math.max(0, page || 0), count - 1);
-    var perPage = layout.combined ? 2 : 5;
-    lines.slice(index * perPage, index * perPage + perPage).forEach(function(line,row){ctx.fillText(line,560,38+row*40);});
-    return { canvas: canvas, count: count, index: index };
+    var perPage = layout.perPage;
+    lines.slice(index * perPage, index * perPage + perPage).forEach(function(line,row){ctx.fillText(line,560,layout.base+row*layout.step);});
+    return { canvas: finishGlassesArabicCanvas(canvas), count: count, index: index };
   }
 
   async function writeArabicImage(display) {
@@ -7005,7 +7267,8 @@ html.reader-open #qvtDock { display:none !important; }
     var session = _glassesSessionId;
     var rendered = await arabicImageCanvas(display.arabicImage, display.imagePage, display.imageTranslation);
     // A stopped/new session must not receive an image that was waiting for its font.
-    if ((!S.isRecording && !_manualBrowse) || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
+    var current = function() { return !_fontTestActive && (S.isRecording || _manualBrowse) && S.settings.arabicImage && session === _glassesSessionId; };
+    if (!current()) return;
     var texts = _g2TextContainers(display.hdr + (rendered.count > 1 ? ' ' + (rendered.index + 1) + '/' + rendered.count : ''), ' ');
     var layout = arabicLayoutPages({arabic:display.arabicImage,translation:display.imageTranslation});
     if (layout.combined) {
@@ -7019,18 +7282,52 @@ html.reader-open #qvtDock { display:none !important; }
       return { containerID: 10 + tile, containerName: 'arabic' + tile, xPosition: tile % 2 * 288,
         yPosition: G2_BODY_Y + Math.floor(tile / 2) * 112, width: 288, height: 112, zOrderIndex: 10 + tile };
     });
-    var ok = await S.bridge.rebuildPageContainer({ containerTotalNum: texts.length + images.length, textObject: texts, imageObject: images, menuObject: glassesMenu() });
-    if (ok === false) throw new Error('Glasses rejected Arabic image layout');
-    _imagePageActive = true; S.displayRebuilt = true;
+    var menu = glassesMenu();
+    var layoutKey = session + ':' + !!layout.combined + ':' + !!S.settings.dimSecondary + ':' + JSON.stringify(menu);
+    var rebuild = async function() {
+      var ok = await S.bridge.rebuildPageContainer({ containerTotalNum: texts.length + images.length, textObject: texts, imageObject: images, menuObject: menu });
+      if (ok === false) throw new Error('Glasses rejected Arabic image layout');
+      if (!current()) return;
+      _imagePageActive = true; _splitPageActive = false; S.displayRebuilt = true;
+      _liveArabicLayoutKey = layoutKey; _liveArabicTiles = []; _liveArabicTexts = {};
+      texts.forEach(function(text) { _liveArabicTexts[text.containerID] = text.content; });
+      _lastRakHdr = rakatHdr(); _lastClkHdr = clockHdr();
+    };
+    // Locking dots and repeated search packets must not clear the image page.
+    if (!_imagePageActive || _liveArabicLayoutKey !== layoutKey) await rebuild();
+    if (!current()) return;
+    S.displayRebuilt = true;
+    var pieces = [];
     for (var tile = 0; tile < tiles.length; tile++) {
-      if ((!S.isRecording && !_manualBrowse) || !S.settings.arabicImage || session !== _glassesSessionId || _pendingGlasses) return;
       var piece = document.createElement('canvas'); piece.width = 288; piece.height = 112;
       piece.getContext('2d').drawImage(rendered.canvas, tile % 2 * 288, Math.floor(tile / 2) * 112, 288, 112, 0, 0, 288, 112);
       var rgba = piece.getContext('2d').getImageData(0, 0, 288, 112).data;
       var gray = new Uint8Array(288 * 112);
       for (var pixel = 0; pixel < gray.length; pixel++) gray[pixel] = rgba[pixel * 4];
-      var result = await S.bridge.updateImageRawData({ containerID: 10 + tile, containerName: 'arabic' + tile, imageData: gray });
-      if (result !== 'success' && result !== 0) throw new Error('Arabic image transfer failed: ' + result);
+      pieces.push(gray);
+    }
+    var transfer = async function() {
+      for (var tile = 0; tile < pieces.length; tile++) {
+        if (!current()) return;
+        var gray = pieces[tile], previous = _liveArabicTiles[tile];
+        var changed = !previous;
+        if (previous) for (var pixel = 0; pixel < gray.length; pixel++) if (previous[pixel] !== gray[pixel]) { changed = true; break; }
+        if (!changed) continue;
+        // Finish the active frame even if a newer frame is pending. Aborting
+        // after a rebuild left blank/partial Arabic under the 400 ms timer.
+        var result = await S.bridge.updateImageRawData({ containerID: 10 + tile, containerName: 'arabic' + tile, imageData: gray });
+        if (!current()) return;
+        if (result !== 'success' && result !== 0) throw new Error('Arabic image transfer failed: ' + result);
+        _liveArabicTiles[tile] = gray;
+      }
+    };
+    await transfer();
+    for (var text of texts) {
+      if (!current()) return;
+      if (_liveArabicTexts[text.containerID] === text.content) continue;
+      var ok = false;
+      try { ok = await upgradeLiveGlassesText({containerID:text.containerID,containerName:text.containerName,content:text.content}); } catch (_) {}
+      if (ok === false) { await rebuild(); await transfer(); break; }
     }
   }
 
@@ -7161,7 +7458,6 @@ html.reader-open #qvtDock { display:none !important; }
     if (g2Btn && phoneBtn) {
       g2Btn.disabled = _backendStatusInfo.mobileOnlyMode;
       if (_backendStatusInfo.mobileOnlyMode) {
-        S.settings.forcePhoneMic = true;
         setMicSource('phone');
       }
     }
@@ -7263,8 +7559,18 @@ html.reader-open #qvtDock { display:none !important; }
     document.getElementById('settingsCategory').value=selected;
     if(scroll)window.scrollTo({top:0,behavior:'auto'});
   };
+  window.openRecognitionSettings=function(focusKey=false){
+    showSettings();selectSettingsSection('live');
+    document.getElementById('recognitionSettings').open=true;
+    const target=document.getElementById(focusKey
+      ?sanitizeProvider(S.settings.transcriptionProvider)==='openai'?'settingOpenAIKey':'settingGroqKey'
+      :'settingTranscribeProvider');
+    target.focus({preventScroll:true});
+    if(focusKey)target.scrollIntoView({block:'center',behavior:'instant'});
+  };
   window.showSettings = function () {
     applyPhoneTextSize();
+    syncTypographySettings();
     document.getElementById('mainView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'block';
     selectSettingsSection(_audioMode?'audio':document.getElementById('settingsCategory').value);
@@ -7290,7 +7596,7 @@ html.reader-open #qvtDock { display:none !important; }
       + '. Leave blank for auto.';
     setProvider(sanitizeProvider(S.settings.transcriptionProvider), false);
     setKeyMode('byok', false);
-    setMicSource(S.settings.forcePhoneMic ? 'phone' : 'g2');
+    syncMicSourceUI();
     setGlassesBottom(S.settings.glassesBottom || 'transliteration');
     var tOn = S.settings.showTashkeel !== false;
     var bTOn = document.getElementById('btnTashkeelOn');
@@ -7475,6 +7781,7 @@ html.reader-open #qvtDock { display:none !important; }
     }
 
     S.settings = loadSettings();
+    syncMicSourceUI();
     applyPhoneTextSize();
     ensureLangPack(S.settings.lang);
     _originIsBackend = await detectOriginBackend();

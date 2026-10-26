@@ -1,7 +1,164 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readerChapter} from '../backend/quranReader.js';
-import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows,readerSinglePages,readerInterleavedPages,readerAudioPage,readerTranslationPages,READER_TRANSLATION_WIDTH} from '../app/readerPagination.js';
+import {duriUnits} from '../backend/duriReading.js';
+import {noreenCues,noreenTimingSource} from '../backend/mp3QuranRecitations.js';
+import {paginateReader,readerWindows,readerVerseWindows,readerPackedWindows,readerSinglePages,readerInterleavedPages,readerAudioPage,readerTranslationPages,readerListeningPages,readerReadingPages,READER_TRANSLATION_WIDTH} from '../app/readerPagination.js';
+import {ARABIC_SIZES,arabicMetrics,arabicPreferences,edgeBrightness} from '../app/glassesTypography.js';
+import {readerListeningContent,readerAudioPageTarget} from '../app/readerPagination.js';
+
+test('Listen page targets skip grouped ayahs and invert long-ayah clock intervals in every display mode',()=>{
+ for(const riwaya of ['hafs','ad-duri'])for(const options of [{},{arabicOnly:true},{translationOnly:true}]){
+  const data=readerChapter(2,'en',riwaya),measure=t=>t.length*9;
+  const pages=readerListeningPages(data.verses,measure,measure,options);
+  for(let index=0;index<pages.length;index++){
+   const target=readerAudioPageTarget(pages,index);
+   assert.ok(target);assert.equal(readerAudioPage(pages,target.ayah,target.progress*60000,60000),index);
+  }
+  assert.equal(readerAudioPageTarget(pages,-1),null);assert.equal(readerAudioPageTarget(pages,pages.length),null);
+ }
+ const pages=[{ayahs:[1]},{ayahs:[2,3,4,5]},{ayahs:[6,7,8]}];
+ assert.deepEqual(readerAudioPageTarget(pages,2),{ayah:6,progress:0});
+ assert.deepEqual(readerAudioPageTarget(pages,1),{ayah:2,progress:0});
+});
+
+test('Listen phone text follows the glasses ayah group without altering its page',()=>{
+ const chapter=readerChapter(1,'en'),page={ayahs:[6,7]},before=JSON.stringify(page),content=readerListeningContent(chapter,page);
+ assert.deepEqual(content.ayahs,[6,7]);assert.equal(content.label,'6–7');assert.equal(content.multiple,true);
+ assert.ok(content.arabic.includes(chapter.verses[5].arabic));assert.ok(content.arabic.includes(chapter.verses[6].arabic));
+ assert.equal((content.arabic.match(/۝/g)||[]).length,2);assert.equal(content.translation,'6. '+chapter.verses[5].translation+'\n\n7. '+chapter.verses[6].translation);
+ assert.equal(JSON.stringify(page),before);assert.equal(readerListeningContent(chapter,{ayahs:[]}),null);
+});
+
+test('Listen phone groups retain Al-Duri numbering and merged translations exactly once',()=>{
+ const chapter=readerChapter(1,'en','ad-duri'),merged=chapter.verses.at(-1),content=readerListeningContent(chapter,{ayahs:merged.ayahs});
+ assert.equal(content.label,'6–7');assert.equal(content.translation,merged.translation);assert.equal(content.arabic,merged.arabic);assert.ok(!content.arabic.includes('۝'));
+ const invocation=readerListeningContent(chapter,{ayahs:[1]});assert.equal(invocation.label,'Bismillah');assert.equal(invocation.multiple,false);
+});
+
+test('all selectable Arabic sizes preserve long ayahs and keep marks above translation and player',()=>{
+ for(const size of ARABIC_SIZES)for(const riwaya of ['hafs','ad-duri']){
+  const verse=readerChapter(2,'en',riwaya).verses.find(v=>v.ayah===282),measure=t=>t.length*size/3,metrics=arabicMetrics(size);
+  for(const arabicOnly of [false,true]){
+   const pages=readerListeningPages([verse],measure,measure,{arabicOnly,arabicSize:size}),chunks=[];
+   assert.ok(pages.length>1);
+   for(const page of pages){const text=page.lines.join(' ');if(text!==chunks.at(-1))chunks.push(text);const base=page.header?metrics.headerY:metrics.compactY;assert.ok(base+(page.lines.length-1)*metrics.step+metrics.descent<=(arabicOnly?252:144),size+'px must fit before the native text/player');}
+   assert.equal(chunks.join(' '),paginateReader([verse],measure,520,1).flatMap(p=>p.lines).join(' '));
+   if(!arabicOnly){const translated=[];for(const page of pages){const text=page.translationLines.join(' ').replace(/\s+/g,' ').trim();if(text!==translated.at(-1))translated.push(text);}assert.equal(translated.join(' '),verse.translation);}
+  }
+  for(const layout of ['single','maximum']){
+   const pages=readerReadingPages([verse],measure,measure,{layout,arabicSize:size});
+   assert.equal(pages.flatMap(p=>p.translationLines).join(' '),verse.translation);
+   for(const page of pages.filter(p=>p.lines.length&&p.kind!=='interleaved')){const base=page.arabicY||96,step=Math.max(44,Math.ceil(size*44/28));assert.ok(base+(page.lines.length-1)*step+metrics.descent<=272);}
+  }
+ }
+});
+
+test('font defaults and brightness preserve black, white and graduated anti-aliased edges',()=>{
+ assert.deepEqual(arabicPreferences({glassesArabicSize:100,glassesArabicFont:'duri',glassesArabicRendering:'invalid'}),{size:28,font:'auto',rendering:'standard'});
+ assert.equal(edgeBrightness(0),0);assert.equal(edgeBrightness(255),255);
+ let previous=0;const levels=new Set();for(let i=1;i<255;i++){const value=edgeBrightness(i);assert.ok(value>=previous&&value>=i&&value<255);levels.add(value);previous=value;}assert.ok(levels.size>100);
+});
+
+test('Arabic-only listening fills six lines below the opening, preserves long verses and omits translation',()=>{
+ const measure=t=>t.length*9;
+ for(const riwaya of ['hafs','ad-duri'])for(const surah of [1,3,55,112]){
+  const chapter=readerChapter(surah,'en',riwaya),pages=readerListeningPages(chapter.verses,measure,()=>{throw Error('Arabic-only must not measure translation');},{arabicOnly:true,hasBasmala:!!chapter.basmala});
+  assert.ok(pages.length);assert.ok(pages.every(p=>p.kind==='arabic-only'&&!p.translationLines.length));assert.ok(pages.every(p=>p.lines.length<=(p.header?(p.opening?4:5):6)));
+  assert.equal(pages.flatMap(p=>p.lines).join(' '),paginateReader(chapter.verses,measure,520,1).flatMap(p=>p.lines).join(' '));
+  for(const verse of chapter.verses)assert.ok(readerAudioPage(pages,verse.ayah,0,10000)>=0);
+ }
+ const chapter=readerChapter(3),pages=readerListeningPages(chapter.verses,measure,measure,{arabicOnly:true,hasBasmala:true});assert.ok(pages.some(p=>p.lines.length>3));assert.ok(pages.some(p=>p.parts>1));
+});
+
+test('Noreen has verified, contiguous automatic cues and complete Al-Duri mappings across all 114 surahs',()=>{
+ let nativeVerses=0,references=0;
+ for(let surah=1;surah<=114;surah++){
+  const timing=noreenTimingSource(surah),chapter=readerChapter(surah,'en','ad-duri'),hafs=readerChapter(surah,'en'),units=duriUnits(surah);
+  assert.equal(timing.surah,surah);assert.match(timing.sha256,/^[a-f0-9]{64}$/);
+  const cues=noreenCues(timing,{sha256:timing.sha256,durationMs:timing.durationMs});
+  assert.equal(cues.length,chapter.verses.length);assert.equal(cues[0].startMs,0);assert.equal(cues.at(-1).endMs,timing.durationMs);
+  assert.deepEqual(units.flatMap(v=>v.ayahs),hafs.verses.map(v=>v.ayah));
+  const sourceAyahs=units.flatMap(v=>v.sourceAyahs);assert.deepEqual(sourceAyahs,Array.from({length:chapter.totalAyahs},(_,i)=>i+1));
+  assert.ok(units.every(u=>!u.arabic.includes('۝')),'The Al-Duri font already supplies each complete numbered rosette');
+  for(let i=0;i<cues.length;i++){assert.ok(cues[i].durationMs>0);if(i)assert.equal(cues[i].startMs,cues[i-1].endMs);assert.equal(cues[i].ayahLabel,units[i].ayahLabel);}
+  assert.equal(chapter.verses.map(v=>v.translation).join(' '),hafs.verses.map(v=>v.translation).join(' '));
+  nativeVerses+=sourceAyahs.length;references+=units.flatMap(v=>v.ayahs).length;
+ }
+ assert.equal(nativeVerses,6218);assert.equal(references,6236);
+ const fatiha=readerChapter(1,'en','ad-duri');
+ assert.equal(fatiha.verses[0].ayahLabel,'Bismillah');assert.ok(!fatiha.verses[0].arabic.includes('۝'));
+ assert.equal(fatiha.verses.at(-1).ayahLabel,'6–7');assert.equal(fatiha.verses.at(-1).translation,readerChapter(1,'en').verses.at(-1).translation);
+ assert.ok(fatiha.verses.find(v=>v.ayahLabel==='3').arabic.startsWith('مَلِكِ'));
+ assert.equal(readerChapter(1,'en','invented'),null);
+});
+
+test('Al-Duri merged and split verses retain all Arabic, translation and timing references on listening pages',()=>{
+ const measure=t=>t.length*8;
+ for(const surah of [1,2,18,55,107,112]){
+  const chapter=readerChapter(surah,'en','ad-duri');
+  for(const translationOnly of [false,true]){
+   const pages=readerListeningPages(chapter.verses,measure,measure,{translationOnly,hasBasmala:!!chapter.basmala});
+   for(const verse of chapter.verses)for(const ayah of verse.ayahs)assert.ok(readerAudioPage(pages,ayah,0,10000)>=0);
+   if(!translationOnly){const text=pages.flatMap(p=>p.lines).join(' ');for(const verse of chapter.verses)for(const word of verse.arabic.split(/\s+/))assert.ok(text.includes(word));}
+  }
+ }
+});
+
+test('Read Quran keeps single and multiple verse choices with translation enabled',()=>{
+ const verses=readerChapter(55).verses,measure=t=>t.length*9;
+ const multiple=readerReadingPages(verses,measure,measure,{showTranslation:true});
+ assert.ok(multiple.some(page=>page.ayahs.length>1));
+ assert.ok(multiple.every(page=>page.header));assert.ok(multiple.some(page=>page.translationLines.length));
+ for(const page of multiple.filter(p=>p.kind==='interleaved')){assert.ok(page.lines.length<=2);assert.ok(page.translationLines.length<=4);assert.ok(page.ayahs.length<=4);}
+ assert.deepEqual([...new Set(multiple.flatMap(p=>p.ayahs))],verses.map(v=>v.ayah));
+ const single=readerReadingPages(verses,measure,measure,{layout:'single',showTranslation:true});
+ assert.ok(single.every(page=>page.ayahs.length===1));assert.ok(single.length>multiple.length);
+ for(const verse of verses){const pages=single.filter(p=>p.ayah===verse.ayah);assert.equal(pages.flatMap(p=>p.translationLines).join(' '),verse.translation);}
+});
+
+test('Read Quran multiple verse pages preserve translations, long ayahs and an Arabic-only choice',()=>{
+ const chapter=readerChapter(2),measure=t=>t.length*10;
+ const verses=chapter.verses.slice(281,283),pages=readerReadingPages(verses,measure,measure,{showTranslation:true});
+ for(const verse of verses){const own=pages.filter(p=>p.ayahs.includes(verse.ayah));assert.equal(own.flatMap(p=>p.translationLines).join(' '),verse.translation);assert.equal(own.flatMap(p=>p.lines).join(' '),paginateReader([verse],measure,520,1).flatMap(p=>p.lines).join(' '));}
+ const hidden=readerReadingPages(readerChapter(112).verses,measure,measure,{showTranslation:false});
+ assert.ok(hidden.some(p=>p.ayahs.length>1));assert.ok(hidden.every(p=>!p.translationLines?.length));
+});
+
+test('listening packs up to four complete ayahs and holds their page through playback and seeks',()=>{
+ const verses=Array.from({length:10},(_,i)=>({ayah:i+1,arabic:'كلمة',translation:'Verse '+(i+1)})),measure=t=>t.length*9;
+ for(const translationOnly of [false,true]){
+  const pages=readerListeningPages(verses,measure,measure,{translationOnly,hasBasmala:true});
+  assert.equal(pages[0].header,true);assert.deepEqual(pages.map(p=>p.ayahs),[[1],[2,3,4,5],[6,7,8,9],[10]]);
+  assert.ok(pages.slice(1).every(p=>!p.header));
+  for(const page of pages){
+   assert.ok(page.lines.length<=3);assert.ok(page.translationLines.length<=(translationOnly?8:4));
+   assert.ok(page.translationLines.every(line=>measure(line)<=READER_TRANSLATION_WIDTH));
+   for(const ayah of page.ayahs)for(const ms of [0,5000,10000,100])assert.equal(readerAudioPage(pages,ayah,ms,10000),pages.indexOf(page));
+  }
+ }
+});
+
+test('listening respects both text budgets and preserves oversized ayah continuation',()=>{
+ const measure=t=>t.length*10;
+ const verses=[{ayah:2,arabic:'كلمة',translation:'Short'}, {ayah:3,arabic:Array.from({length:90},(_,i)=>'كلمة'+i).join(' '),translation:Array.from({length:160},(_,i)=>'word'+i).join(' ')},{ayah:4,arabic:'كلمة',translation:'After'}, {ayah:5,arabic:'كلمة',translation:'Last'}];
+ for(const translationOnly of [false,true]){
+  const pages=readerListeningPages(verses,measure,measure,{translationOnly});
+  const long=pages.filter(p=>p.ayahs.includes(3));assert.ok(long.length>1);
+  assert.ok(long.every(p=>p.ayahs.length===1));
+  assert.equal(long.flatMap(p=>p.translationLines).join(' ').replace(/\s+/g,' ').trim(),verses[1].translation);
+  assert.deepEqual(pages.at(-1).ayahs,[4,5]);
+  assert.equal(readerAudioPage(pages,3,0,60000),pages.indexOf(long[0]));
+  assert.equal(readerAudioPage(pages,3,60000,60000),pages.indexOf(long.at(-1)));
+ }
+ const actual=readerChapter(55).verses;
+ const pages=readerListeningPages(actual,measure,measure);
+ assert.ok(pages.length<actual.length,'Short surah ayahs share screens');
+ assert.ok(pages.some(p=>p.ayahs.length>=3));
+ assert.deepEqual([...new Set(pages.flatMap(p=>p.ayahs))],actual.map(v=>v.ayah));
+ const chunks=[];for(const page of pages){const text=page.lines.join(' ');if(text!==chunks.at(-1))chunks.push(text);}
+ assert.equal(chunks.join(' '),paginateReader(actual,measure,520,1).flatMap(p=>p.lines).join(' '));
+});
 
 test('translation-only audio pages preserve complete text and fit the native viewport',()=>{
  const verses=[1,2].map(ayah=>({ayah,arabic:'بسم الله',translation:Array.from({length:300},(_,i)=>'word'+i).join(' ')}));

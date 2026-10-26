@@ -1,0 +1,5 @@
+Timing data: zaibihassan/Quranic-Recitation-Data, revision aa18b96aa182816377bc8dbf3769ce0b8ded799a.
+Source: https://huggingface.co/datasets/zaibihassan/Quranic-Recitation-Data
+Published under Apache-2.0.
+Modified by Taraweeh Companion: retained verse boundaries, grouped connected Al-Duri verse/translation references, and bound all 114 timing maps to verified original MP3 SHA-256 values. No recording time scaling.
+Audio source: MP3Quran.net; reciter rights retained. The timing license does not replace the audio source terms.
