@@ -6,6 +6,7 @@ export const HOME_MODES = [
   {key:'taraweeh',label:'Taraweeh',guide:'Prayer companion\nLive verses with\nrakah tracking.'},
   {key:'audio',label:'Listen Quran',guide:'Quran recordings\nListen and follow\nthe verses.'},
   {key:'settings',label:'Settings',guide:'App preferences\nAdjust your display,\nlanguage and audio.'},
+  {key:'quit',label:'Quit',guide:'Close Taraweeh\nCompanion and return\nto Even Hub.'},
 ];
 
 export function modeHomeContent(selected=0){

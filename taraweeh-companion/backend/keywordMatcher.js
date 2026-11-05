@@ -95,6 +95,32 @@ function uniqueIndexHit(candidates) {
   return canonicalizeSpoken([...hits][0]);
 }
 
+// True only for a single insertion, deletion, or substitution. This is kept
+// deliberately narrower than general fuzzy matching: it is used after four
+// exact Quran words already established strong context, never for discovery.
+function isOneEditApart(a, b) {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+      continue;
+    }
+    if (++edits > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else {
+      i++;
+      j++;
+    }
+  }
+  if (i < a.length || j < b.length) edits++;
+  return edits === 1;
+}
+
 // OOV 4-letter Ya-Sin-shaped tokens (يجيس). Not length 3: "ياس" from يأس
 // would false-lock 36:1 on garbage chunks.
 function fuzzyDistinctiveOpener(w) {
@@ -192,6 +218,7 @@ function repairSpokenWord(w) {
 let ayahList = [];
 let wordIndex = new Map();   // word → Set<ayahIndex>
 let idfMap   = new Map();    // word → IDF score (capped at 8.0)
+let strictPrefixTargets = new Map(); // "surah:ayah" → longer ayahs beginning with its complete text
 
 // Refrain index: surah → [{ normText, words, ayahs: sorted number[] }]
 // Built at load time for verses that share identical normalized text within a surah
@@ -230,11 +257,49 @@ export function loadQuran() {
       const scoreWords = [...new Set([...words, ...wordsAlt])];
       const indexWords = [...new Set([...scoreWords, ...extraWords])];
       const idx = ayahList.length;
-      ayahList.push({ surah, ayah: a.verse, text: a.text, normText, words: scoreWords, canonicalWordCount });
+      ayahList.push({
+        surah, ayah: a.verse, text: a.text, normText,
+        words: scoreWords,
+        orderedWords: words,
+        orderedWordsAlt: wordsAlt,
+        canonicalWordCount,
+      });
       for (const w of indexWords) {
         if (!wordIndex.has(w)) wordIndex.set(w, new Set());
         wordIndex.get(w).add(idx);
       }
+    }
+  }
+
+  // Precompute Quran-wide strict-prefix ambiguity. This cannot depend on the
+  // five search results: a short complete ayah often scores so strongly that
+  // the longer containing ayah is ranked outside that window. The important
+  // real-world case is 3:2, whose entire text opens 2:255. Hearing only
+  // "Allah ... Al-Hayy Al-Qayyum" therefore cannot identify either ayah.
+  const longerByPrefix = new Map();
+  for (const longer of ayahList) {
+    for (const variant of [longer.orderedWords, longer.orderedWordsAlt]) {
+      for (let length = 2; length < variant.length; length++) {
+        const prefix = variant.slice(0, length).join(' ');
+        if (!longerByPrefix.has(prefix)) longerByPrefix.set(prefix, new Map());
+        longerByPrefix.get(prefix).set(`${longer.surah}:${longer.ayah}`, {
+          surah: longer.surah,
+          ayah: longer.ayah,
+        });
+      }
+    }
+  }
+  for (const shorter of ayahList) {
+    const targets = new Map();
+    for (const variant of [shorter.orderedWords, shorter.orderedWordsAlt]) {
+      for (const target of longerByPrefix.get(variant.join(' '))?.values() || []) {
+        if (target.surah !== shorter.surah || target.ayah !== shorter.ayah) {
+          targets.set(`${target.surah}:${target.ayah}`, target);
+        }
+      }
+    }
+    if (targets.size > 0) {
+      strictPrefixTargets.set(`${shorter.surah}:${shorter.ayah}`, [...targets.values()]);
     }
   }
 
@@ -275,11 +340,16 @@ export function loadQuran() {
 
 /**
  * Score a candidate ayah against input words using Token F1 + IDF reranking.
- * Returns { score, f1, idfScore, matchedWords, coverage }
+ * Returns { score, f1, idfScore, matchedWords, coverage, heardCoverage }
+ *
+ * `score` and `coverage` are ayah-centric and intentionally conservative for
+ * ranking/locking. `heardCoverage` answers the separate UI question: "how much
+ * of the transcript belongs to this ayah?" A correct fragment of a long ayah
+ * can therefore have low ayah coverage but high heard coverage.
  */
-function scoreCandidate(inputWords, ayahWords) {
+function scoreCandidate(inputWords, ayahWords, orderedVariants = [ayahWords]) {
   if (inputWords.length === 0 || ayahWords.length === 0) {
-    return { score: 0, f1: 0, idfScore: 0, matchedWords: [], coverage: 0 };
+    return { score: 0, f1: 0, idfScore: 0, matchedWords: [], coverage: 0, heardCoverage: 0 };
   }
 
   // Multiset intersection: each input word matches at most as many times
@@ -288,16 +358,46 @@ function scoreCandidate(inputWords, ayahWords) {
   for (const w of ayahWords) ayahBag.set(w, (ayahBag.get(w) || 0) + 1);
 
   const matched = [];
+  const unmatchedInput = [];
   const usedBag = new Map();
   for (const w of inputWords) {
     const avail = (ayahBag.get(w) || 0) - (usedBag.get(w) || 0);
     if (avail > 0) {
       matched.push(w);
       usedBag.set(w, (usedBag.get(w) || 0) + 1);
+    } else if (!ayahBag.has(w)) {
+      // A repeated common word after its ayah occurrences are exhausted is an
+      // ASR insertion, not a fuzzy candidate (e.g. the second الله in the
+      // ElevenLabs sample). Do not let it consume the one repair slot.
+      unmatchedInput.push(w);
+    }
+  }
+
+  // Recover one distinctive Quran word with a one-letter ASR error, but only
+  // after four exact words already point to this candidate. Example from live
+  // ElevenLabs Arabic: القيم instead of القيوم after "الله لا إله إلا".
+  // Requiring a high-IDF target prevents common near-neighbours from gaining
+  // artificial evidence, and limiting this to one repair keeps lock safety
+  // conservative.
+  if (matched.length >= 4) {
+    for (const heardWord of unmatchedInput) {
+      if (heardWord.length < 4) continue;
+      const fuzzyTargets = [];
+      for (const ayahWord of ayahBag.keys()) {
+        const avail = (ayahBag.get(ayahWord) || 0) - (usedBag.get(ayahWord) || 0);
+        if (avail <= 0 || ayahWord.length < 4 || (idfMap.get(ayahWord) ?? 0) < 4) continue;
+        if (isOneEditApart(heardWord, ayahWord)) fuzzyTargets.push(ayahWord);
+      }
+      if (fuzzyTargets.length === 1) {
+        const canonical = fuzzyTargets[0];
+        matched.push(canonical);
+        usedBag.set(canonical, (usedBag.get(canonical) || 0) + 1);
+        break;
+      }
     }
   }
   if (matched.length === 0) {
-    return { score: 0, f1: 0, idfScore: 0, matchedWords: [], coverage: 0 };
+    return { score: 0, f1: 0, idfScore: 0, matchedWords: [], coverage: 0, heardCoverage: 0 };
   }
 
   const precision = matched.length / inputWords.length;
@@ -312,14 +412,95 @@ function scoreCandidate(inputWords, ayahWords) {
   const matchedIdfSum = matched.reduce((s, w)  => s + (idfMap.get(w) ?? fallbackIdf), 0);
   const idfScore = ayahIdfSum === 0 ? 0 : matchedIdfSum / ayahIdfSum;
 
+  // Realtime STT emits a moving fragment, not a whole ayah. Whole-ayah recall
+  // alone badly penalises long verses: eight exact words from Ayat al-Kursi
+  // account for only ~16% of its 50 words, so a shorter ayah containing a few
+  // common words can outrank it. Measure the complementary question as well:
+  // how much of the HEARD fragment appears in this ayah, in Quran order?
+  //
+  // LCS tolerates a dropped/inserted ASR word. The contiguous run keeps a bag
+  // of common Quran words from looking ordered when it is actually scattered.
+  const inputIdfSum = inputWords.reduce((s, w) => s + (idfMap.get(w) ?? fallbackIdf), 0);
+  let orderedMatchedWords = 0;
+  let orderedCoverage = 0;
+  let contiguousCoverage = 0;
+  let heardIdfCoverage = 0;
+  for (const orderedWords of orderedVariants) {
+    const lcs = Array(orderedWords.length + 1).fill(0);
+    const weighted = Array(orderedWords.length + 1).fill(0);
+    let longestRun = 0;
+    let previousRuns = Array(orderedWords.length + 1).fill(0);
+    for (const heard of inputWords) {
+      let diagonal = 0;
+      let weightedDiagonal = 0;
+      const currentRuns = Array(orderedWords.length + 1).fill(0);
+      for (let j = 1; j <= orderedWords.length; j++) {
+        const old = lcs[j];
+        const oldWeighted = weighted[j];
+        if (heard === orderedWords[j - 1]) {
+          lcs[j] = diagonal + 1;
+          weighted[j] = weightedDiagonal + (idfMap.get(heard) ?? fallbackIdf);
+          currentRuns[j] = previousRuns[j - 1] + 1;
+          longestRun = Math.max(longestRun, currentRuns[j]);
+        } else {
+          lcs[j] = Math.max(lcs[j], lcs[j - 1]);
+          weighted[j] = Math.max(weighted[j], weighted[j - 1]);
+        }
+        diagonal = old;
+        weightedDiagonal = oldWeighted;
+      }
+      previousRuns = currentRuns;
+    }
+    const orderedCount = lcs[orderedWords.length];
+    const ordered = orderedCount / inputWords.length;
+    const contiguous = longestRun / inputWords.length;
+    const weightedCoverage = inputIdfSum === 0 ? 0 : weighted[orderedWords.length] / inputIdfSum;
+    const quality = 0.55 * weightedCoverage + 0.27 * ordered + 0.18 * contiguous;
+    const bestQuality = 0.55 * heardIdfCoverage + 0.27 * orderedCoverage + 0.18 * contiguousCoverage;
+    if (quality > bestQuality) {
+      orderedMatchedWords = orderedCount;
+      orderedCoverage = ordered;
+      contiguousCoverage = contiguous;
+      heardIdfCoverage = weightedCoverage;
+    }
+  }
+
   // Word count bonus: when coverage/IDF are similar, prefer matches with more words.
   // This prevents short ayahs with high coverage from beating long ayahs with more evidence.
   const wordCountBonus = Math.min(0.15, matched.length * 0.01);  // max +0.15 for 15+ words
   
-  const score    = 0.25 * f1 + 0.75 * idfScore + wordCountBonus;
+  const wholeAyahScore = 0.25 * f1 + 0.75 * idfScore + wordCountBonus;
+
+  // A complete short ayah can be the opening prefix of a longer ayah. Once the
+  // transcript continues at least three words beyond that short ayah, reduce
+  // its whole-ayah advantage by how little of the heard sequence it explains.
+  // This is the 3:2 / 2:255 case: seven opening words are identical, but
+  // "لا تأخذه سنة" belongs only to Ayat al-Kursi.
+  const adjustedWholeAyahScore = wholeAyahScore;
+
+  // Four words is the minimum fragment evidence. At four words the ceiling is
+  // deliberately modest (0.48); each additional matched word raises it until
+  // ten words provide a strong 0.72 signal. Repeated/shared Quran phrases stay
+  // tied and are rejected by the margin/prefix guards in anchorStateMachine.
+  const fragmentWords = Math.max(matched.length, orderedMatchedWords);
+  const fragmentCeiling = fragmentWords >= 4
+    ? Math.min(0.90, 0.48 + (fragmentWords - 4) * 0.05)
+    : 0;
+  const orderQuality = 0.60 * orderedCoverage + 0.40 * contiguousCoverage;
+  const fragmentScore = fragmentCeiling * (0.55 * heardIdfCoverage + 0.45 * orderQuality);
+  const score = Math.max(adjustedWholeAyahScore, fragmentScore);
   const coverage = matched.length / ayahWords.length;
 
-  return { score, f1, idfScore, matchedWords: matched, coverage, wordCountBonus };
+  return {
+    score, f1, idfScore, matchedWords: matched, coverage,
+    heardCoverage: precision,
+    wordCountBonus,
+    wholeAyahScore,
+    adjustedWholeAyahScore,
+    fragmentScore,
+    orderedCoverage,
+    contiguousCoverage,
+  };
 }
 
 // Boost applied to candidates that are in the expected sequential range after the last lock
@@ -360,7 +541,21 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
     const a = ayahList[idx];
     if (filterSurah && a.surah !== filterSurah) continue;
 
-    const { score, f1, idfScore, matchedWords, coverage } = scoreCandidate(inputWords, a.words);
+    let { score, f1, idfScore, matchedWords, coverage, heardCoverage,
+      wholeAyahScore, fragmentScore, orderedCoverage } = scoreCandidate(
+      inputWords,
+      a.words,
+      [a.orderedWords, a.orderedWordsAlt],
+    );
+    const prefixTargets = strictPrefixTargets.get(`${a.surah}:${a.ayah}`) || [];
+    // Only strict-prefix ayahs lose their complete-short-ayah advantage once
+    // the transcript continues beyond them. Ordinary overlapping windows often
+    // contain the end of one ayah plus the start of the next and must retain
+    // their normal score (for example Ya-Sin 36:2 followed by 36:3).
+    if (prefixTargets.length > 0 && inputWords.length >= a.canonicalWordCount + 3) {
+      const adjustedWholeAyahScore = wholeAyahScore * (0.35 + 0.65 * orderedCoverage);
+      score = Math.max(adjustedWholeAyahScore, fragmentScore);
+    }
     const inSeqHintRange = seqHint && a.surah === seqHint.surah && a.ayah >= seqHint.fromAyah && a.ayah <= seqHint.toAyah;
     // seqHint candidates bypass the 0.01 score floor so they're always evaluated,
     // BUT they must still have at least 1 matched word — zero-match candidates are noise
@@ -386,11 +581,13 @@ export function findAnchor(whisperText, filterSurah = 0, seqHint = null) {
     results.push({
       surah: a.surah, ayah: a.ayah,
       score: boostedScore, rawScore: score,
-      f1, idfScore, coverage,
+      f1, idfScore, coverage, heardCoverage,
       arabic: a.text, matchedWords,
+      normalizedWords: a.orderedWords,
       totalWords: a.canonicalWordCount,
       seqBoosted: inSeqRange,
       muqattaatOpener: distinctiveOpener,
+      strictPrefixTargets: prefixTargets,
     });
   }
 

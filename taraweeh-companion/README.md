@@ -92,7 +92,8 @@ taraweeh-companion-g2/
 │   ├── whisperProvider.js      ← Legacy HF/local Whisper (optional)
 │   ├── groqProvider.js         ← Groq whisper-large-v3-turbo
 │   ├── openaiProvider.js       ← OpenAI gpt-4o-mini-transcribe / whisper-1
-│   ├── transcriptionRouter.js  ← Independent engines (Groq / OpenAI / Deepgram / ElevenLabs)
+│   ├── sonioxProvider.js       ← Soniox stt-rt-v5 WebSocket STT
+│   ├── transcriptionRouter.js  ← Independent engines (Groq / OpenAI / Soniox / Deepgram / ElevenLabs)
 │   ├── data/
 │   │   ├── quran-full.json     ← Full Quran text (1.7 MB, local)
 │   │   └── verses-display.json ← Transliterations + translations (1.7 MB, local)
@@ -110,7 +111,7 @@ taraweeh-companion-g2/
 ### Prerequisites
 
 - **Node.js 18+**
-- **Groq and/or OpenAI API key** — for Whisper transcription ([Groq](https://console.groq.com/keys), [OpenAI](https://platform.openai.com/api-keys))
+- **Groq, OpenAI, and/or Soniox API key** — for transcription ([Groq](https://console.groq.com/keys), [OpenAI](https://platform.openai.com/api-keys), [Soniox](https://console.soniox.com))
 
 ### Installation
 
@@ -130,9 +131,10 @@ SHARED_GROQ_KEY=gsk_your_groq_key_here
 SHARED_DEEPGRAM_KEY=your_deepgram_key_here
 SHARED_ELEVENLABS_KEY=your_elevenlabs_key_here
 SHARED_OPENAI_KEY=sk_your_openai_key_here
+SHARED_SONIOX_KEY=your_soniox_key_here
 ```
 
-Users can also bring their own Groq or OpenAI key in **Settings → Use my own key**. Each engine recognizes verses independently.
+Users can also bring their own Groq, OpenAI, or Soniox key in **Settings → Live recitation → Speech recognition**. Each engine recognizes verses independently.
 
 ### Run
 
@@ -188,10 +190,11 @@ Deploy the Node.js backend to Railway, Render, Fly.io, or your own VPS. The back
 |----------|-------|-------|
 | **Groq** | `whisper-large-v3-turbo` | Independent engine; pick turbo or `whisper-large-v3` in Settings |
 | **OpenAI** | `gpt-4o-mini-transcribe` | Independent engine; `whisper-1` still selectable for word timings |
+| **Soniox** | `stt-rt-v5` | Real-time Arabic STT with finalized word timings |
 | **Deepgram** | `nova-3` Arabic | Independent fast engine (~450ms, timestamps); `whisper-large` also Arabic |
 | **ElevenLabs** | `scribe_v2` | Optional extra engine (not a backup) |
 
-Set `SHARED_GROQ_KEY` and/or `SHARED_OPENAI_KEY` for free/shared mode (`MAX_MIN_PER_SESSION` caps sessions, default 90 min). Pick Groq or OpenAI in the app — nothing failsover.
+Set `SHARED_GROQ_KEY`, `SHARED_OPENAI_KEY`, and/or `SHARED_SONIOX_KEY` for shared mode. Pick Groq, OpenAI, or Soniox in the app — nothing failsover.
 
 ### 3. Environment variables
 
@@ -199,6 +202,7 @@ Set `SHARED_GROQ_KEY` and/or `SHARED_OPENAI_KEY` for free/shared mode (`MAX_MIN_
 |----------|----------|-------------|
 | `SHARED_GROQ_KEY` | For shared mode | [Groq API key](https://console.groq.com/keys) |
 | `SHARED_OPENAI_KEY` | For shared OpenAI mode | [OpenAI API key](https://platform.openai.com/api-keys) — independent of Groq |
+| `SHARED_SONIOX_KEY` | For shared Soniox mode | [Soniox API key](https://console.soniox.com) |
 | `MAX_MIN_PER_SESSION` | No | Shared-mode session cap in minutes (default `90`) |
 | `G2_SPLASH_IMAGE_DATA_URL` | No | Optional base64 image (`data:image/jpeg;base64,...`) for glasses startup splash; ignored unless `G2_STARTUP_SPLASH_ENABLED=true` |
 | `G2_STARTUP_SPLASH_ENABLED` | `false` | Enables image-container startup splash path on glasses; keep `false` for text-only startup stability |
@@ -265,11 +269,12 @@ Lock conditions include fast-lock (high score), sequential carry (advancing cand
 | `MODAL_KEY` / `MODAL_SECRET` | — | Legacy Modal proxy auth |
 | `SHARED_GROQ_KEY` | — | Server-held Groq key for free/shared mode |
 | `SHARED_OPENAI_KEY` | — | Server-held OpenAI key; independent engine |
+| `SHARED_SONIOX_KEY` | — | Server-held Soniox key; independent engine |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-mini-transcribe` | OpenAI model. `whisper-1` is the only one returning word timings |
 | `DEEPGRAM_MODEL` | `nova-3` | Deepgram model. `whisper-large` also serves Arabic |
 | `MAX_MIN_PER_SESSION` | `90` | Shared-mode session cap (minutes) |
 | `GEMINI_API_KEY` | — | Google Gemini API key (optional non-Quran detection) |
-| `TRANSCRIPTION_PROVIDER` | `groq` | `groq` or `openai` (independent engines; optional `deepgram` / `elevenlabs`) |
+| `TRANSCRIPTION_PROVIDER` | `soniox` | `soniox`, `groq`, or `openai` (independent engines; optional `deepgram` / `elevenlabs`) |
 | `PORT` | `3001` | HTTP server port |
 | `HTTPS_PORT` | `3443` | HTTPS server port |
 | `READ_ADVANCE_CONFIDENCE` | `40` | Minimum confidence (%) for timer-based advance |

@@ -1,0 +1,22 @@
+import {readFileSync,writeFileSync} from 'node:fs';
+const src=readFileSync('scripts/verify-ui-simulator.js','utf8');const prefix=src.slice(0,src.indexOf('await evaluate(`window.__uiAudit.saved='));
+const tail=`
+const savedBackend=await evaluate('__uiAudit.S.settings.backendUrl');
+await phone.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+await evaluate(\`__uiAudit.S.settings.backendUrl='http://localhost:18001';__uiAudit.handleServerMsg({type:'state',state:{mode:'LOCKED',surah:1,ayah:2,surahName:'Al-Fatihah',totalAyahs:7,arabic:'ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ',translation:'All praise is for Allah—Lord of all worlds.',transliteration:'Al-hamdu lillahi rabbil-alamin',confidence:1}});__uiAudit.stopPageFlip();__uiAudit.stopCountdown();\`);
+await evaluate('document.getElementById("verseCard").scrollIntoView({block:"start"});openWordMeaning(3)');
+await new Promise(r=>setTimeout(r,1300));
+console.log(await evaluate('document.getElementById("wordMeaningText").textContent'));
+let shot=await phone.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('../language-evidence/ui-improvements/word-meaning-phone.png',import.meta.url),Buffer.from(shot.data,'base64'));
+await evaluate('expandWordMeaning()');await new Promise(r=>setTimeout(r,400));
+shot=await phone.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('../language-evidence/ui-improvements/word-details-phone.png',import.meta.url),Buffer.from(shot.data,'base64'));
+await evaluate('loadStudy("tafsir")');await new Promise(r=>setTimeout(r,1300));
+console.log(await evaluate('document.getElementById("studyContent").textContent.slice(0,120)'));
+await evaluate('document.getElementById("studyPanel").scrollIntoView({block:"start"})');
+shot=await phone.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('../language-evidence/ui-improvements/tafsir-phone.png',import.meta.url),Buffer.from(shot.data,'base64'));
+await evaluate('loadStudy("hadith")');await new Promise(r=>setTimeout(r,400));
+shot=await phone.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('../language-evidence/ui-improvements/hadith-access-phone.png',import.meta.url),Buffer.from(shot.data,'base64'));
+await evaluate('__uiAudit.S.settings.backendUrl='+JSON.stringify(savedBackend)+';closeStudy();');
+phone.close();glasses.close();
+`;
+writeFileSync('scripts/verify-study-ui.mjs',prefix+tail);

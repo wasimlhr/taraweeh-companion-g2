@@ -1,19 +1,20 @@
 /**
- * Transcription router — Groq and OpenAI are independent engines.
+ * Transcription router — Groq, OpenAI, and Soniox are independent engines.
  * Deepgram / ElevenLabs remain optional selectable engines (never backups).
  *
- * Default provider: TRANSCRIPTION_PROVIDER=groq
+ * Default provider: TRANSCRIPTION_PROVIDER=soniox
  * Per-session override: whisperOpts.provider + per-provider keys, or sharedMode.
  */
 import { transcribeWithGemini, closeGeminiSession } from './geminiProvider.js';
 import { providerDeadline } from './requestDeadline.js';
 import { transcribeWithGroq } from './groqProvider.js';
 import { transcribeWithOpenAI } from './openaiProvider.js';
+import { transcribeWithSoniox, probeSonioxKey } from './sonioxProvider.js';
 import { transcribeWithDeepgram, probeDeepgramKey } from './deepgramProvider.js';
 import { transcribeWithElevenLabs, probeElevenLabsKey } from './elevenlabsProvider.js';
 
-export const PROVIDER = (process.env.TRANSCRIPTION_PROVIDER || 'groq').toLowerCase();
-export const STT_ENGINES = ['groq', 'openai', 'deepgram', 'elevenlabs'];
+export const PROVIDER = (process.env.TRANSCRIPTION_PROVIDER || 'soniox').toLowerCase();
+export const STT_ENGINES = ['groq', 'openai', 'soniox', 'deepgram', 'elevenlabs'];
 /** @deprecated use STT_ENGINES — kept so older imports do not break */
 export const STT_CHAIN = STT_ENGINES;
 
@@ -23,6 +24,7 @@ export function sharedKeyAvailability() {
   return {
     groq: !!(process.env.SHARED_GROQ_KEY || '').trim(),
     openai: !!(process.env.SHARED_OPENAI_KEY || '').trim(),
+    soniox: !!(process.env.SHARED_SONIOX_KEY || '').trim(),
     deepgram: !!(process.env.SHARED_DEEPGRAM_KEY || '').trim(),
     elevenlabs: !!(process.env.SHARED_ELEVENLABS_KEY || '').trim(),
   };
@@ -33,12 +35,14 @@ export function collectKeys(whisperOpts = {}) {
   const shared = {
     groq: (process.env.SHARED_GROQ_KEY || '').trim(),
     openai: (process.env.SHARED_OPENAI_KEY || '').trim(),
+    soniox: (process.env.SHARED_SONIOX_KEY || '').trim(),
     deepgram: (process.env.SHARED_DEEPGRAM_KEY || '').trim(),
     elevenlabs: (process.env.SHARED_ELEVENLABS_KEY || '').trim(),
   };
   const byok = {
     groq: (opts.groqApiKey || (opts.provider === 'groq' ? opts.apiKey : '') || '').trim(),
     openai: (opts.openaiApiKey || (opts.provider === 'openai' ? opts.apiKey : '') || '').trim(),
+    soniox: (opts.sonioxApiKey || (opts.provider === 'soniox' ? opts.apiKey : '') || '').trim(),
     deepgram: (opts.deepgramApiKey || (opts.provider === 'deepgram' ? opts.apiKey : '') || '').trim(),
     elevenlabs: (opts.elevenlabsApiKey || (opts.provider === 'elevenlabs' ? opts.apiKey : '') || '').trim(),
   };
@@ -46,6 +50,7 @@ export function collectKeys(whisperOpts = {}) {
     return {
       groq: byok.groq || shared.groq,
       openai: byok.openai || shared.openai,
+      soniox: byok.soniox || shared.soniox,
       deepgram: byok.deepgram || shared.deepgram,
       elevenlabs: byok.elevenlabs || shared.elevenlabs,
     };
@@ -55,21 +60,22 @@ export function collectKeys(whisperOpts = {}) {
 
 /**
  * Pick exactly one engine. `auto` / `shared` resolve to the first configured
- * engine (Groq, then OpenAI) — still a single engine, never a failover chain.
+ * engine (Soniox first) — still a single engine, never a failover chain.
  */
 export function resolveProvider(requested, keys = {}) {
-  const req = String(requested || PROVIDER || 'groq').toLowerCase();
+  const req = String(requested || PROVIDER || 'soniox').toLowerCase();
   if (req === 'gemini') return req;
   if (STT_ENGINES.includes(req) && req !== 'auto') return req;
-  for (const name of ['groq', 'openai', 'deepgram', 'elevenlabs']) {
+  for (const name of ['soniox', 'groq', 'openai', 'deepgram', 'elevenlabs']) {
     if (keys[name]) return name;
   }
-  return 'groq';
+  return 'soniox';
 }
 
 function engineLabel(name) {
   return name === 'groq' ? 'Groq'
     : name === 'openai' ? 'OpenAI'
+    : name === 'soniox' ? 'Soniox'
     : name === 'deepgram' ? 'Deepgram'
     : name === 'elevenlabs' ? 'ElevenLabs'
     : name;
@@ -85,6 +91,8 @@ async function callProvider(name, pcmBuffer, apiKey, emit, extra = {}) {
       return transcribeWithElevenLabs(pcmBuffer, apiKey, emit, extra);
     case 'openai':
       return transcribeWithOpenAI(pcmBuffer, apiKey, emit, extra);
+    case 'soniox':
+      return transcribeWithSoniox(pcmBuffer, apiKey, emit, extra);
     default:
       throw new Error(`Unknown STT provider: ${name}`);
   }
@@ -178,6 +186,8 @@ export async function probeProviderKey(provider, apiKey) {
         return { ok: true, models: (data.data || []).length };
       } finally { deadline.done(); }
     }
+    case 'soniox':
+      return probeSonioxKey(key);
     case 'deepgram':
       return probeDeepgramKey(key);
     case 'elevenlabs':

@@ -1,0 +1,12 @@
+import WebSocket from '../backend/node_modules/ws/wrapper.mjs';
+import {writeFileSync,readFileSync} from 'node:fs';
+const html=readFileSync(new URL('../app/index.html',import.meta.url),'utf8');
+const css=html.slice(html.indexOf('#statusBar {'),html.indexOf('.s-pill .s-dot {'))+'#verseCard,html.standalone #verseCard{max-height:none}#lockedContent{overflow:visible;flex:none}#wordProgress{display:none!important}';
+const targets=await(await fetch('http://127.0.0.1:9222/json/list')).json();
+const target=targets.find(t=>t.url.startsWith('http://localhost:3001/'));
+const ws=new WebSocket(target.webSocketDebuggerUrl);await new Promise(r=>ws.once('open',r));
+let seq=0;const pending=new Map();ws.on('message',b=>{const m=JSON.parse(b);if(m.id){pending.get(m.id)?.(m);pending.delete(m.id);}});
+const send=(method,params={})=>new Promise(r=>{const id=++seq;pending.set(id,r);ws.send(JSON.stringify({id,method,params}));});
+const result=await send('Runtime.evaluate',{expression:`(()=>{let style=document.getElementById('pillAlignmentFix');if(!style){style=document.createElement('style');style.id='pillAlignmentFix';document.head.append(style);}style.textContent=${JSON.stringify(css)};return {pills:Array.from(document.querySelectorAll('#statusBar>.s-pill')).filter(x=>getComputedStyle(x).display!=='none').map(x=>({text:x.textContent.trim(),x:x.getBoundingClientRect().x,width:x.getBoundingClientRect().width})),pace:document.getElementById('paceBtn')?.textContent,record:document.getElementById('recordBtn')?.textContent}})()`,returnByValue:true});
+console.log(JSON.stringify(result.result?.result?.value));
+await new Promise(r=>setTimeout(r,250));const shot=await send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('../language-evidence/ui-improvements/verse-without-progress-phone.png',import.meta.url),Buffer.from(shot.result.data,'base64'));ws.close();

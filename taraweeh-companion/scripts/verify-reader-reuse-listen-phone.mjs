@@ -1,0 +1,59 @@
+import WebSocket from '../backend/node_modules/ws/wrapper.mjs';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const targets=await(await fetch('http://127.0.0.1:9222/json/list')).json();
+function connect(t){const ws=new WebSocket(t.webSocketDebuggerUrl);let id=0,paused;const pending=new Map();ws.on('message',raw=>{const m=JSON.parse(raw);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}else if(m.method==='Debugger.paused')paused(m.params);});return {ready:new Promise(r=>ws.once('open',r)),send:(method,params={})=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});ws.send(JSON.stringify({id:n,method,params}));}),pause:()=>new Promise(r=>paused=r),close:()=>ws.close()};}
+const phone=connect(targets.find(t=>t.url.startsWith('http://localhost:3012/'))),glasses=connect(targets.find(t=>t.url.includes('glasses.html')));await Promise.all([phone.ready,glasses.ready]);
+const out=new URL('../language-evidence/phone-listen-group/',import.meta.url);mkdirSync(out,{recursive:true});
+async function evaluate(expression){const r=await phone.send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
+async function until(expression,seconds=20){for(let i=0;i<seconds*5;i++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,200));}throw Error('Timed out: '+expression);}
+const settle=()=>new Promise(r=>setTimeout(r,600));
+async function capture(name){await evaluate('__reciterAudit.S.bridgeCallQueue');await settle();for(const [kind,target]of [['glasses',glasses],['phone',phone]]){const r=await target.send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL(name+'-'+kind+'.png',out),Buffer.from(r.data,'base64'));}}
+async function select(field,value){await evaluate(`{const e=document.querySelector('.lq [data-el="${field}"]');e.value='${value}';e.dispatchEvent(new Event('change'));}`);}
+async function download(){await evaluate(`document.querySelector('.lq [data-el="download"]').click();document.querySelector('.lq [data-el="confirmDownload"]').click();`);await until(`document.querySelector('.lq-offline [data-el="downloadStatus"]').textContent==='Available offline'`);}
+async function pixels(){const r=await glasses.send('Runtime.evaluate',{expression:`(()=>{const im=document.getElementById('layer-bright'),c=document.createElement('canvas');c.width=576;c.height=288;const ctx=c.getContext('2d');ctx.drawImage(im,0,0,576,288);const d=ctx.getImageData(24,144,528,108).data;let ink=0;for(let i=0;i<d.length;i+=4)if(d[i+1]>40||d[i]>40||d[i+2]>40)ink++;return ink;})()`,returnByValue:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
+const samples=[];
+async function fingerprint(){const r=await glasses.send('Runtime.evaluate',{expression:`(()=>{const c=document.createElement('canvas');c.width=576;c.height=288;const ctx=c.getContext('2d');ctx.drawImage(document.getElementById('layer-bright'),0,0,576,288);let hash=2166136261;for(const byte of ctx.getImageData(24,144,528,108).data)hash=Math.imul(hash^byte,16777619)>>>0;return hash;})()`,returnByValue:true});return r.result.value;}
+async function assertCurrentText(){await evaluate('__reciterAudit.S.bridgeCallQueue');await settle();const before=await fingerprint();await evaluate(`__reciterAudit.S.bridge.textContainerUpgrade({containerID:1,containerName:'readerInput',content:__reciterAudit.native()})`);await settle();assert.equal(await fingerprint(),before,'Rendered translation must already match the current page, not an older cached frame');}
+
+
+let original;
+async function attach(){
+ await until('typeof window.applyLocalTranslation === "function"');await settle();await phone.send('Debugger.enable');
+ const fn=await phone.send('Runtime.evaluate',{expression:'window.applyLocalTranslation'}),bp=await phone.send('Debugger.setBreakpointOnFunctionCall',{objectId:fn.result.objectId}),paused=phone.pause(),call=phone.send('Runtime.evaluate',{expression:'window.applyLocalTranslation(null)'}),frame=(await paused).callFrames[0];
+ await phone.send('Debugger.evaluateOnCallFrame',{callFrameId:frame.callFrameId,expression:'window.__reciterAudit=window.__fontAudit={S,event:onG2Event,active:()=>_fontTestActive,test:()=>_fontTestUI,save:saveSettings,font:readerFont,audio:()=>_audioVisual,data:()=>_readerData,pages:()=>_readerPages,page:()=>_readerPages[_readerPage],native:()=>_readerNativeText,ready:()=>!_readerLoading&&_audioVisual?.canPlay&&_audioSyncKey===listenSyncKey(_audioVisual),picker:()=>_glassesSettings,openMenu:openGlassesSettings,layout:()=>({page:_readerPage,key:_readerNativeKey,y:_readerNativeY,kind:_readerPages[_readerPage]?.kind}),setState:updateAudioMiniPlayer};'});await phone.send('Debugger.removeBreakpoint',{breakpointId:bp.breakpointId});await phone.send('Debugger.resume');await call;await phone.send('Debugger.disable');
+}
+async function previewReady(){await until('__fontAudit.active()&&!document.querySelector("[data-font-status]").textContent.includes("Preparing")');await evaluate('__fontAudit.S.bridgeCallQueue');await settle();}
+async function sampleHash(){const r=await glasses.send('Runtime.evaluate',{expression:'(()=>{const c=document.createElement("canvas");c.width=576;c.height=288;const x=c.getContext("2d");x.drawImage(document.getElementById("layer-bright"),0,0,576,288);let hash=2166136261,ink=0;for(const byte of x.getImageData(24,68,528,174).data)hash=Math.imul(hash^byte,16777619)>>>0;const d=x.getImageData(24,68,528,174).data;for(let i=0;i<d.length;i+=4)if(d[i+1]>40)ink++;return {hash,ink};})()',returnByValue:true});return r.result.value;}
+
+
+try{
+ await phone.send('Page.reload',{ignoreCache:true});await attach();await until('__fontAudit.S.isG2&&__fontAudit.S.startupPageCreated');
+ original=await evaluate('Object.fromEntries(["readerLayout","readerGlassesTranslation","readerSurah","readerAyah","readerPage"].filter(k=>Object.hasOwn(__fontAudit.S.settings,k)).map(k=>[k,__fontAudit.S.settings[k]]))');
+ await evaluate('__fontAudit.S.settings.readerSurah=1;__fontAudit.S.settings.readerAyah=1;__fontAudit.S.settings.readerLayout="single";__fontAudit.S.settings.readerGlassesTranslation=true;openQuranReader()');await until('__fontAudit.data()?.surah===1&&__fontAudit.pages().length>0');await evaluate('__fontAudit.S.bridgeCallQueue');await settle();
+ await evaluate('window.__readerOriginalBuild=__fontAudit.S.bridge.rebuildPageContainer;window.__readerOriginalImage=__fontAudit.S.bridge.updateImageRawData;window.__readerCalls={rebuilds:0,images:[]};__fontAudit.S.bridge.rebuildPageContainer=function(p){__readerCalls.rebuilds++;return __readerOriginalBuild.call(this,p);};__fontAudit.S.bridge.updateImageRawData=function(p){__readerCalls.images.push(p.containerID);return __readerOriginalImage.call(this,p);};');
+ const reader=[];
+ for(const layout of ['single','maximum']){
+  await evaluate('setReaderLayout('+JSON.stringify(layout)+')');await evaluate('__fontAudit.S.bridgeCallQueue');await settle();
+  for(const ayah of [2,3,4,5,6,7]){await evaluate('__readerCalls={rebuilds:0,images:[]};jumpReaderAyah('+ayah+',false)');await evaluate('__fontAudit.S.bridgeCallQueue');await settle();reader.push({layout,ayah,...await evaluate('({...__fontAudit.layout(),...__readerCalls})')});}
+ }
+ console.log(JSON.stringify({reader}));writeFileSync(new URL('reader-transfers.json',out),JSON.stringify(reader,null,2));
+ await evaluate('closeQuranReader();openListenQuran()');await until('__fontAudit.ready()',60);
+ await select('ayah','6');await until('__fontAudit.audio()?.ayah===6&&__fontAudit.ready()');await evaluate('__fontAudit.S.bridgeCallQueue');await settle();
+ async function matchingGroup(){const state=await evaluate('(()=>{const data=__fontAudit.data(),page=__fontAudit.page(),a=__fontAudit.audio(),phone=document.getElementById("verseArabic").textContent,translation=document.getElementById("verseTrans").textContent;const verses=data.verses.filter(v=>(v.ayahs||[v.ayah]).some(n=>page.ayahs.includes(n)));return {ayah:a.ayah,group:page.ayahs,phone,translation,pos:document.getElementById("versePos").textContent,expectedArabic:verses.map(v=>v.arabic),expectedTranslation:verses.map(v=>v.translation),statusVisible:getComputedStyle(document.getElementById("status")).display!=="none",scroll:document.getElementById("lockedContent").scrollTop};})()');assert.ok(state.group.includes(state.ayah));for(const text of state.expectedArabic)assert.ok(state.phone.replace(/\s/g,'').includes(text.replace(/\s/g,'')));for(const text of state.expectedTranslation)assert.ok(state.translation.includes(text));assert.equal(state.statusVisible,false);return state;}
+ const fatiha=await matchingGroup();await capture('fatiha-same-group');
+ await evaluate('document.getElementById("lockedContent").scrollTop=20;window.__phoneGroupNodes=[...document.getElementById("verseArabic").childNodes];__readerCalls={rebuilds:0,images:[]};');
+ const next=fatiha.group.find(n=>n>6);if(next){await select('ayah',String(next));await until('__fontAudit.audio()?.ayah==='+next+'&&__fontAudit.ready()');await settle();assert.equal(await evaluate('__phoneGroupNodes.every((n,i)=>document.getElementById("verseArabic").childNodes[i]===n)'),true,'An ayah change inside the group retains phone DOM');const same=await evaluate('({...__readerCalls})');assert.equal(same.rebuilds,0);assert.ok(!same.images.includes(20)&&!same.images.includes(21));}
+ const boundary=fatiha.group.at(-1)+1;if(boundary<=7){await select('ayah',String(boundary));await until('__fontAudit.audio()?.ayah==='+boundary+'&&__fontAudit.ready()');await matchingGroup();}
+ await select('reciter','noreen-muhammad-siddiq');await until('__fontAudit.audio()?.reciter==="noreen-muhammad-siddiq"&&__fontAudit.ready()',60);const duri=await matchingGroup();await capture('duri-same-group');
+ await evaluate('setListenGlassesDisplay("translation")');const translationOnly=await matchingGroup();await evaluate('setListenGlassesDisplay("arabic-translation")');
+ for(const width of [390,600]){await phone.send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:true});await evaluate('scrollTo(0,0)');assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);await capture('phone-'+width);}
+ const savedAudio=await evaluate('__fontAudit.audio()');await evaluate('__fontAudit.setState({...__fontAudit.audio(),state:"error",canPlay:false})');assert.equal(await evaluate('getComputedStyle(document.getElementById("status")).display!=="none"'),true);await evaluate('__fontAudit.setState('+JSON.stringify(savedAudio)+')');
+ await select('reciter','alafasy');await until('__fontAudit.audio()?.reciter==="alafasy"&&__fontAudit.ready()',60);await select('ayah','6');await until('__fontAudit.audio()?.ayah===6&&__fontAudit.ready()');await capture('final');
+ writeFileSync(new URL('runtime.json',out),JSON.stringify({passed:true,fatiha,duri,translationOnly,phoneAndGlassesSameAyahs:true,noRedrawInsideGroup:true,statusRemovedErrorsRetained:true,readerTransfers:reader},null,2));console.log('PASS: phone follows glasses groups, retains same-group DOM and hides duplicate status; reader transfer audit saved.');
+}finally{
+ await phone.send('Emulation.clearDeviceMetricsOverride').catch(()=>{});
+ await evaluate('if(window.__readerOriginalBuild)__fontAudit.S.bridge.rebuildPageContainer=__readerOriginalBuild;if(window.__readerOriginalImage)__fontAudit.S.bridge.updateImageRawData=__readerOriginalImage;').catch(()=>{});
+ if(original)await evaluate('Object.assign(__fontAudit.S.settings,'+JSON.stringify(original)+');__fontAudit.save()').catch(()=>{});
+ phone.close();glasses.close();
+}

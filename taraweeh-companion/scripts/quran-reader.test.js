@@ -30,6 +30,18 @@ test('Listen phone text follows the glasses ayah group without altering its page
  assert.equal(JSON.stringify(page),before);assert.equal(readerListeningContent(chapter,{ayahs:[]}),null);
 });
 
+test('Listen transliteration modes paginate complete Latin text with or without Arabic',()=>{
+ const chapter=readerChapter(112,'en'),measure=text=>text.length*8;
+ for(const translationOnly of [false,true]){
+  const pages=readerListeningPages(chapter.verses,measure,measure,{translationOnly,secondaryField:'transliteration'});
+  const shown=pages.flatMap(page=>page.translationLines).join(' ').replace(/\b\d+\.\s*/g,'').replace(/\s+/g,' ').trim();
+  const expected=chapter.verses.map(verse=>verse.transliteration).join(' ').replace(/\s+/g,' ').trim();
+  assert.equal(shown,expected);
+  assert.equal(pages.some(page=>page.lines.length),!translationOnly);
+  assert.ok(pages.every(page=>page.kind===(translationOnly?'translation-only':'interleaved')));
+ }
+});
+
 test('Listen phone groups retain Al-Duri numbering and merged translations exactly once',()=>{
  const chapter=readerChapter(1,'en','ad-duri'),merged=chapter.verses.at(-1),content=readerListeningContent(chapter,{ayahs:merged.ayahs});
  assert.equal(content.label,'6–7');assert.equal(content.translation,merged.translation);assert.equal(content.arabic,merged.arabic);assert.ok(!content.arabic.includes('۝'));

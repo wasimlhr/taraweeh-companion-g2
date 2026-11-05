@@ -4,8 +4,11 @@ import { pcmToWav } from './pcmToWav.js';
 import { parseRetryAfterMs, isRetryableStatus, httpError } from './httpRetry.js';
 import { collectKeys, resolveProvider, transcribe, compareProviders, STT_ENGINES } from './transcriptionRouter.js';
 import { buildWhisperPrompt, stripWhisperPromptEcho } from './whisperPrompt.js';
-import { loadQuran, ayahWordsCovered } from './keywordMatcher.js';
+import { loadQuran, findAnchor, ayahWordsCovered } from './keywordMatcher.js';
 import { createState, processWhisperResult } from './anchorStateMachine.js';
+import { EventEmitter } from 'node:events';
+import { normalizeSonioxTokens, transcribeWithSoniox } from './sonioxProvider.js';
+import { transcribeWithElevenLabs } from './elevenlabsProvider.js';
 
 describe('pcmToWav', () => {
   it('writes a 44-byte WAV header plus PCM', () => {
@@ -62,12 +65,124 @@ describe('collectKeys / resolveProvider', () => {
     assert.equal(keys.deepgram, '');
   });
   it('lists independent engines with Groq and OpenAI first', () => {
-    assert.deepEqual(STT_ENGINES, ['groq', 'openai', 'deepgram', 'elevenlabs']);
+    assert.deepEqual(STT_ENGINES, ['groq', 'openai', 'soniox', 'deepgram', 'elevenlabs']);
   });
-  it('auto picks Groq when both Groq and OpenAI keys exist — never a chain', () => {
+  it('auto prefers Soniox when configured — never a chain', () => {
+    assert.equal(resolveProvider('auto', { soniox: 'soniox-key', groq: 'gsk', openai: 'sk' }), 'soniox');
     assert.equal(resolveProvider('auto', { groq: 'gsk', openai: 'sk' }), 'groq');
     assert.equal(resolveProvider('openai', { groq: 'gsk', openai: 'sk' }), 'openai');
     assert.equal(resolveProvider('groq', { groq: 'gsk', openai: 'sk' }), 'groq');
+  });
+});
+
+describe('Soniox provider', () => {
+  it('normalizes finalized Soniox tokens to pipeline text and word timings', () => {
+    const got = normalizeSonioxTokens([
+      { text: 'الحمد', start_ms: 100, end_ms: 500, is_final: true },
+      { text: ' لله', start_ms: 500, end_ms: 900, is_final: true },
+      { text: '<end>', start_ms: 900, end_ms: 900, is_final: true },
+      { text: ' draft', start_ms: 900, end_ms: 1000, is_final: false },
+    ]);
+    assert.equal(got.text, 'الحمد لله');
+    assert.deepEqual(got.words, [
+      { word: 'الحمد', start: 0.1, end: 0.5 },
+      { word: 'لله', start: 0.5, end: 0.9 },
+    ]);
+  });
+
+  it('streams raw 16 kHz Arabic PCM with header authentication and waits for finished', async () => {
+    const seen = { sends: [] };
+    class FakeWebSocket extends EventEmitter {
+      constructor(url, options) {
+        super(); seen.url = url; seen.options = options;
+        queueMicrotask(() => this.emit('open'));
+      }
+      send(value, options) {
+        seen.sends.push({ value, options });
+        if (value === '') queueMicrotask(() => this.emit('message', Buffer.from(JSON.stringify({
+          tokens: [
+            { text: 'الرحمن', start_ms: 0, end_ms: 450, is_final: true },
+            { text: ' الرحيم', start_ms: 450, end_ms: 900, is_final: true },
+            { text: '<end>', start_ms: 900, end_ms: 900, is_final: true },
+          ],
+          finished: true,
+        }))));
+      }
+      terminate() {}
+    }
+    const pcm = Buffer.alloc(3200, 1);
+    const result = await transcribeWithSoniox(pcm, 'snx_test', null, {
+      model: 'stt-rt-v5', WebSocketImpl: FakeWebSocket, timeoutMs: 1000,
+    });
+    assert.match(seen.url, /^wss:\/\/stt-rt\.soniox\.com/);
+    assert.equal(seen.options.headers.Authorization, 'Bearer snx_test');
+    const config = JSON.parse(seen.sends[0].value);
+    assert.deepEqual(config, {
+      model: 'stt-rt-v5', audio_format: 'pcm_s16le', num_channels: 1,
+      sample_rate: 16000, language_hints: ['ar'], language_hints_strict: true,
+      enable_endpoint_detection: true,
+    });
+    assert.equal(seen.sends[1].value, pcm);
+    assert.equal(seen.sends[1].options.binary, true);
+    assert.equal(seen.sends[2].value, '');
+    assert.equal(result.provider, 'soniox');
+    assert.equal(result.text, 'الرحمن الرحيم');
+    assert.equal(result.words.length, 2);
+  });
+});
+
+describe('ElevenLabs provider', () => {
+  it('streams short Arabic PCM chunks to Scribe v2 Realtime and waits for committed timestamps', async () => {
+    const seen = { sends: [] };
+    class FakeWebSocket extends EventEmitter {
+      constructor(url, options) {
+        super(); seen.url = String(url); seen.options = options;
+        queueMicrotask(() => this.emit('open'));
+      }
+      send(raw) {
+        const message = JSON.parse(raw);
+        seen.sends.push(message);
+        if (message.commit) queueMicrotask(() => {
+          this.emit('message', Buffer.from(JSON.stringify({ message_type: 'committed_transcript', text: 'الحمد لله' })));
+          this.emit('message', Buffer.from(JSON.stringify({
+            message_type: 'committed_transcript_with_timestamps',
+            text: 'الحمد لله',
+            words: [
+              { type: 'word', text: 'الحمد', start: 0, end: 0.5 },
+              { type: 'spacing', text: ' ' },
+              { type: 'word', text: 'لله', start: 0.5, end: 0.9 },
+            ],
+          })));
+        });
+      }
+      close() {}
+      terminate() {}
+    }
+    const result = await transcribeWithElevenLabs(Buffer.alloc(20_000, 1), 'xi_test', null, {
+      prompt: 'بسم الله الرحمن الرحيم', WebSocketImpl: FakeWebSocket,
+    });
+    const url = new URL(seen.url);
+    assert.equal(url.origin, 'wss://api.elevenlabs.io');
+    assert.equal(url.pathname, '/v1/speech-to-text/realtime');
+    assert.equal(url.searchParams.get('model_id'), 'scribe_v2_realtime');
+    assert.equal(url.searchParams.get('audio_format'), 'pcm_16000');
+    assert.equal(url.searchParams.get('language_code'), 'ara');
+    assert.equal(url.searchParams.get('commit_strategy'), 'manual');
+    assert.equal(url.searchParams.get('include_timestamps'), 'true');
+    assert.equal(seen.options.headers['xi-api-key'], 'xi_test');
+    assert.equal(seen.sends.length, 3);
+    assert.ok(seen.sends.every((message) => Buffer.from(message.audio_base_64, 'base64').length <= 8_000));
+    assert.equal(seen.sends[0].previous_text, 'بسم الله الرحمن الرحيم');
+    assert.equal(seen.sends[0].commit, undefined);
+    assert.equal(seen.sends.at(-1).commit, true);
+    assert.deepEqual(result, {
+      text: 'الحمد لله',
+      words: [
+        { word: 'الحمد', start: 0, end: 0.5 },
+        { word: 'لله', start: 0.5, end: 0.9 },
+      ],
+      provider: 'elevenlabs',
+    });
   });
 });
 
@@ -310,6 +425,43 @@ describe('transcribe is independent', () => {
 
 describe('anchor first-lock speed', () => {
   loadQuran();
+
+  it('reports heard-fragment confidence separately from whole-ayah coverage', () => {
+    const { matches } = findAnchor('لتنذر قوما ما أنذر آباؤهم', 36);
+    const top = matches[0];
+    assert.equal(`${top.surah}:${top.ayah}`, '36:6');
+    assert.equal(top.heardCoverage, 1);
+    assert.ok(top.coverage < 1, 'only part of the ayah was recited');
+    assert.ok(top.score < top.heardCoverage, 'ranking score stays conservative for lock safety');
+  });
+
+  it('locks 3:2 when realtime Arabic drops one letter from its distinctive final word', () => {
+    const next = processWhisperResult('الله لا إله إلا الله أنه القيم', createState(), {});
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(`${next.surah}:${next.ayah}`, '3:2');
+    assert.ok(next._matches[0].matchedWords.includes('القيوم'));
+  });
+
+  it('does not mis-lock Ayat al-Kursi shared opening onto 3:2', () => {
+    const exactSharedOpening = 'الله لا إله إلا هو الحي القيوم';
+    const opening = processWhisperResult(exactSharedOpening, createState(), {});
+    assert.equal(opening.mode, 'SEARCHING');
+    assert.equal(`${opening._matches[0].surah}:${opening._matches[0].ayah}`, '3:2');
+    assert.ok(opening._matches[0].strictPrefixTargets.some((m) => `${m.surah}:${m.ayah}` === '2:255'));
+    const repeated = processWhisperResult(exactSharedOpening, opening, {});
+    assert.equal(repeated.mode, 'SEARCHING', 'repeated wins cannot override a Quran-wide strict prefix');
+  });
+
+  it('locks a distinctive realtime fragment of Ayat al-Kursi onto 2:255', () => {
+    const next = processWhisperResult(
+      'الحي القيوم لا تأخذه سنة ولا نوم له ما في السماوات',
+      createState(),
+      {},
+    );
+    assert.equal(next.mode, 'LOCKED');
+    assert.equal(`${next.surah}:${next.ayah}`, '2:255');
+  });
+
   it('locks Al-Fatiha 1:2 on the first distinctive chunk (no second-win wait)', () => {
     const state = createState();
     const next = processWhisperResult('الحمد لله رب العالمين', state, { preferredSurah: 1 });
@@ -649,6 +801,8 @@ describe('recoveryState', () => {
     assert.equal(validRecoveryState({ surah: 999, ayah: 1, ts: now }, now), null);
     // pace is clamped, never trusted raw
     assert.equal(validRecoveryState({ surah: 1, ayah: 3, pace: 9e9, ts: now }, now).pace, 60_000);
+    assert.equal(validRecoveryState({ surah: 2, ayah: 255, pace: 242, ts: now }, now).pace, 0,
+      'legacy Soniox token cadence is discarded instead of restored as word pace');
   });
 });
 

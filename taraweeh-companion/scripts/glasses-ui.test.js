@@ -21,7 +21,7 @@ function harness() {
     if (!nodes.has(id)) nodes.set(id, {
       style: {}, dataset: {}, options: [], children: [], selectedIndex: 0, textContent: '', innerHTML: '', value: '',
       attributes:{},classList: { values:new Set(),add(...names){names.forEach(n=>this.values.add(n));},remove(...names){names.forEach(n=>this.values.delete(n));},contains(name){return this.values.has(name);},toggle(name,on){on=on===undefined?!this.values.has(name):on;if(on)this.values.add(name);else this.values.delete(name);return on;} },
-      addEventListener() {}, setAttribute(name,value) {this.attributes[name]=String(value);},getAttribute(name){return this.attributes[name];}, appendChild(child) {this.children.push(child);}, replaceChildren() {this.children=[];},
+      addEventListener() {}, setAttribute(name,value) {this.attributes[name]=String(value);},getAttribute(name){return this.attributes[name];}, add(option){this.options.push(option);},appendChild(child) {this.children.push(child);}, replaceChildren() {this.children=[];},
       querySelector(selector) { return node(id + selector); },
       querySelectorAll() { return []; },
     });
@@ -31,8 +31,9 @@ function harness() {
   let timerID = 0;
   const writes = [], messages = [];
   const context = vm.createContext({
-    modeHomeNative:modeHomePage,typography,readerPagination,
+    modeHomeNative:modeHomePage,modeHomeModes:HOME_MODES,typography,readerPagination,
     console, performance, URL, TextEncoder, Uint8Array, Int16Array, Float32Array, ArrayBuffer,
+    Option:function(text,value){return {textContent:text,value};},
     navigator: {}, location: { hostname: 'localhost', origin: 'http://localhost', search: '' },
     crypto: { randomUUID: () => 'glasses-ui-test' },
     localStorage: { getItem: () => null, setItem() {} },
@@ -51,7 +52,7 @@ function harness() {
   context.window = context;
   context.addEventListener = () => {};
   const exported = `
-    _homeModule={modeHomePage:modeHomeNative};_typographyModule=typography;
+    _homeModule={modeHomePage:modeHomeNative,HOME_MODES:modeHomeModes};_typographyModule=typography;
     window.testUI = { S, onG2Event, handleServerMsg, glassesStartup,
       drawFontTest,updatePhoneUI,setFontTest:(active,controls)=>{_fontTestActive=active;_fontTestUI=controls;},
       setAudioControls: controls=>{_audioMode=true;_audioUI=controls;},
@@ -68,8 +69,10 @@ function harness() {
         _reciteMode = mode; _practiceMode = mode === 'practice'; _taraweehMode = mode === 'taraweeh';
       },
       setReciteMode: window.setReciteMode,
-      sttPayload,migrateModelDefaults,syncMicSourceUI,openGlassesSettings,
+      sttPayload,migrateModelDefaults,setSttApiKey,syncMicSourceUI,openGlassesSettings,
+      ensureMicPermissionForCurrentSource,startHubMic,startBrowserMic,requestMicFromSettings,updateMicStatus,
       applyLocalTranslation, fetchLangPack,
+      listenGlassesDisplay,listenOptions,setListenOptionKind:kind=>{_listenOptionsPicking=kind;},
       setPack: function (lang, verses) { _langPacks[lang] = verses; },
       setPractice: function (value) { _practiceMode = value; _taraweehMode = !value; _reciteMode = value ? 'practice' : 'taraweeh'; },
       setMetrics: function (metrics) { _pretext = metrics; }
@@ -140,27 +143,20 @@ test('a Listen Quran phone group retains its selected translations when live-mod
  h.ui.updatePhoneUI({...state,isListeningGroup:false},'');assert.equal(h.nodes.get('verseTrans').textContent,'French live-mode verse');
 });
 
-test('OpenAI defaults and old Mini settings migrate to Whisper once without changing Groq',()=>{
+test('removed OpenAI settings migrate to Soniox and discard the hidden key',()=>{
  const h=harness();
- h.ui.S.settings=h.ui.migrateModelDefaults({transcriptionProvider:'groq',transcriptionModel:'whisper-large-v3',modelByProvider:{groq:'whisper-large-v3',openai:'gpt-4o-mini-transcribe'}});
- h.context.setProvider('openai',false);assert.equal(h.ui.sttPayload().transcriptionModel,'whisper-1');
- assert.match(h.nodes.get('settingTranscribeModel').innerHTML,/whisper-1 \(default\)/);
- h.context.setProvider('groq',false);assert.equal(h.ui.sttPayload().transcriptionModel,'whisper-large-v3');
- const oldActive=h.ui.migrateModelDefaults({transcriptionProvider:'openai',transcriptionModel:'gpt-4o-mini-transcribe',modelByProvider:{openai:'gpt-4o-mini-transcribe'}});
- assert.equal(oldActive.transcriptionModel,'whisper-1');assert.equal(oldActive.modelByProvider.openai,'whisper-1');
- h.ui.S.settings=h.ui.migrateModelDefaults({transcriptionProvider:'openai',transcriptionModel:'',modelByProvider:{}});
- h.context.setProvider('openai',false);assert.equal(h.ui.sttPayload().transcriptionModel,'whisper-1');
- // A deliberate alternative remains available after the one-time migration.
- h.context.setTranscribeModel('gpt-4o-mini-transcribe');
- h.ui.S.settings=h.ui.migrateModelDefaults(JSON.parse(JSON.stringify(h.ui.S.settings)));
- h.context.setProvider('openai',false);assert.equal(h.ui.sttPayload().transcriptionModel,'gpt-4o-mini-transcribe');
- const other=h.ui.migrateModelDefaults({transcriptionProvider:'openai',transcriptionModel:'gpt-4o-transcribe',modelByProvider:{openai:'gpt-4o-transcribe'}});
- assert.equal(other.transcriptionModel,'gpt-4o-transcribe');assert.equal(other.modelByProvider.openai,'gpt-4o-transcribe');
+ const migrated=h.ui.migrateModelDefaults({transcriptionProvider:'openai',transcriptionModel:'whisper-1',openaiApiKey:'secret',modelByProvider:{openai:'whisper-1'}});
+ assert.equal(migrated.transcriptionProvider,'soniox');
+ assert.equal(migrated.transcriptionModel,'stt-rt-v5');
+ assert.equal(migrated.openaiApiKey,undefined);assert.equal(migrated.modelByProvider.openai,undefined);
+ h.ui.S.settings=migrated;assert.equal(h.ui.sttPayload().transcriptionProvider,'soniox');assert.equal(h.ui.sttPayload().openaiApiKey,undefined);
+ const kept=h.ui.migrateModelDefaults({transcriptionProvider:'groq',transcriptionModel:'whisper-large-v3',modelByProvider:{groq:'whisper-large-v3'}});
+ assert.equal(kept.transcriptionModel,'whisper-large-v3');
 });
 
 function microphoneHarness(){
  const h=harness(),calls=[],streams=[];h.context.navigator.userAgent='Android';
- h.ui.S.bridge.audioControl=async open=>{calls.push(open?'glasses-open':'glasses-close');return true;};
+ h.ui.S.bridge.audioControl=async (open,source)=>{calls.push(open?(source||'glasses')+'-open':'native-close');return true;};
  const stream=()=>{const track={stopped:false,stop(){this.stopped=true;calls.push('phone-track-stop');}};const value={track,getTracks:()=>[track]};streams.push(value);return value;};
  h.context.navigator.mediaDevices={getUserMedia:async options=>{calls.push(options.audio===true?'phone-permission':'phone-capture');return stream();}};
  h.context.AudioContext=class{sampleRate=16000;state='running';destination={};createMediaStreamSource(){return {connect(){}};}createScriptProcessor(){return {connect(){},disconnect(){}};}createGain(){return {gain:{value:0},connect(){}};}close(){calls.push('phone-context-close');return Promise.resolve();}};
@@ -177,27 +173,79 @@ test('home and settings microphone controls persist one selection immediately wi
 
 test('active microphone handoff stops the old capture and preserves the existing recognition session',async()=>{
  const h=microphoneHarness();h.ui.S.pcmAccum=[1,2,3];
- await h.context.setMicSource('phone');assert.equal(h.ui.S.isRecording,true);assert.equal(h.calls[0],'glasses-close');assert.equal(h.streams.at(-1).track.stopped,false);assert.equal(h.ui.S.pcmAccum.length,0);
+ await h.context.setMicSource('phone');assert.equal(h.ui.S.isRecording,true);assert.deepEqual(h.calls,['native-close','phone-open']);assert.equal(h.streams.length,0);assert.equal(h.ui.S.pcmAccum.length,0);
  const split=h.calls.length;await h.context.setMicSource('g2');
- assert.ok(h.calls.indexOf('phone-track-stop',split)<h.calls.indexOf('glasses-open',split));assert.ok(h.streams.every(s=>s.track.stopped));assert.equal(h.calls.at(-1),'glasses-open');assert.equal(h.ui.S.isRecording,true);
+ assert.equal(h.calls[split],'native-close');assert.equal(h.calls.at(-1),'glasses-open');assert.equal(h.streams.length,0);assert.equal(h.ui.S.isRecording,true);
  assert.ok(h.messages.every(m=>m.type==='set_audio_source'),'A source handoff must not reset the pipeline or restart the prayer');
 });
 
 test('stopping during phone permission or capture acquisition cannot reopen a late microphone stream',async()=>{
  for(const lateCapture of [false,true]){
-  const h=microphoneHarness();let release,requests=0;
-  h.context.navigator.mediaDevices.getUserMedia=()=>{requests++;if(lateCapture&&requests===1)return Promise.resolve(h.stream());return new Promise(r=>release=r);};
-  const switching=h.context.setMicSource('phone');for(let n=0;n<30&&!release;n++)await Promise.resolve();assert.ok(release);
+  const h=microphoneHarness();h.ui.S.isG2=false;let release;
+  h.context.navigator.mediaDevices.getUserMedia=()=>new Promise(r=>release=r);
+  const switching=lateCapture?h.ui.startBrowserMic():h.ui.ensureMicPermissionForCurrentSource();assert.ok(release);
   h.ui.stopListening();const stream=h.stream();release(stream);await switching;await h.flush();
-  assert.equal(stream.track.stopped,true);assert.equal(h.ui.S.mediaStream,null);assert.equal(h.ui.S.isRecording,false);assert.equal(h.nodes.get('homeMicToggle').getAttribute('aria-busy'),'false');
+  assert.equal(stream.track.stopped,true);assert.equal(h.ui.S.mediaStream,null);assert.equal(h.ui.S.isRecording,false);
  }
 });
 
 test('microphone permission denial and rejected bridge requests leave capture stopped with a visible error',async()=>{
- const phone=microphoneHarness();phone.context.navigator.mediaDevices.getUserMedia=async()=>{throw Error('Permission denied');};
+ const phone=microphoneHarness();phone.ui.S.bridge.audioControl=async (open,source)=>{if(open&&source==='phone')throw Error('Permission denied');return true;};
  assert.equal(await phone.context.setMicSource('phone'),false);assert.equal(phone.ui.S.isRecording,false);assert.match(phone.nodes.get('status').textContent,/Phone microphone unavailable/);
  const glasses=microphoneHarness();glasses.ui.S.settings.forcePhoneMic=true;glasses.ui.S.bridge.audioControl=async()=>false;
  assert.equal(await glasses.context.setMicSource('g2'),false);assert.equal(glasses.ui.S.isRecording,false);assert.match(glasses.nodes.get('status').textContent,/Glasses microphone unavailable/);
+});
+
+test('Even Hub phone mic needs no browser API or glasses startup page and stops through the SDK',async()=>{
+ const h=microphoneHarness();h.ui.S.settings.forcePhoneMic=true;h.ui.S.startupPageCreated=false;
+ delete h.context.navigator.mediaDevices;
+ await h.ui.ensureMicPermissionForCurrentSource();await h.ui.startHubMic();
+ assert.deepEqual(h.calls,['phone-open']);assert.equal(h.ui.S.phoneMicPermissionState,'granted');
+ h.ui.stopListening();await h.flush();assert.equal(h.calls.at(-1),'native-close');assert.equal(h.ui.S.isRecording,false);
+});
+
+test('native phone permission and open races close late capture after Stop',async()=>{
+ for(const duringStart of [false,true]){
+  const h=microphoneHarness();h.ui.S.settings.forcePhoneMic=true;let release;
+  h.ui.S.bridge.audioControl=(open,source)=>{h.calls.push(open?source+'-open':'native-close');return open?new Promise(resolve=>release=resolve):Promise.resolve(true);};
+  const pending=duringStart?h.ui.startHubMic():h.ui.ensureMicPermissionForCurrentSource();
+  for(let i=0;i<40&&!release;i++)await Promise.resolve();assert.ok(release);
+  h.ui.stopListening();release(true);await pending;await h.flush();
+  assert.equal(h.ui.S.isRecording,false);assert.equal(h.calls.at(-1),'native-close');assert.equal(h.calls.filter(c=>c==='phone-open').length,1);assert.equal(h.streams.length,0);
+ }
+});
+
+test('settings phone permission uses SDK status and does not interrupt an active native recording',async()=>{
+ const h=microphoneHarness();h.ui.S.settings.forcePhoneMic=true;h.ui.S.isRecording=false;h.ui.S.startupPageCreated=false;
+ h.context.navigator.permissions={query(){throw Error('Browser permission query must not run in Even Hub');}};
+ await h.ui.requestMicFromSettings();h.ui.updateMicStatus();
+ assert.deepEqual(h.calls,['phone-open','native-close']);assert.match(h.nodes.get('micStatusHint').textContent,/Phone mic ready/);
+ h.ui.S.isRecording=true;await h.ui.startHubMic();const count=h.calls.length;
+ await h.ui.requestMicFromSettings();assert.equal(h.calls.length,count,'permission button must not close active capture');
+});
+
+test('simulator false close response is not a permission denial; recording opens each native source once',async()=>{
+ for(const source of ['phone','glasses']){
+  const h=microphoneHarness();h.ui.S.settings.forcePhoneMic=source==='phone';h.ui.S.isRecording=false;
+  h.ui.S.bridge.audioControl=async(open,mic)=>{h.calls.push(open?mic+'-open':'native-close');return open;};
+  await h.ui.requestMicFromSettings();
+  assert.match(h.nodes.get('micStatusHint').textContent,/mic ready/);
+  h.calls.length=0;h.ui.S.isRecording=true;
+  await h.ui.ensureMicPermissionForCurrentSource();await h.ui.startHubMic();
+  assert.deepEqual(h.calls,[source+'-open'],'Start must not preflight-close or reopen the mic');
+  h.ui.S.lastSend=Date.now();h.ui.onG2Event({audioEvent:{source,audioPcm:new Uint8Array([1,0,2,0])}});
+  assert.equal(h.ui.S.pcmAccum.length,2);
+  h.ui.stopListening();await h.flush();assert.equal(h.calls.at(-1),'native-close');
+  assert.ok(!h.nodes.get('status').textContent.includes('permission required'));
+ }
+});
+
+test('standalone phone capture retains browser permission, stream and cleanup',async()=>{
+ const h=microphoneHarness();h.ui.S.isG2=false;
+ await h.ui.ensureMicPermissionForCurrentSource();await h.ui.startBrowserMic();
+ assert.deepEqual(h.calls,['phone-permission','phone-track-stop','phone-capture']);
+ assert.equal(h.streams.at(-1).track.stopped,false);
+ h.ui.stopListening();assert.ok(h.streams.every(s=>s.track.stopped));assert.ok(h.calls.includes('phone-context-close'));assert.ok(!h.calls.some(c=>c==='phone-open'||c==='glasses-open'));
 });
 
 test('glasses Settings puts microphone first and toggles the shared source; disconnected glasses stay unavailable',async()=>{
@@ -207,10 +255,62 @@ test('glasses Settings puts microphone first and toggles the shared source; disc
  const web=microphoneHarness();web.ui.S.isG2=false;web.ui.S.isRecording=false;web.ui.syncMicSourceUI();assert.equal(web.nodes.get('homeMicToggle').disabled,true);assert.equal(web.nodes.get('btnG2Mic').disabled,true);assert.equal(web.nodes.get('homeMicLabel').textContent,'Phone mic');assert.equal(await web.context.setMicSource('g2'),false);
 });
 
+test('glasses Settings accepts hardware sys events and returns to the mode launcher',async()=>{
+ const h=microphoneHarness();h.ui.S.isRecording=false;h.ui.openGlassesSettings();await h.flush();
+ h.ui.onG2Event({sysEvent:{eventType:2}});await h.flush();
+ assert.match(h.writes.at(-1).page.textObject[0].content,/> Translation language/);
+ h.ui.onG2Event({sysEvent:{eventType:0}});await h.flush();
+ assert.match(h.writes.at(-1).page.textObject[0].content,/^Translation language/);
+ h.ui.onG2Event({sysEvent:{eventType:3}});await h.flush();
+ assert.match(h.writes.at(-1).page.textObject.find(item=>item.containerName==='homeTitle').content,/Choose mode/);
+});
+
+test('Quit is on the main mode launcher, not inside glasses Settings',async()=>{
+ const h=microphoneHarness();h.ui.S.isRecording=false;let exits=0;h.ui.S.bridge.shutDownPageContainer=async()=>exits++;
+ h.ui.openGlassesSettings();await h.flush();
+ assert.doesNotMatch(h.writes.at(-1).page.textObject[0].content,/Quit/);
+ h.ui.onG2Event({sysEvent:{eventType:3}});await h.flush();
+ h.ui.onG2Event({sysEvent:{eventType:1}});await h.flush();
+ const homeInput=h.writes.filter(write=>write.data?.containerName==='homeInput').at(-1);
+ assert.match(homeInput.data.content,/> Quit/);
+ h.ui.onG2Event({sysEvent:{eventType:0}});await h.flush();assert.equal(exits,1);
+});
+
+test('glasses Reciter speed shows its value and sends the selected pace to the backend',async()=>{
+ const h=microphoneHarness();h.ui.S.isRecording=false;h.ui.openGlassesSettings();await h.flush();
+ for(let i=0;i<3;i++)h.ui.onG2Event({sysEvent:{eventType:2}});
+ await h.flush();
+ assert.match(h.writes.at(-1).page.textObject[0].content,/> Reciter speed: Normal/);
+ h.ui.onG2Event({sysEvent:{eventType:0}});await h.flush();
+ assert.equal(h.ui.S.settings.paceMode,'fast');
+ assert.match(h.writes.at(-1).page.textObject[0].content,/> Reciter speed: Fast/);
+ assert.deepEqual(h.messages.slice(-2),[
+  {type:'set_fast_mode',enabled:true},
+  {type:'set_slow_mode',enabled:false},
+ ]);
+});
+
 test('glasses PCM is ignored for phone input and still reaches capture while the glasses settings menu is open',()=>{
  const h=microphoneHarness();h.ui.S.lastSend=Date.now();h.ui.S.settings.forcePhoneMic=true;h.ui.S.pcmAccum=[];
  h.ui.onG2Event({audioEvent:{audioPcm:new Uint8Array([1,0,2,0])}});assert.equal(h.ui.S.pcmAccum.length,0);
  h.ui.S.settings.forcePhoneMic=false;h.ui.openGlassesSettings();h.ui.onG2Event({audioEvent:{audioPcm:new Uint8Array([1,0,2,0])}});assert.equal(h.ui.S.pcmAccum.length,2);
+});
+
+test('SDK phone PCM reaches recognition and source mismatches or stopped capture are ignored',()=>{
+ const h=microphoneHarness();h.ui.S.lastSend=Date.now();h.ui.S.settings.forcePhoneMic=true;h.ui.S.pcmAccum=[];
+ const audioPcm=new Uint8Array([1,0,2,0]);
+ h.ui.onG2Event({audioEvent:{source:'phone',audioPcm}});assert.equal(h.ui.S.pcmAccum.length,2);
+ h.ui.onG2Event({audioEvent:{source:'glasses',audioPcm}});assert.equal(h.ui.S.pcmAccum.length,2);
+ h.ui.S.settings.forcePhoneMic=false;h.ui.onG2Event({audioEvent:{source:'phone',audioPcm}});assert.equal(h.ui.S.pcmAccum.length,2);
+ h.ui.S.isRecording=false;h.ui.onG2Event({audioEvent:{source:'glasses',audioPcm}});assert.equal(h.ui.S.pcmAccum.length,2);
+});
+
+test('only simulator untagged PCM may follow the successfully opened native phone source',async()=>{
+ const h=microphoneHarness();h.context.navigator.userAgent='Windows';h.ui.S.settings.forcePhoneMic=true;h.ui.S.lastSend=Date.now();
+ const audioPcm=new Uint8Array([1,0,2,0]),event={jsonData:{audioPcm:[1,0,2,0]},audioEvent:{source:'glasses',audioPcm}};
+ h.ui.onG2Event(event);assert.equal(h.ui.S.pcmAccum.length,0,'must first open the selected source');
+ await h.ui.ensureMicPermissionForCurrentSource();h.ui.onG2Event(event);assert.equal(h.ui.S.pcmAccum.length,2);
+ h.context.navigator.userAgent='iPhone';h.ui.onG2Event(event);assert.equal(h.ui.S.pcmAccum.length,2,'real phone requires source-tagged phone PCM');
 });
 
 test('provider settings preserve each model and send the selected provider/model pair',()=>{
@@ -220,24 +320,40 @@ test('provider settings preserve each model and send the selected provider/model
  assert.equal(h.nodes.get('settingTranscribeProvider').value,'groq');
  assert.match(h.nodes.get('recognitionSummary').textContent,/Groq/);
  assert.match(h.nodes.get('sPillModel').title,/Groq.*whisper-large-v3/);
- h.context.setProvider('openai');h.context.setTranscribeModel('whisper-1');
- assert.equal(h.nodes.get('settingTranscribeModel').value,'whisper-1');
+ h.context.setProvider('elevenlabs');
+ assert.equal(h.nodes.get('settingTranscribeModel').value,'scribe_v2_realtime');
  h.context.setProvider('groq');assert.equal(h.ui.S.settings.transcriptionModel,'whisper-large-v3');
- h.context.setProvider('openai');assert.equal(h.ui.S.settings.transcriptionModel,'whisper-1');
- assert.equal(h.nodes.get('groqKeyRow').style.display,'none');assert.equal(h.nodes.get('openaiKeyRow').style.display,'');
+ h.context.setProvider('elevenlabs');assert.equal(h.ui.S.settings.transcriptionModel,'scribe_v2_realtime');
+ assert.equal(h.nodes.get('groqKeyRow').style.display,'none');assert.equal(h.nodes.get('elevenlabsKeyRow').style.display,'');
  for(const timer of [...h.timeouts.values()].filter(t=>t.ms===300))timer.fn();
  const init=h.messages.filter(m=>m.type==='init').at(-1);
- assert.equal(init.transcriptionProvider,'openai');assert.equal(init.transcriptionModel,'whisper-1');
- assert.equal(h.ui.sttPayload().transcriptionProvider,'openai');
- assert.equal(h.ui.sttPayload().transcriptionModel,'whisper-1');
+ assert.equal(init.transcriptionProvider,'elevenlabs');assert.equal(init.transcriptionModel,'scribe_v2_realtime');
+ assert.equal(h.ui.sttPayload().transcriptionProvider,'elevenlabs');
+ assert.equal(h.ui.sttPayload().transcriptionModel,'scribe_v2_realtime');
+ h.context.setProvider('soniox');
+ assert.equal(h.nodes.get('settingTranscribeModel').value,'stt-rt-v5');
+ assert.equal(h.nodes.get('elevenlabsKeyRow').style.display,'none');assert.equal(h.nodes.get('sonioxKeyRow').style.display,'');
+ for(const timer of [...h.timeouts.values()].filter(t=>t.ms===300))timer.fn();
+ const sonioxInit=h.messages.filter(m=>m.type==='init').at(-1);
+ assert.equal(sonioxInit.transcriptionProvider,'soniox');assert.equal(sonioxInit.transcriptionModel,'stt-rt-v5');
+});
+
+test('an edited Soniox key is persisted and sent by the active provider immediately',()=>{
+ const h=harness();Object.assign(h.ui.S.settings,{keyMode:'byok',transcriptionProvider:'soniox',transcriptionModel:'stt-rt-v5',sonioxApiKey:''});
+ h.ui.setSttApiKey('soniox','  snx_test_key  ',true);
+ assert.equal(h.ui.S.settings.sonioxApiKey,'snx_test_key');
+ assert.equal(h.ui.sttPayload().sonioxApiKey,'snx_test_key');
+ for(const timer of [...h.timeouts.values()].filter(t=>t.ms===300))timer.fn();
+ const init=h.messages.filter(m=>m.type==='init').at(-1);
+ assert.equal(init.transcriptionProvider,'soniox');assert.equal(init.sonioxApiKey,'snx_test_key');
 });
 
 test('provider status distinguishes connecting selection from the backend ready provider',()=>{
- const h=harness();h.ui.S.settings.transcriptionProvider='openai';
+ const h=harness();h.ui.S.settings.transcriptionProvider='elevenlabs';
  h.ui.handleServerMsg({type:'connected'});
- assert.equal(h.nodes.get('sPillModel.s-label').textContent,'Connecting · OpenAI');
- h.ui.handleServerMsg({type:'sys_status',component:'model',status:'ready',provider:'openai'});
- assert.equal(h.nodes.get('sPillModel.s-label').textContent,'Ready · OpenAI');
+ assert.equal(h.nodes.get('sPillModel.s-label').textContent,'Connecting · ElevenLabs');
+ h.ui.handleServerMsg({type:'sys_status',component:'model',status:'ready',provider:'elevenlabs'});
+ assert.equal(h.nodes.get('sPillModel.s-label').textContent,'Ready · ElevenLabs');
  h.ui.handleServerMsg({type:'sys_status',component:'model',status:'ready',provider:'groq'});
  assert.equal(h.nodes.get('sPillModel.s-label').textContent,'Ready · Groq');
 });
@@ -485,7 +601,7 @@ test('mode launcher uses four non-overlapping native regions with two on the rig
   for(const other of page.textObject.filter(o=>o!==c))assert.ok(c.xPosition+c.width<=other.xPosition||other.xPosition+other.width<=c.xPosition||c.yPosition+c.height<=other.yPosition||other.yPosition+other.height<=c.yPosition);
  }
  }
- assert.deepEqual(HOME_MODES.map(m=>m.key),['listen','practice','reader','taraweeh','audio','settings']);
+ assert.deepEqual(HOME_MODES.map(m=>m.key),['listen','practice','reader','taraweeh','audio','settings','quit']);
 });
 
 test('native mode menu selection and reader pickers transfer no images',async()=>{
@@ -900,6 +1016,16 @@ test('Listen Quran handles omitted zero sys taps and seek menu commands',()=>{
  assert.equal(taps,2);
  h.ui.onG2Event({sysEvent:{eventType:4}});h.ui.onG2Event({sysEvent:{eventType:5}});assert.equal(taps,2);
  h.ui.onG2Event({menuItemClickEvent:{itemID:36}});h.ui.onG2Event({menuItemClickEvent:{itemID:37}});assert.deepEqual(seeks,[-10000,10000]);
+});
+
+test('Listen display exposes Arabic and transliteration combinations on phone and glasses',async()=>{
+ const h=harness();h.ui.setListenOptionKind('display');
+ assert.deepEqual(Array.from(h.ui.listenOptions(),option=>option.value),['arabic-translation','arabic-transliteration','arabic','translation','transliteration']);
+ await h.context.setListenGlassesDisplay('arabic-transliteration');
+ assert.equal(h.ui.S.settings.listenGlassesDisplay,'arabic-transliteration');
+ assert.equal(h.ui.listenGlassesDisplay(),'arabic-transliteration');
+ await h.context.setListenGlassesDisplay('transliteration');
+ assert.equal(h.ui.listenGlassesDisplay(),'transliteration');
 });
 
 

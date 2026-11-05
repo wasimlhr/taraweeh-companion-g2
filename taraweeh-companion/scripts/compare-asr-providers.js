@@ -9,7 +9,8 @@
  *
  *   node scripts/compare-asr-providers.js \
  *     --dirs=/tmp/recitations/a,/tmp/recitations/b \
- *     --groq-key=/tmp/.groq_key --openai-key=/tmp/.oai_key [--window=6] [--step=12]
+ *     --groq-key=/tmp/.groq_key --openai-key=/tmp/.oai_key \
+ *     --soniox-key=/tmp/.soniox_key [--window=6] [--step=12]
  *
  * Keys are read from files so they never appear in a command line or a log.
  */
@@ -25,6 +26,7 @@ const OPTS = {
   dirs: (arg('dirs', '') || '').split(',').filter(Boolean),
   groqKey: arg('groq-key', ''),
   openaiKey: arg('openai-key', ''),
+  sonioxKey: arg('soniox-key', ''),
   windowSec: parseFloat(arg('window', '6')),
   stepSec: parseFloat(arg('step', '12')),
   // Groq free tier is 20 RPM. Firing windows back to back trips it and looks
@@ -66,11 +68,26 @@ const PROVIDERS = {
     model: 'whisper-1',
     key: OPTS.openaiKey ? readFileSync(OPTS.openaiKey, 'utf8').trim() : '',
   },
+  soniox: {
+    label: 'Soniox stt-rt-v5',
+    model: 'stt-rt-v5',
+    key: OPTS.sonioxKey ? readFileSync(OPTS.sonioxKey, 'utf8').trim() : '',
+  },
 };
 const active = Object.entries(PROVIDERS).filter(([, p]) => p.key);
 if (!active.length) throw new Error('need at least one key');
 
 async function transcribe(p, wav) {
+  if (p.model === 'stt-rt-v5') {
+    const { transcribeWithSoniox } = await import('../backend/sonioxProvider.js');
+    const t0 = Date.now();
+    try {
+      const result = await transcribeWithSoniox(wav.subarray(44), p.key, null, { model: p.model });
+      return { ms: Date.now() - t0, text: result.text, words: result.words.length, status: 200 };
+    } catch (err) {
+      return { ms: Date.now() - t0, text: '', words: 0, status: err.status || 0 };
+    }
+  }
   const form = new FormData();
   form.append('file', new Blob([wav], { type: 'audio/wav' }), 'a.wav');
   form.append('model', p.model);
@@ -126,7 +143,7 @@ for (const dir of OPTS.dirs) {
 const pad = (s, n) => String(s).padEnd(n);
 const med = (a) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : 0);
 console.log('\n' + '='.repeat(78));
-console.log('IDENTICAL WINDOWS THROUGH BOTH PROVIDERS');
+console.log('IDENTICAL WINDOWS THROUGH ALL CONFIGURED PROVIDERS');
 console.log('scored on whether the app matcher lands on an ayah actually in the window');
 console.log('='.repeat(78));
 console.log(pad('provider', 30) + pad('windows', 9) + pad('matched', 9) + pad('hit rate', 10) + pad('med score', 11) + 'med latency');

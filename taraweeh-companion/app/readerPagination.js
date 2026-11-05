@@ -41,7 +41,10 @@ export function readerTranslationPages(verses,measure){
 
 // Keep complete, consecutive ayahs on a stable listening screen. Use the same
 // measured line budgets as the renderer; oversized ayahs retain timed pages.
-export function readerListeningPages(verses,measureArabic,measureTranslation,{translationOnly=false,arabicOnly=false,hasBasmala=false,compactAfterOpening=true,singleAyahPages=false,arabicSize=28}={}){
+export function readerListeningPages(verses,measureArabic,measureTranslation,{translationOnly=false,arabicOnly=false,secondaryField='translation',hasBasmala=false,compactAfterOpening=true,singleAyahPages=false,arabicSize=28}={}){
+ const sourceVerses=secondaryField==='transliteration'
+  ? verses.map(verse=>({...verse,translation:verse.transliteration||''}))
+  : verses;
  const metrics=arabicMetrics(arabicSize),pages=[];let group=[];
  const fallback=verse=>arabicOnly?readerArabicOnlyPages(verse,measureArabic,hasBasmala,arabicSize):translationOnly?readerTranslationPages([verse],measureTranslation):singleAyahPages?readerSinglePages([verse],measureArabic,measureTranslation,520,hasBasmala,0,compactAfterOpening,arabicSize):readerInterleavedPages([verse],measureArabic,measureTranslation,520,hasBasmala,4,compactAfterOpening,arabicSize);
  function packed(items){
@@ -51,7 +54,7 @@ export function readerListeningPages(verses,measureArabic,measureTranslation,{tr
   return {kind:arabicOnly?'arabic-only':translationOnly?'translation-only':'interleaved',header:arabicOnly?false:!compactAfterOpening,lines,translationLines:translated,translationY:translationOnly?24:144,ayah:items[0].ayah,ayahs:items.flatMap(verseReferences),part:1,parts:1,opening:false};
  }
  function flush(){if(group.length){pages.push(packed(group));group=[];}}
- for(const verse of verses){
+ for(const verse of sourceVerses){
   // The surah title and Bismillah belong only to the opening screen.
   if(verse.ayah===1){flush();pages.push(...fallback(verse));continue;}
   if(group.length&&(group.length===4||!packed([...group,verse])))flush();

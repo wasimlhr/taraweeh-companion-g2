@@ -4,7 +4,7 @@ import {LANGUAGE_CODES, PACK_CODES} from './languageCatalog.js';
 /**
  * Quran Verse Translator Backend — WebSocket server with AudioPipeline per client.
  * Overlapping chunks, parallel transcription, auto-advance when locked.
- * v3.4.39 — on-device language packs + DIAG_TOKEN usage analytics
+ * v3.4.47 — Listen Quran transliteration display modes
  *   Translate mode: general Quran follow-along translator; Taraweeh adds rak'ah tracking
  */
 import 'dotenv/config';
@@ -33,9 +33,10 @@ const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const SHARED_GROQ_KEY = (process.env.SHARED_GROQ_KEY || '').trim();
 const SHARED_OPENAI_KEY = (process.env.SHARED_OPENAI_KEY || '').trim();
+const SHARED_SONIOX_KEY = (process.env.SHARED_SONIOX_KEY || '').trim();
 const SHARED_DEEPGRAM_KEY = (process.env.SHARED_DEEPGRAM_KEY || '').trim();
 const SHARED_ELEVENLABS_KEY = (process.env.SHARED_ELEVENLABS_KEY || '').trim();
-const HAS_ANY_SHARED_KEY = !!(SHARED_GROQ_KEY || SHARED_OPENAI_KEY || SHARED_DEEPGRAM_KEY || SHARED_ELEVENLABS_KEY);
+const HAS_ANY_SHARED_KEY = !!(SHARED_GROQ_KEY || SHARED_OPENAI_KEY || SHARED_SONIOX_KEY || SHARED_DEEPGRAM_KEY || SHARED_ELEVENLABS_KEY);
 const SAMPLE_RATE = 16000;
 const MOBILE_ONLY_MODE = process.env.MOBILE_ONLY_MODE === 'true';
 // Global connection ceiling — a resource bound, deliberately NOT per-IP: every
@@ -50,7 +51,9 @@ const ALLOWED_AUDIO_SOURCES = new Set(['browser', 'simulator', 'g2']);
 const ALLOWED_MODELS = {
   groq: new Set(['whisper-large-v3-turbo', 'whisper-large-v3']),
   openai: new Set(['gpt-4o-mini-transcribe', 'gpt-transcribe', 'gpt-4o-transcribe', 'whisper-1']),
+  soniox: new Set(['stt-rt-v5']),
   deepgram: new Set(['nova-3', 'whisper-large']),
+  elevenlabs: new Set(['scribe_v2_realtime']),
 };
 const LOCAL_TRANSLATION_LANGS = new Set(['', ...LANGUAGE_CODES]);
 
@@ -251,12 +254,13 @@ if (PRETEXT) {
 }
 app.get('/api/status', (req, res) => {
   const shared = sharedKeyAvailability();
-  const modelName = 'independent engines: groq / openai (optional deepgram / elevenlabs)';
+  const modelName = 'app engines: groq / soniox / elevenlabs (legacy openai / optional deepgram)';
   res.json({
     version: APP_VERSION,
     appVersion: APP_VERSION,
     groqConfigured: shared.groq,
     openaiConfigured: shared.openai,
+    sonioxConfigured: shared.soniox,
     deepgramConfigured: shared.deepgram,
     elevenlabsConfigured: shared.elevenlabs,
     sharedKeysConfigured: HAS_ANY_SHARED_KEY,
@@ -348,11 +352,12 @@ app.post('/api/transcription/compare', async (req, res) => {
   const whisperOpts = {
     // Never fall back to SHARED_*_KEY here. This route is unauthenticated and
     // publicly reachable, so a shared-key fallback would let anyone spend the
-    // host's Groq/OpenAI quota. Compare comes from Settings, where the user has
+    // host's provider quota. Compare comes from Settings, where the user has
     // already entered their own key.
     sharedMode: false,
     groqApiKey: req.body?.groqApiKey || '',
     openaiApiKey: req.body?.openaiApiKey || '',
+    sonioxApiKey: req.body?.sonioxApiKey || '',
     deepgramApiKey: req.body?.deepgramApiKey || '',
     elevenlabsApiKey: req.body?.elevenlabsApiKey || '',
   };
@@ -497,16 +502,17 @@ wss.on('connection', (ws, req) => {
     const Ctor = pipelineVersion === 'v3' ? AudioPipelineV3 : AudioPipelineV4;
 
     let whisperOpts = {};
-    const allowedProviders = new Set(['auto', 'groq', 'openai', 'deepgram', 'elevenlabs']);
+    const allowedProviders = new Set(['auto', 'groq', 'openai', 'soniox', 'deepgram', 'elevenlabs']);
     const clientProvider = allowedProviders.has(opts?.transcriptionProvider)
       ? opts.transcriptionProvider
-      : 'groq';
+      : 'soniox';
     const clientModel = sanitizeModel(clientProvider, opts?.transcriptionModel);
     const groqKey = (typeof opts?.groqApiKey === 'string') ? opts.groqApiKey.trim() : '';
     const openaiKey = (typeof opts?.openaiApiKey === 'string') ? opts.openaiApiKey.trim() : '';
+    const sonioxKey = (typeof opts?.sonioxApiKey === 'string') ? opts.sonioxApiKey.trim() : '';
     const deepgramKey = (typeof opts?.deepgramApiKey === 'string') ? opts.deepgramApiKey.trim() : '';
     const elevenlabsKey = (typeof opts?.elevenlabsApiKey === 'string') ? opts.elevenlabsApiKey.trim() : '';
-    const hasByok = !!(groqKey || openaiKey || deepgramKey || elevenlabsKey);
+    const hasByok = !!(groqKey || openaiKey || sonioxKey || deepgramKey || elevenlabsKey);
     const useSharedMode = !hasByok && HAS_ANY_SHARED_KEY;
 
     whisperOpts = {
@@ -514,6 +520,7 @@ wss.on('connection', (ws, req) => {
       provider: clientProvider,
       groqApiKey: groqKey,
       openaiApiKey: openaiKey,
+      sonioxApiKey: sonioxKey,
       deepgramApiKey: deepgramKey,
       elevenlabsApiKey: elevenlabsKey,
       sharedMode: useSharedMode,
@@ -710,7 +717,7 @@ wss.on('connection', (ws, req) => {
             usageStats.init({
               sessionId,
               lang: sanitizeTranslationLang(msg.lang),
-              provider: pipeline?.whisperOpts?.provider || msg.transcriptionProvider || 'groq',
+              provider: pipeline?.whisperOpts?.provider || msg.transcriptionProvider || 'soniox',
               audioSource: pipeline?.audioSource || sanitizeAudioSource(msg.audioSource),
               practiceMode: !!msg.practiceMode,
               taraweehMode: !!pipeline?.taraweehMode,
@@ -810,9 +817,9 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   if (LAN_IP !== 'localhost') console.log(`HTTP  → http://${LAN_IP}:${PORT}`);
   const shared = sharedKeyAvailability();
   if (!HAS_ANY_SHARED_KEY) {
-    console.log('No SHARED_*_KEY env vars — users must supply Groq or OpenAI in app settings');
+    console.log('No SHARED_*_KEY env vars — users must supply Groq, Soniox, or ElevenLabs in app settings');
   } else {
-    console.log(`Transcription shared keys: groq=${shared.groq} deepgram=${shared.deepgram} elevenlabs=${shared.elevenlabs} openai=${shared.openai}`);
+    console.log(`Transcription shared keys: groq=${shared.groq} openai=${shared.openai} soniox=${shared.soniox} deepgram=${shared.deepgram} elevenlabs=${shared.elevenlabs}`);
   }
 });
 if (httpsServer) {

@@ -1,5 +1,53 @@
 # Changelog
 
+## 3.4.47 - 2026-10-30
+
+- Add Arabic with transliteration and transliteration-only display modes to Listen Quran.
+- Apply the selected Listen display consistently to the phone and glasses.
+- Preserve complete transliteration through long-ayah pagination and grouped playback pages.
+
+## 3.4.46 - 2026-10-29
+
+- Move Quit from glasses Settings to the main mode launcher.
+- Advance the Heard ayah indicator with every latest confirmed recited verse, including repeats and backward movement.
+- Keep the Heard indicator independent from the forward-only pacing safety ratchet.
+
+## 3.4.45 - 2026-10-29
+
+- Keep every speech provider limited to identifying the recited Quran text and position.
+- Derive recitation pace from Quran word coverage, elapsed confirmed progression, and the selected speed mode instead of provider token timestamps.
+- Restore conservative Normal timing while retaining adaptive resynchronization when the reciter moves or repeats an ayah.
+- Put Quit on the main glasses mode launcher instead of inside Settings.
+- Keep the Heard indicator on the latest confirmed recited verse without weakening the forward-only pacing guard.
+
+## 3.4.44 - 2026-10-29
+
+- Prevent Ayat al-Kursi's shared opening from locking prematurely onto 3:2.
+- Match ordered realtime fragments of long ayahs without penalizing their full verse length.
+- Merge overlapping Soniox search transcripts without duplicating repeated window text.
+
+## 3.4.43 - 2026-10-29
+
+- Save and activate a validated Soniox API key immediately without requiring Settings to close.
+- Keep adaptive reciter tracking while making Fast mode materially shorter than the learned Normal pace.
+- Add Quit as the final glasses Settings action with the system exit confirmation.
+
+## 3.4.42 - 2026-10-28
+
+- Add Soniox and ElevenLabs realtime speech recognition, with Soniox as the default provider.
+- Improve Quran-aware matching for accurate locks when realtime recognition differs by one Arabic letter.
+- Fix glasses Settings gestures and Back to modes on hardware system events.
+
+## 3.4.41 - 2026-10-27
+
+- Bump the submission version to 3.4.41; retain the native phone microphone and startup fixes from 3.4.40.
+
+## 3.4.40 - 2026-10-26
+
+- Capture phone microphone audio through the native Even SDK inside Even Hub, accept its source-tagged PCM, and retain browser capture for standalone use.
+- Open native recording once instead of preflight open-close-open; do not mislabel the simulator's false close response as denied microphone permission.
+- Use a distinct release version for the microphone fixes instead of replacing the existing 3.4.39 package.
+
 ## 3.4.39 - 2026-10-26
 
 - Keep Translate advancing on its reading timer through silence and delayed recognition; heard verses continue to correct timing and position.

@@ -1,0 +1,35 @@
+import WebSocket from '../backend/node_modules/ws/wrapper.mjs';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const targets=await(await fetch('http://127.0.0.1:9222/json/list')).json();
+const target=targets.find(t=>t.url.startsWith('http://localhost:3012/'));
+assert(target,'Owned simulator phone must be open');
+const ws=new WebSocket(target.webSocketDebuggerUrl);await new Promise(r=>ws.once('open',r));
+let n=0;const pending=new Map();ws.on('message',d=>{const m=JSON.parse(d);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}});
+const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++n;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));});
+const run=async expression=>{const r=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const click=async(x,y)=>{await send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});await send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});await wait(100);};
+const out=new URL('../language-evidence/listen-quran/',import.meta.url);mkdirSync(out,{recursive:true});
+try{
+ await send('Page.reload',{ignoreCache:true});await wait(2200);
+ await run(`window.__NativeAudio=window.Audio;window.Audio=function(...args){const audio=new window.__NativeAudio(...args);audio.muted=true;window.__testAudio=audio;return audio;};document.getElementById('splashScreen')?.remove();`);
+ await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:false});
+ await run('openListenQuran()');
+ await run(`const select=document.querySelector('.lq [data-el="surah"]');select.value='112';select.dispatchEvent(new Event('change'));`);await wait(1000);
+ assert.equal(await run(`document.querySelector('.lq [data-el="play"]').disabled`),false);
+ await run(`document.querySelector('.lq [data-el="play"]').click()`);await wait(700);
+ assert.ok(await run('window.__testAudio.currentTime>0'));
+ const first=await run(`document.querySelector('.lq [data-el="ayah"]').value`);assert.equal(first,'1');
+ await wait(1900);assert.equal(await run(`document.querySelector('.lq [data-el="ayah"]').value`),'2');
+ await run(`document.querySelector('.lq [data-el="play"]').click()`);
+ const old=await run('__testAudio.currentTime');await wait(200);assert.ok(Math.abs(await run('__testAudio.currentTime')-old)<0.1);
+ await run(`document.querySelector('.lq [data-el="download"]').click()`);assert.equal(await run(`document.querySelector('.lq [data-el="confirm"]').hidden`),false);
+ await run(`document.querySelector('.lq [data-el="confirmDownload"]').click()`);await wait(800);
+ assert.equal(await run(`document.querySelector('.lq [data-el="remove"]').hidden`),false);
+ await run(`document.querySelector('.lq h2').textContent='Listen Quran · TEST TONE';`);
+ const shot=await send('Page.captureScreenshot',{format:'png'});writeFileSync(new URL('test-player.png',out),Buffer.from(shot.data,'base64'));
+ await run(`document.querySelector('.lq [data-el="remove"]').click()`);await wait(200);
+ await run('closeListenQuran()');
+ console.log('PASS real media time, ended advances1→2, pause, download/remove cache, player at390px');
+}finally{await send('Emulation.clearDeviceMetricsOverride');ws.close();}

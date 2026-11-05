@@ -10,6 +10,9 @@ Thumbs.db
 .claude/
 .vscode/
 
+# Separate local checkout; never embed the repository inside itself
+/taraweeh-companion-g2/
+
 # Training (scripts, data, checkpoints) — not needed for app deployment
 training/
 training/__pycache__/

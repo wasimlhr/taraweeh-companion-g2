@@ -10,7 +10,9 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const url = process.argv[2] || 'http://localhost:3001';
+// Use explicit IPv4: this machine can have a different service bound to
+// IPv6 localhost on the same port, which would silently load the wrong app.
+const url = process.argv[2] || 'http://127.0.0.1:3001';
 const require = createRequire(join(root, 'package.json'));
 
 function resolveSimulatorBin() {

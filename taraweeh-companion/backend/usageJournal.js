@@ -13,7 +13,7 @@ export class UsageJournal {
   }
   begin(meta={}) {
     const run={id:randomUUID(),startedAt:this.now(),endedAt:null,durationMs:0,
-      provider:['groq','openai','deepgram','elevenlabs'].includes(meta.provider)?meta.provider:'unknown',
+      provider:['groq','openai','soniox','deepgram','elevenlabs'].includes(meta.provider)?meta.provider:'unknown',
       model:/^(whisper-large-v3(-turbo)?|gpt-4o(-mini)?-transcribe|whisper-1|nova-3)$/.test(meta.model||'')?meta.model:'',
       microphone:['g2','simulator','browser'].includes(meta.audioSource)?meta.audioSource:'unknown',mode:meta.practiceMode?'practice':meta.taraweehMode?'taraweeh':'translate',
       language:/^[a-z]{2,3}$/.test(meta.lang||'')?meta.lang:'en',appVersion:/^v?\d+\.\d+\.\d+$/.test(meta.appVersion||'')?meta.appVersion:'',

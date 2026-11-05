@@ -1,0 +1,4 @@
+import {readFileSync,writeFileSync} from 'node:fs';
+const files=['../package.json','../package-lock.json','package.json','package-lock.json','app.json','backend/package.json','backend/package-lock.json','mobile/package.json','mobile/package-lock.json','scripts/check-version-alignment.js','backend/server.js','app/index.html','mobile/android/app/build.gradle','mobile/ios/App/App.xcodeproj/project.pbxproj','backend/usageAnalytics.http.test.js'];
+for(const path of files){let text=readFileSync(path,'utf8').replaceAll('3.4.17','3.4.18');if(path.endsWith('build.gradle'))text=text.replace('versionCode 30417','versionCode 30418');writeFileSync(path,text);}
+const path='package.json';let pkg=JSON.parse(readFileSync(path,'utf8'));pkg.scripts.test=pkg.scripts.test.replace('backend/usageStats.test.js','backend/usageStats.test.js backend/usageJournal.test.js backend/quranStudy.test.js');writeFileSync(path,JSON.stringify(pkg,null,2)+'\n');

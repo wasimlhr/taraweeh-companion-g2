@@ -1,6 +1,6 @@
 {
   "name": "quran-verse-translator",
-  "version": "3.4.39",
+  "version": "3.4.47",
   "description": "Quran Verse Translator — real-time Quran recitation recognition and translation",
   "type": "module",
   "scripts": {
@@ -16,7 +16,7 @@
     "qr:railway": "node scripts/qr-web-url.js https://taraweeh.up.railway.app --png",
     "kill-backend": "node scripts/kill-port-3001.js",
     "evenhub:download": "cd taraweeh-companion && node scripts/download-evenhub-tools.js",
-    "sim": "cd taraweeh-companion && node scripts/run-evenhub-simulator.js http://localhost:3001",
+    "sim": "cd taraweeh-companion && node scripts/run-evenhub-simulator.js http://127.0.0.1:3001",
     "simulator": "npm run sim",
     "live-monitor": "powershell -ExecutionPolicy Bypass -File scripts/live-monitor.ps1",
     "download-quran-db": "node scripts/download-quran-db.js",

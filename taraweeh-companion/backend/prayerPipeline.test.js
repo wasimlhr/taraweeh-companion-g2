@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { AudioPipeline } from './audioPipelineV4.js';
+import { AudioPipeline, mergeSearchTranscripts } from './audioPipelineV4.js';
 import { POSITIONS } from './prayerTracker.js';
 import { loadQuran } from './keywordMatcher.js';
 import { prepareMatcherText, isOpeningPreamble, openingPreambleKind } from './whisperClean.js';
@@ -18,6 +18,25 @@ import { prepareMatcherText, isOpeningPreamble, openingPreambleKind } from './wh
 const TAKBEER = 'الله أكبر';
 const TASMEE = 'سمع الله لمن حمده';
 const TASLEEM = 'السلام عليكم ورحمة الله';
+
+test('overlapping realtime transcripts merge into one ordered Quran fragment', () => {
+  assert.equal(
+    mergeSearchTranscripts([
+      'الله لا إله إلا هو الحي القيوم لا',
+      'الحي القيوم لا تأخذه سنة ولا نوم',
+      'سنة ولا نوم له ما في السماوات',
+    ]),
+    'الله لا اله الا هو الحي القيوم لا تاخذه سنة ولا نوم له ما في السماوات',
+  );
+  assert.equal(
+    mergeSearchTranscripts([
+      'الله لا إله إلا هو الحي القيوم لا',
+      'الحي القيم لا تأخذه سنة ولا نوم',
+    ]),
+    'الله لا اله الا هو الحي القيوم لا تاخذه سنة ولا نوم',
+    'one realtime ASR spelling change does not duplicate the overlapping window',
+  );
+});
 
 test('opening cleanup preserves short Quran letters and ignores quoted basmala', () => {
   for (const opener of ['يس', 'طه', 'ص', 'ق', 'ن', 'الم', 'يسي', 'ياسين']) {
@@ -468,6 +487,18 @@ test('switching reciter speeds replaces the timer and Normal keeps word updates'
  pipeline.setSlowMode(true);assert.ok(pipeline._displayAdvanceTimer);assert.notEqual(pipeline._displayAdvanceTimer,first);
  pipeline.setSlowMode(false);assert.ok(pipeline._displayAdvanceTimer);assert.ok(pipeline._wordProgressInterval);
  pipeline.setFastMode(true);assert.ok(pipeline._displayAdvanceTimer);pipeline.destroy();
+});
+
+test('Fast keeps learned reciter tracking but shortens the learned timer materially', () => {
+ loadQuran();const {pipeline}=makePipeline();pipeline.setTaraweehMode(false);pipeline.active=true;
+ pipeline.state={...pipeline.state,mode:'LOCKED',surah:36,ayah:12,confidence:0.95};
+ pipeline._displaySurah=36;pipeline._displayAyah=12;pipeline._lastDetectedVoiceAt=Date.now();
+ pipeline._measuredMsPerWord=1000;pipeline._msPerWordSamples=[1000];pipeline._measuredPauseMs=2000;
+ pipeline._scheduleReadAdvance(95);const normalMs=pipeline._nextAdvanceMs;
+ pipeline.setFastMode(true);const fastMs=pipeline._nextAdvanceMs;
+ assert.ok(fastMs < normalMs * 0.8, `Fast ${fastMs}ms should be materially shorter than Normal ${normalMs}ms`);
+ assert.ok(fastMs > 0,'Fast still schedules through the learned pacer');
+ pipeline.destroy();
 });
 
 test('one hallucinated foreign ayah does not interrupt a following real Ya-Sin match',async(t)=>{

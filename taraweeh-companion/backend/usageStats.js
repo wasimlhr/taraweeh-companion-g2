@@ -93,14 +93,14 @@ export class UsageStats {
     this.inits += 1;
     this._touchUnique(meta.sessionId);
     inc(this.byLang, meta.lang || '(english)');
-    inc(this.byProvider, meta.provider || 'groq');
+    inc(this.byProvider, meta.provider || 'soniox');
     inc(this.byAudio, meta.audioSource || 'g2');
     inc(this.byMode, meta.practiceMode ? 'practice' : meta.taraweehMode === false ? 'translate' : 'taraweeh');
     inc(this.byPipeline, meta.pipeline || 'v4');
     inc(this.byAppVersion, meta.appVersion || '(unknown)');
     this._recent('init', {
       lang: bucket(meta.lang || '(english)'),
-      provider: bucket(meta.provider || 'groq'),
+      provider: bucket(meta.provider || 'soniox'),
       mode: meta.practiceMode ? 'practice' : meta.taraweehMode === false ? 'translate' : 'taraweeh',
       pipeline: bucket(meta.pipeline || 'v4'),
       appVersion: bucket(meta.appVersion || '(unknown)'),

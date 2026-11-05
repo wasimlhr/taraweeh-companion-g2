@@ -1446,7 +1446,7 @@ html.reader-open #qvtDock { display:none !important; }
 
   </div>
 
-  <span id="versionEl" hidden>v3.4.39</span>
+  <span id="versionEl" hidden>v3.4.47</span>
 </div>
 
 <section id="readerView" hidden aria-label="Read Quran">
@@ -1704,8 +1704,9 @@ html.reader-open #qvtDock { display:none !important; }
         <div class="s-row">
           <label class="s-label" for="settingTranscribeProvider">Provider</label>
           <select id="settingTranscribeProvider" onchange="setProvider(this.value)" aria-describedby="engineHint">
+            <option value="soniox">Soniox</option>
             <option value="groq">Groq</option>
-            <option value="openai">OpenAI</option>
+            <option value="elevenlabs">ElevenLabs</option>
           </select>
           <span class="s-hint" id="engineHint" style="font-size:11px;display:block;margin-top:8px;line-height:1.5"></span>
         </div>
@@ -1717,20 +1718,29 @@ html.reader-open #qvtDock { display:none !important; }
         <div class="s-row">
           <div id="groqKeyRow" style="margin-top:10px">
             <label class="s-label" for="settingGroqKey">Groq API key</label>
-            <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false">
+            <input id="settingGroqKey" type="password" placeholder="gsk_... (Groq API key)" autocomplete="off" spellcheck="false" onchange="setSttApiKey('groq', this.value)">
             <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
               <button type="button" class="back-btn btn-arrow" id="btnGroqTest" onclick="testSttKey('groq')" style="font-size:13px">Test key</button>
               <span id="groqTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
               <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
             </div>
           </div>
-          <div id="openaiKeyRow" style="margin-top:10px;display:none">
-            <label class="s-label" for="settingOpenAIKey">OpenAI API key</label>
-            <input id="settingOpenAIKey" type="password" placeholder="sk-... (OpenAI API key)" autocomplete="off" spellcheck="false">
+          <div id="sonioxKeyRow" style="margin-top:10px;display:none">
+            <label class="s-label" for="settingSonioxKey">Soniox API key</label>
+            <input id="settingSonioxKey" type="password" placeholder="Soniox API key" autocomplete="off" spellcheck="false" onchange="setSttApiKey('soniox', this.value)">
             <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
-              <button type="button" class="back-btn btn-arrow" id="btnOpenAITest" onclick="testSttKey('openai')" style="font-size:13px">Test key</button>
-              <span id="openaiTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
-              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
+              <button type="button" class="back-btn btn-arrow" id="btnSonioxTest" onclick="testSttKey('soniox')" style="font-size:13px">Test key</button>
+              <span id="sonioxTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
+              <a href="https://console.soniox.com" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
+            </div>
+          </div>
+          <div id="elevenlabsKeyRow" style="margin-top:10px;display:none">
+            <label class="s-label" for="settingElevenLabsKey">ElevenLabs API key</label>
+            <input id="settingElevenLabsKey" type="password" placeholder="ElevenLabs API key" autocomplete="off" spellcheck="false" onchange="setSttApiKey('elevenlabs', this.value)">
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+              <button type="button" class="back-btn btn-arrow" id="btnElevenLabsTest" onclick="testSttKey('elevenlabs')" style="font-size:13px">Test key</button>
+              <span id="elevenlabsTestResult" style="font-size:12px;color:var(--tc-2)">—</span>
+              <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener" style="font-size:12px;margin-left:auto;color:var(--tc-gold)">Get a key →</a>
             </div>
           </div>
           <span class="s-hint" style="font-size:11px;display:block;margin-top:10px;color:var(--tc-3)">
@@ -1788,8 +1798,9 @@ html.reader-open #qvtDock { display:none !important; }
     <button type="button" class="back-btn" onclick="openFontTest()">Arabic size, rendering &amp; font test</button>
     <div class="s-card">
       <div class="s-row">
-        <label class="s-label" for="listenGlassesDisplay">Show on glasses</label>
-        <select id="listenGlassesDisplay" onchange="setListenGlassesDisplay(this.value)"><option value="arabic-translation">Arabic + translation</option><option value="arabic">Arabic only</option><option value="translation">Translation only</option></select>
+        <label class="s-label" for="listenGlassesDisplay">Listen display</label>
+        <select id="listenGlassesDisplay" onchange="setListenGlassesDisplay(this.value)"><option value="arabic-translation">Arabic + translation</option><option value="arabic-transliteration">Arabic + transliteration</option><option value="arabic">Arabic only</option><option value="translation">Translation only</option><option value="transliteration">Transliteration only</option></select>
+        <span class="s-hint">Applies to Listen Quran on the phone and glasses.</span>
       </div>
       <div class="s-row">
         <label class="s-label" for="listenPlaybackSpeed">Playback speed</label>
@@ -1964,7 +1975,7 @@ html.reader-open #qvtDock { display:none !important; }
 
 <script>
 (function () {
-  const APP_VERSION = 'v3.4.39';
+  const APP_VERSION = 'v3.4.47';
 
   // Standalone phone app: the Capacitor build (or ?standalone=1 in a browser).
   // No glasses — the phone mic is the input and the phone screen the display.
@@ -2305,7 +2316,7 @@ html.reader-open #qvtDock { display:none !important; }
       const ctx=document.createElement('canvas').getContext('2d');ctx.font=glassesArabicSize()+'px '+readerFont();
       const measureArabic=t=>{ctx.font=glassesArabicSize()+'px '+readerFont();return ctx.measureText(displayArabic(t)).width;};
       const measureTranslation=t=>{if(_pretext)return _pretext.getTextWidth(t);ctx.font='20px sans-serif';return ctx.measureText(t).width;};
-      if(_audioMode)_readerPages=_readerModule.readerListeningPages(data.verses,measureArabic,measureTranslation,{translationOnly:listenGlassesDisplay()==='translation',arabicOnly:listenGlassesDisplay()==='arabic',hasBasmala:!!data.basmala,arabicSize:glassesArabicSize()});
+      if(_audioMode){const display=listenGlassesDisplay();_readerPages=_readerModule.readerListeningPages(data.verses,measureArabic,measureTranslation,{translationOnly:display==='translation'||display==='transliteration',arabicOnly:display==='arabic',secondaryField:display.includes('transliteration')?'transliteration':'translation',hasBasmala:!!data.basmala,arabicSize:glassesArabicSize()});}
       else _readerPages=_readerModule.readerReadingPages(data.verses,measureArabic,measureTranslation,{layout:S.settings.readerLayout,showTranslation:readerGlassesTranslationEnabled(),hasBasmala:!!data.basmala,numberedBasmala:data.surah===1,arabicSize:glassesArabicSize()});
       _readerPage=focusAyah?Math.max(0,_readerPages.findIndex(p=>p.ayahs.includes(focusAyah))):Math.max(0,Math.min(page,_readerPages.length-1));
       const ayah=document.getElementById('readerAyah');ayah.replaceChildren();data.verses.forEach(v=>ayah.add(new Option(String(v.ayah),String(v.ayah))));
@@ -3390,8 +3401,9 @@ html.reader-open #qvtDock { display:none !important; }
     paceMode: 'fast',
     keyMode: 'byok',      // 'shared' = use server-held free key; 'byok' = user key
     groqApiKey: '',
-    openaiApiKey: '',
-    transcriptionProvider: 'groq',
+    sonioxApiKey: '',
+    elevenlabsApiKey: '',
+    transcriptionProvider: 'soniox',
     transcriptionModel: '',         // active model; '' = engine default
     modelByProvider: {},            // last model chosen per engine
     backendUrl: '',                 // '' = auto (serving origin, else hosted)
@@ -3416,14 +3428,13 @@ html.reader-open #qvtDock { display:none !important; }
     return ALLOWED_PIPELINES.has(normalized) ? normalized : 'v4';
   }
 
-  // Groq and OpenAI only: the other engines measured worse on Quran Arabic and
-  // are no longer offered. sanitizeProvider collapses any stored value for a
-  // removed engine back to groq.
-  var STT_PROVIDERS = ['groq', 'openai'];
+  // These are the Quran-Arabic engines exposed in the app. sanitizeProvider
+  // collapses any stored value for a removed engine back to Soniox.
+  var STT_PROVIDERS = ['soniox', 'groq', 'elevenlabs'];
   function sanitizeProvider(p) {
     p = String(p || '').toLowerCase();
-    if (p === 'auto' || p === 'shared') return 'groq';
-    return STT_PROVIDERS.indexOf(p) >= 0 ? p : 'groq';
+    if (p === 'auto' || p === 'shared') return 'soniox';
+    return STT_PROVIDERS.indexOf(p) >= 0 ? p : 'soniox';
   }
   // Model IDs mirror ALLOWED_MODELS in server.js.
   var TRANSCRIBE_MODELS = {
@@ -3433,15 +3444,13 @@ html.reader-open #qvtDock { display:none !important; }
       { id: 'whisper-large-v3', label: 'whisper-large-v3',
         note: 'Uses the full Whisper Large v3 model for every request, with word timings.' },
     ],
-    openai: [
-      { id: 'whisper-1', label: 'whisper-1 (default)',
-        note: 'OpenAI-hosted Whisper with word timings.' },
-      { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe',
-        note: 'OpenAI transcription without word timings; verse timing follows the recognized text.' },
-      { id: 'gpt-transcribe', label: 'gpt-transcribe',
-        note: 'OpenAI transcription without word timings.' },
-      { id: 'gpt-4o-transcribe', label: 'gpt-4o-transcribe',
-        note: 'OpenAI transcription without word timings; verse timing follows the recognized text.' },
+    soniox: [
+      { id: 'stt-rt-v5', label: 'stt-rt-v5 (default)',
+        note: 'Soniox real-time Arabic recognition with finalized word timings and low latency.' },
+    ],
+    elevenlabs: [
+      { id: 'scribe_v2_realtime', label: 'Scribe v2 Realtime (default)',
+        note: 'ElevenLabs real-time Arabic recognition with committed word timings.' },
     ],
   };
 
@@ -3470,14 +3479,14 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   function migrateModelDefaults(settings) {
-    if (settings.openaiWhisperDefault === 1) return settings;
     const models = settings.modelByProvider;
     settings.modelByProvider = models && typeof models === 'object' && !Array.isArray(models) ? { ...models } : {};
-    // Old builds persisted the Mini default even without an explicit choice.
-    // Move that former default once; subsequent user choices stay remembered.
-    if (!settings.modelByProvider.openai || settings.modelByProvider.openai === 'gpt-4o-mini-transcribe') settings.modelByProvider.openai = 'whisper-1';
-    if (sanitizeProvider(settings.transcriptionProvider) === 'openai' && (!settings.transcriptionModel || settings.transcriptionModel === 'gpt-4o-mini-transcribe')) settings.transcriptionModel = 'whisper-1';
-    settings.openaiWhisperDefault = 1;
+    delete settings.modelByProvider.openai;
+    delete settings.openaiApiKey;
+    settings.transcriptionProvider = sanitizeProvider(settings.transcriptionProvider);
+    settings.transcriptionModel = normalizeModel(settings.transcriptionProvider,
+      settings.transcriptionModel || settings.modelByProvider[settings.transcriptionProvider]);
+    settings.modelByProvider[settings.transcriptionProvider] = settings.transcriptionModel;
     return settings;
   }
 
@@ -3487,13 +3496,15 @@ html.reader-open #qvtDock { display:none !important; }
       transcriptionProvider: sanitizeProvider(S.settings.transcriptionProvider),
       transcriptionModel: normalizeModel(S.settings.transcriptionProvider, S.settings.transcriptionModel),
       groqApiKey: byok ? (S.settings.groqApiKey || '').trim() : '',
-      openaiApiKey: byok ? (S.settings.openaiApiKey || '').trim() : '',
+      sonioxApiKey: byok ? (S.settings.sonioxApiKey || '').trim() : '',
+      elevenlabsApiKey: byok ? (S.settings.elevenlabsApiKey || '').trim() : '',
     };
   }
   function providerLabel(p) {
     p = String(p || '').toLowerCase();
     if (p === 'groq') return 'Groq';
-    if (p === 'openai') return 'OpenAI';
+    if (p === 'soniox') return 'Soniox';
+    if (p === 'elevenlabs') return 'ElevenLabs';
     return p ? p : 'Engine';
   }
 
@@ -3659,7 +3670,9 @@ html.reader-open #qvtDock { display:none !important; }
   window.showModelDebug = function () {
     var lines = [];
     lines.push('Provider: ' + (_modelProvider || '(none)'));
-    lines.push('Groq key set: ' + ((S.settings.groqApiKey || '').trim() ? 'yes' : 'NO'));
+    var activeProvider = sanitizeProvider(S.settings.transcriptionProvider);
+    var activeKey = sttPayload()[activeProvider + 'ApiKey'] || '';
+    lines.push(providerLabel(activeProvider) + ' key set: ' + (activeKey ? 'yes' : 'NO'));
     lines.push('WS: ' + (S.ws && S.ws.readyState === WebSocket.OPEN ? 'open' : 'closed'));
     lines.push('');
     lines.push('── Recent events ──');
@@ -3734,7 +3747,7 @@ html.reader-open #qvtDock { display:none !important; }
           } else if (s.httpStatus === 401 || s.httpStatus === 403 || /invalid.*key|unauthoriz|forbidden|key missing|key required/i.test(s.message || '')) {
             setPill('sPillModel', 'err', provLbl + ': bad API key');
             var pv = sanitizeProvider(s.provider || S.settings.transcriptionProvider);
-            var hasKey = !!(pv === 'openai' ? S.settings.openaiApiKey : S.settings.groqApiKey);
+            var hasKey = !!(sttPayload()[pv + 'ApiKey'] || '');
             // A fresh phone install has no key yet: that's setup, not an error.
             if (IS_STANDALONE && !hasKey) {
               setStatus('Add your free ' + provLbl + ' key to start — tap here to open Settings', 'result');
@@ -4109,8 +4122,9 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   async function openSelectedHomeMode() {
-    const mode=['listen','practice','reader','taraweeh','audio','settings'][_homeIndex];
+    const mode=_homeModule?.HOME_MODES?.[_homeIndex]?.key||'listen';
     leaveModeHome();
+    if(mode==='quit'){requestSystemExit();return;}
     if(mode==='audio'){await openListenQuran();return;}
     if(mode==='settings'){showSettings();openGlassesSettings();return;}
     if(mode==='reader'){await openQuranReader();return;}
@@ -4127,7 +4141,8 @@ html.reader-open #qvtDock { display:none !important; }
   let _listenOptionsPicking='',_listenOptionsIndex=0;
   function listenLanguageOptions(){return Object.entries(LANGUAGE_CATALOG).filter(([code,info])=>info.glasses&&code!=='uzc').map(([value,info])=>({value,label:info.label})).sort((a,b)=>a.label.localeCompare(b.label));}
   function listenTranslationLanguage(){const lang=S.settings.listenTranslationLang??S.settings.lang??'en';return lang==='uzc'?'uz':listenLanguageOptions().some(o=>o.value===lang)?lang:'en';}
-  function listenGlassesDisplay(){return ['arabic','translation'].includes(S.settings.listenGlassesDisplay)?S.settings.listenGlassesDisplay:'arabic-translation';}
+  const LISTEN_DISPLAY_MODES=['arabic-translation','arabic-transliteration','arabic','translation','transliteration'];
+  function listenGlassesDisplay(){return LISTEN_DISPLAY_MODES.includes(S.settings.listenGlassesDisplay)?S.settings.listenGlassesDisplay:'arabic-translation';}
   function listenPlaybackSpeed(){const rate=Number(S.settings.listenPlaybackSpeed);return [1,1.25,1.5,2].includes(rate)?rate:1;}
   function syncListenPreferences(){
     const language=document.getElementById('listenTranslationLanguage');
@@ -4137,7 +4152,7 @@ html.reader-open #qvtDock { display:none !important; }
   }
   window.setListenPlaybackSpeed=function(value){const rate=Number(value);S.settings.listenPlaybackSpeed=[1,1.25,1.5,2].includes(rate)?rate:1;saveSettings();syncListenPreferences();_audioUI?.setPlaybackRate(listenPlaybackSpeed());};
   window.setListenGlassesDisplay=async function(value){
-    S.settings.listenGlassesDisplay=['arabic','translation'].includes(value)?value:'arabic-translation';saveSettings();syncListenPreferences();
+    S.settings.listenGlassesDisplay=LISTEN_DISPLAY_MODES.includes(value)?value:'arabic-translation';saveSettings();syncListenPreferences();
     if(_audioMode&&_audioVisual?.ayah)await followListenAyah(_audioVisual,true);
   };
   window.setListenTranslationLanguage=async function(value){
@@ -4169,17 +4184,22 @@ html.reader-open #qvtDock { display:none !important; }
     updatePhoneUI({mode:'LOCKED',surah:state.surah,ayah:state.ayah,surahName:_readerData.name,ayahTotal:_readerData.totalAyahs,arabic:content.arabic,translation:content.translation,transliteration:content.transliteration,riwaya:state.riwaya,numbered:false,isListeningGroup:true},'');
     // Listen Quran has its own language selection, independent of live mode.
     document.getElementById('verseTrans').textContent=content.translation;
+    document.getElementById('verseTranslit').textContent=content.transliteration;
+    const display=listenGlassesDisplay();
+    document.getElementById('verseArabic').style.display=display.startsWith('arabic')?'':'none';
+    document.getElementById('verseTrans').style.display=display.includes('translation')?'':'none';
+    document.getElementById('verseTranslit').style.display=display.includes('transliteration')?'':'none';
     document.getElementById('verseArabic').style.fontFamily=state.riwaya==='ad-duri'?'QuranDuri':'';
     document.getElementById('versePos').textContent=_readerData.name+(state.riwaya==='ad-duri'?' · Al-Duri':'')+' · '+(content.label==='Bismillah'?content.label:(content.multiple?'Ayahs ':'Ayah ')+content.label);
     document.getElementById('verseStudyTools').hidden=true;document.getElementById('wordProgress').style.display='none';document.getElementById('lockedContent').scrollTop=0;
   }
   function listenOptions(){
     if(_listenOptionsPicking==='speed')return [1,1.25,1.5,2].map(value=>({value,label:value+'×'+(value===listenPlaybackSpeed()?' (selected)':'')}));
-    if(_listenOptionsPicking==='display')return [{value:'arabic-translation',label:'Arabic + translation'},{value:'arabic',label:'Arabic only'},{value:'translation',label:'Translation only'}].map(o=>({...o,label:o.label+(o.value===listenGlassesDisplay()?' (selected)':'')}));
+    if(_listenOptionsPicking==='display')return [{value:'arabic-translation',label:'Arabic + translation'},{value:'arabic-transliteration',label:'Arabic + transliteration'},{value:'arabic',label:'Arabic only'},{value:'translation',label:'Translation only'},{value:'transliteration',label:'Transliteration only'}].map(o=>({...o,label:o.label+(o.value===listenGlassesDisplay()?' (selected)':'')}));
     return [{value:1,label:'Next reading page'},{value:-1,label:'Previous reading page'},{value:0,label:'Back to playback'}];
   }
   function renderListenOptions(){
-    const title={speed:'Playback speed',display:'Show on glasses',pages:'Reading pages'}[_listenOptionsPicking];
+    const title={speed:'Playback speed',display:'Listen display',pages:'Reading pages'}[_listenOptionsPicking];
     const text=title+'\n\n'+listenOptions().map((o,i)=>(i===_listenOptionsIndex?'> ':'  ')+o.label).join('\n')+'\n\nSwipe to choose · Tap to select';
     _readerImageLayout=false;_audioFrame=null;++_readerEpoch;
     queueBridgeCall('listenOptions',()=>{if(!_listenOptionsPicking)return;return S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'listenOptions',xPosition:16,yPosition:8,width:544,height:272,content:text,isEventCapture:1,paddingLength:0}],menuObject:{menuItems:[{itemID:40,itemName:'Back to playback'}]}});});
@@ -4314,12 +4334,18 @@ html.reader-open #qvtDock { display:none !important; }
   function renderGlassesSettings(){
     if(!S.isG2||!S.bridge)return;
     const select=document.getElementById('settingLang'),options=Array.from(select.options).filter(o=>o.value);
-    const entries=_glassesLanguagePicking?options.map(o=>o.textContent):['Microphone: '+(_micSwitchPending?'switching…':S.settings.forcePhoneMic?'Phone':'Glasses'),'Translation language','Reading layout','Reciter speed','Arabic font test','Back to modes'];
+    const paceLabel=_paceMode==='fast'?'Fast':_paceMode==='slow'?'Slow':'Normal';
+    const entries=_glassesLanguagePicking?options.map(o=>o.textContent):['Microphone: '+(_micSwitchPending?'switching…':S.settings.forcePhoneMic?'Phone':'Glasses'),'Translation language','Reading layout','Reciter speed: '+paceLabel,'Arabic font test','Back to modes'];
     const start=Math.max(0,_glassesSettingIndex-2);const lines=entries.slice(start,start+6).map((name,i)=>(start+i===_glassesSettingIndex?'> ':'  ')+name);
     queueBridgeCall('modeSettings',()=>S.bridge.rebuildPageContainer({containerTotalNum:1,textObject:[{containerID:1,containerName:'modeSettings',xPosition:12,yPosition:8,width:552,height:272,content:(_glassesLanguagePicking?'Translation language':'Settings')+'\n\n'+lines.join('\n')+'\n\nSwipe to choose · Tap to select',isEventCapture:1}],menuObject:{menuItems:[{itemID:30,itemName:'Back to modes'}]}}));
   }
   function glassesSettingsEvent(event){
-    const input=event.textEvent||event.listEvent;const t=input?.eventType??0;
+    // Depending on the active G2 input source/firmware, the same temple or
+    // ring gesture may arrive as a text, list, or system event. The mode
+    // launcher already accepts all three; Settings must do the same or every
+    // row (including Back to modes) looks active while ignoring input.
+    const input=event.textEvent||event.listEvent||event.sysEvent;const t=input?.eventType??0;
+    if(event.sysEvent&&(t===4||t===5))return; // contextual-menu overlay state
     if(event.menuItemClickEvent?.itemID===30||t===3){_glassesSettings=false;hideSettings();showModeHome();return;}
     const options=Array.from(document.getElementById('settingLang').options).filter(o=>o.value);
     if(t===1||t===2){const max=_glassesLanguagePicking?options.length:6;_glassesSettingIndex=(_glassesSettingIndex+(t===1?max-1:1))%max;renderGlassesSettings();return;}
@@ -4330,7 +4356,7 @@ html.reader-open #qvtDock { display:none !important; }
     else if(_glassesSettingIndex===2){const choices=['arabic-translation','translation-pronunciation','custom'];setReadingPreset(choices[(choices.indexOf(S.settings.readingPreset)+1)%3]);}
     else if(_glassesSettingIndex===3)cyclePaceMode();
     else if(_glassesSettingIndex===4){openFontTest();return;}
-    else{_glassesSettings=false;hideSettings();showModeHome();return;}
+    else if(_glassesSettingIndex===5){_glassesSettings=false;hideSettings();showModeHome();return;}
     renderGlassesSettings();
   }
 
@@ -5355,6 +5381,8 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   function currentAudioSource() {
+    // 'browser' is the backend's phone-level audio profile, also used for
+    // native SDK phone PCM. Only glasses capture needs the G2 gain/VAD profile.
     if (S.settings.forcePhoneMic || !S.isG2) return 'browser';
     return isEvenHubSimulatorRuntime() ? 'simulator' : 'g2';
   }
@@ -5381,7 +5409,7 @@ html.reader-open #qvtDock { display:none !important; }
 
     S.ws.onopen = function () {
       setWsPill('ok', 'Service: online');
-      // Both Groq and OpenAI are BYOK API providers — no warmup, skip the
+      // The selectable STT engines are BYOK API providers — no warmup, skip the
       // "connecting…" message. Keep it around only for unknown provider state.
       log('WS connected', 'ok');
       _startWsPing();
@@ -5597,7 +5625,8 @@ html.reader-open #qvtDock { display:none !important; }
     var cands = msg.candidates || [];
     var html = '';
     cands.slice(0, 3).forEach(function (c, i) {
-      var score = Math.round((c.score || 0) * (c.score <= 1 ? 100 : 1));
+      var visibleScore = c.matchConfidence != null ? c.matchConfidence : c.score;
+      var score = Math.round((visibleScore || 0) * (visibleScore <= 1 ? 100 : 1));
       var isTop = i === 0;
       var scoreCls = score >= 60 ? '' : 'low';
       html += '<div class="match-cand' + (isTop ? ' top' : '') + '">'
@@ -5722,7 +5751,9 @@ html.reader-open #qvtDock { display:none !important; }
       // Update confidence pill
       var _conf = msg.state.isCandidate
         ? (msg.state.candidateScore || 0)
-        : Math.round((msg.state.confidence || 0) * 100);
+        : (msg.state.matchConfidence != null
+          ? msg.state.matchConfidence
+          : Math.round((msg.state.confidence || 0) * 100));
       var _confMode = msg.state.mode;
       if (_confMode === 'LOCKED') {
         setPill('sPillConf', _conf >= 70 ? 'ok' : 'warn', 'Match: ' + _conf + '%');
@@ -5756,7 +5787,8 @@ html.reader-open #qvtDock { display:none !important; }
         // Live "Heard vs Shown" indicator — shows drift between Whisper/Groq
         // confirmed position and current display so the user can see when the
         // pipeline is out of sync.
-        var heardS = msg.state.whisperSurah, heardA = msg.state.whisperAyah;
+        var heardS = msg.state.heardSurah || msg.state.whisperSurah;
+        var heardA = msg.state.heardAyah || msg.state.whisperAyah;
         var shownS = msg.state.surah, shownA = msg.state.ayah;
         var heardPill = document.getElementById('sPillHeard');
         var shownPill = document.getElementById('sPillShown');
@@ -5915,7 +5947,7 @@ html.reader-open #qvtDock { display:none !important; }
     // ── Stage 1 log: mic is capturing ─────────────────────────────────────────
     if (_pcmChunkCount === 0) {
       var source = currentAudioSource();
-      var src = source === 'g2' ? 'G2 mic' : (source === 'simulator' ? 'simulator PC mic' : 'browser mic');
+      var src = source === 'g2' ? 'G2 mic' : (source === 'simulator' ? 'simulator PC mic' : S.isG2 ? 'phone mic (Even SDK)' : 'browser mic');
       log('\u25cf Stage 1 \u2014 ' + src + ' capturing (' + u8.byteLength + 'B/frame)', 'ok');
       setPill('sPillConf', 'ok', 'Match: listening');
     }
@@ -5937,54 +5969,66 @@ html.reader-open #qvtDock { display:none !important; }
     }
   }
 
-  var _micCaptureEpoch=0;
+  var _micCaptureEpoch=0,_hubMicSource=null;
+  function hubMicSource(){return S.settings.forcePhoneMic?'phone':'glasses';}
+  function hubMicSourceValue(source){return source==='phone'?(S.sdk?.AudioInputSource?.Phone||'phone'):(S.sdk?.AudioInputSource?.Glasses||'glasses');}
   function microphoneBridgeCall(name,action){
     let failure;
-    return queueBridgeCall(name,()=>Promise.resolve().then(action).catch(error=>{failure=error;throw error;})).then(result=>{if(failure)throw failure;if(result===false)throw Error('Glasses microphone request was rejected');return result;});
+    return queueBridgeCall(name,()=>Promise.resolve().then(action).catch(error=>{failure=error;throw error;})).then(result=>{if(failure)throw failure;return result;});
   }
-  function startG2Mic() {
-    if (!S.bridge || !S.startupPageCreated) return;
+  function startHubMic() {
+    const source=hubMicSource(),label=source==='phone'?'Phone':'G2';
+    if (!S.bridge || (source==='glasses'&&!S.startupPageCreated)) return Promise.reject(Error(label+' microphone bridge not ready'));
     const epoch=_micCaptureEpoch;
     return microphoneBridgeCall('audioControl(true)', function () {
-      if(!S.isRecording||S.settings.forcePhoneMic||epoch!==_micCaptureEpoch)return;
-      return S.bridge.audioControl(true).then(function (opened) {
-        if(opened===false)throw Error('Glasses microphone request was rejected');
-        S.g2MicPermissionState = 'granted';
-        log('G2 mic opened', 'ok');
+      if(!S.isRecording||source!==hubMicSource()||epoch!==_micCaptureEpoch)return;
+      if(_hubMicSource===source)return true;
+      return S.bridge.audioControl(true,hubMicSourceValue(source)).then(async function (opened) {
+        if(opened===false)throw Error(label+' microphone request was rejected');
+        if(!S.isRecording||source!==hubMicSource()||epoch!==_micCaptureEpoch){await S.bridge.audioControl(false);return;}
+        _hubMicSource=source;
+        S[source==='phone'?'phoneMicPermissionState':'g2MicPermissionState'] = 'granted';
+        log(label+' mic opened (Even SDK)', 'ok');
       });
     });
   }
 
-  function stopG2Mic() {
+  function stopHubMic() {
     _micCaptureEpoch++;
-    if (!S.bridge || !S.startupPageCreated) return;
+    _hubMicSource=null;
+    if (!S.bridge) return;
     return microphoneBridgeCall('audioControl(false)', function () {
       return S.bridge.audioControl(false);
     });
   }
 
-  function requestG2MicPermission() {
-    if (!S.bridge || !S.isG2 || !S.startupPageCreated) {
-      return Promise.reject(new Error('G2 bridge not ready'));
+  function requestHubMicPermission() {
+    const source=hubMicSource(),label=source==='phone'?'Phone':'G2',stateKey=source==='phone'?'phoneMicPermissionState':'g2MicPermissionState';
+    if (!S.bridge || !S.isG2 || (source==='glasses'&&!S.startupPageCreated)) {
+      return Promise.reject(new Error(label+' bridge not ready'));
     }
+    if(_hubMicSource===source&&S.isRecording)return Promise.resolve(true);
+    const epoch=_micCaptureEpoch;
     return microphoneBridgeCall('audioControl(true)-preflight', function () {
-      return S.bridge.audioControl(true).then(function (opened) {
-        if(opened===false)throw Error('Glasses microphone permission was rejected');
-        S.g2MicPermissionState = 'granted';
-        return S.bridge.audioControl(false).then(function (closed) {
-          if(closed===false)throw Error('Glasses microphone could not be closed');
-          log('G2 mic permission preflight complete', 'ok');
+      if(epoch!==_micCaptureEpoch||source!==hubMicSource())return;
+      return S.bridge.audioControl(true,hubMicSourceValue(source)).then(function (opened) {
+        if(opened===false)throw Error(label+' microphone permission was rejected');
+        S[stateKey] = 'granted';
+        // A false close response is not a denied OPEN request. In particular,
+        // the simulator reports false when capture has been turned off.
+        return S.bridge.audioControl(false).then(function () {
+          log(label+' mic permission preflight complete', 'ok');
           return true;
         });
       });
     }).catch(function (err) {
-      S.g2MicPermissionState = 'denied';
+      S[stateKey] = 'denied';
       throw err;
     });
   }
 
   function ensureMicPermissionForCurrentSource() {
-    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+    var useBrowserMic = !S.isG2;
     if (useBrowserMic) {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         return Promise.reject(new Error('Microphone API not available'));
@@ -5994,7 +6038,9 @@ html.reader-open #qvtDock { display:none !important; }
         return true;
       });
     }
-    return requestG2MicPermission();
+    // During recording, opening the selected native source is the permission
+    // request. Leave it running: do not open-close-open before every Start.
+    return S.isRecording?startHubMic():requestHubMicPermission();
   }
 
   function startBrowserMic() {
@@ -6068,7 +6114,16 @@ html.reader-open #qvtDock { display:none !important; }
   }
 
   function onG2Event(event) {
-    if(event.audioEvent?.audioPcm){if(!S.settings.forcePhoneMic&&!_micSwitchPending)sendPcm(event.audioEvent.audioPcm);return;}
+    if(event.audioEvent?.audioPcm){
+      // Older payloads without a source are glasses audio, never phone audio.
+      const source=event.audioEvent.source||'glasses';
+      // Simulator 0.9.5 sends untagged raw audio for either selected mic; the
+      // SDK defaults that payload to 'glasses'. Limit this compatibility path
+      // to the simulator and a source whose native open actually completed.
+      const simulatorUntagged=isEvenHubSimulatorRuntime()&&event.jsonData?.audioPcm&&!event.jsonData.source&&_hubMicSource===hubMicSource();
+      if(S.isG2&&(source===hubMicSource()||simulatorUntagged)&&!_micSwitchPending)sendPcm(event.audioEvent.audioPcm);
+      return;
+    }
     const input=event.textEvent||event.listEvent||event.sysEvent;
     if(input?.eventType===3){const now=Date.now();if(now-(_lastDoubleTapTime||0)<700)return;_lastDoubleTapTime=now;}
     if(_fontTestActive){_fontTestUI?.event(event);return;}
@@ -6128,7 +6183,8 @@ html.reader-open #qvtDock { display:none !important; }
     var t = (ev.eventType == null ? 0 : ev.eventType);
     if(_homeActive&&(t===1||t===2)){
       if(Date.now()-_homeScrollAt<180)return;
-      _homeScrollAt=Date.now();_homeIndex=(_homeIndex+(t===1?5:1))%6;
+      const homeCount=_homeModule?.HOME_MODES?.length||7;
+      _homeScrollAt=Date.now();_homeIndex=(_homeIndex+(t===1?homeCount-1:1))%homeCount;
       renderModeHome();return;
     }
     if(_homeActive&&t===0){openSelectedHomeMode().catch(error=>{log(error.message,'err');showModeHome();});return;}
@@ -6281,9 +6337,9 @@ html.reader-open #qvtDock { display:none !important; }
     ensureMicPermissionForCurrentSource().then(async function () {
       if (!S.isRecording || startSessionId !== _glassesSessionId || captureStartEpoch!==_micCaptureEpoch) return;
       acquireWakeLock();
-      var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+      var useBrowserMic = !S.isG2;
       if (useBrowserMic) await startBrowserMic();
-      else await startG2Mic();
+      else await startHubMic();
       if (!S.isRecording || startSessionId !== _glassesSessionId) return;
 
       // Show matching panel, hide idle state
@@ -6297,7 +6353,7 @@ html.reader-open #qvtDock { display:none !important; }
       if(startSessionId!==_glassesSessionId||captureStartEpoch!==_micCaptureEpoch)return;
       stopListening();
       var msg = err && err.message ? err.message : 'Microphone permission failed';
-      setStatus('Mic permission required', 'error');
+      setStatus('Microphone unavailable: '+msg, 'error');
       log('Mic permission failed: ' + msg, 'err');
       if (S.isG2 && !(S.settings.forcePhoneMic || !S.isG2)) {
         log('Tip: Tap Start once on glasses-connected app to grant G2 mic access.', 'info');
@@ -6327,9 +6383,9 @@ html.reader-open #qvtDock { display:none !important; }
       showModeHome();
     }
 
-    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
+    var useBrowserMic = !S.isG2;
     if (useBrowserMic) stopBrowserMic();
-    else stopG2Mic()?.catch(error=>log('Glasses microphone close failed: '+error.message,'err'));
+    else stopHubMic()?.catch(error=>log('Microphone close failed: '+error.message,'err'));
     // Leave the socket open. "stop" already idles the pipeline server-side, and
     // keeping it means resume is one message instead of a reconnect plus a full
     // pipeline re-init — that round-trip was most of the lag on a resume tap.
@@ -6380,7 +6436,7 @@ html.reader-open #qvtDock { display:none !important; }
       try { S.unsubs.launchSource(); } catch (_) {}
       S.unsubs.launchSource = null;
     }
-    try { stopG2Mic()?.catch(()=>{}); } catch (_) {}
+    try { stopHubMic()?.catch(()=>{}); } catch (_) {}
     try { stopBrowserMic(); } catch (_) {}
     _flushSessionState();
   }
@@ -6462,8 +6518,10 @@ html.reader-open #qvtDock { display:none !important; }
         try {
           var gKey = document.getElementById('settingGroqKey');
           if (gKey && !gKey.value) gKey.value = S.settings.groqApiKey || '';
-          var oKey = document.getElementById('settingOpenAIKey');
-          if (oKey && !oKey.value) oKey.value = S.settings.openaiApiKey || '';
+          var sKey = document.getElementById('settingSonioxKey');
+          if (sKey && !sKey.value) sKey.value = S.settings.sonioxApiKey || '';
+          var eKey = document.getElementById('settingElevenLabsKey');
+          if (eKey && !eKey.value) eKey.value = S.settings.elevenlabsApiKey || '';
           var lang = document.getElementById('settingLang');
           if (lang) lang.value = sanitizeTranslationLang(S.settings.lang || '');
           syncMainLang();
@@ -6812,14 +6870,14 @@ html.reader-open #qvtDock { display:none !important; }
     const previous=!!S.settings.forcePhoneMic||!S.isG2,active=S.isRecording&&previous!==phone,session=_glassesSessionId;
     _micSwitchPending=active;syncMicSourceUI();
     try{
-      if(active){if(previous)stopBrowserMic();else await stopG2Mic();}
+      if(active){if(S.isG2)await stopHubMic();else stopBrowserMic();}
       S.settings.forcePhoneMic=phone;saveSettings();S.pcmAccum=[];
       if(S.ws?.readyState===WebSocket.OPEN){const source=currentAudioSource();S.ws.send(JSON.stringify({type:'set_audio_source',source}));_lastSentAudioSource=source;}
       syncMicSourceUI();updateMicStatus();
       if(active&&S.isRecording&&session===_glassesSessionId){
         await ensureMicPermissionForCurrentSource();
         if(!S.isRecording||session!==_glassesSessionId)return false;
-        if(phone)await startBrowserMic();else await startG2Mic();
+        if(S.isG2)await startHubMic();else await startBrowserMic();
       }
       return true;
     }catch(error){
@@ -6858,7 +6916,8 @@ html.reader-open #qvtDock { display:none !important; }
 
   var ENGINE_NOTES = {
     groq: 'Groq runs Whisper models. Uses your Groq API key for Translate, Practice and Taraweeh.',
-    openai: 'Uses your OpenAI API key for Translate, Practice and Taraweeh.',
+    soniox: 'Soniox real-time STT with Arabic language restriction and word timings. Uses your Soniox API key.',
+    elevenlabs: 'ElevenLabs Scribe v2 Realtime Arabic STT with committed word timings. Uses your ElevenLabs API key.',
   };
 
   function refreshModelChoices() {
@@ -6913,7 +6972,8 @@ html.reader-open #qvtDock { display:none !important; }
     rememberModel(p, S.settings.transcriptionModel);
     var ids = {
       groq: ['btnProviderGroq', 'btnProviderGroqMain'],
-      openai: ['btnProviderOpenAI', 'btnProviderOpenAIMain'],
+      soniox: ['btnProviderSoniox', 'btnProviderSonioxMain'],
+      elevenlabs: ['btnProviderElevenLabs', 'btnProviderElevenLabsMain'],
     };
     STT_PROVIDERS.forEach(function (name) {
       (ids[name] || []).forEach(function (id) {
@@ -6922,9 +6982,11 @@ html.reader-open #qvtDock { display:none !important; }
       });
     });
     var gRow = document.getElementById('groqKeyRow');
-    var oRow = document.getElementById('openaiKeyRow');
+    var sRow = document.getElementById('sonioxKeyRow');
+    var eRow = document.getElementById('elevenlabsKeyRow');
     if (gRow) gRow.style.display = (p === 'groq') ? '' : 'none';
-    if (oRow) oRow.style.display = (p === 'openai') ? '' : 'none';
+    if (sRow) sRow.style.display = (p === 'soniox') ? '' : 'none';
+    if (eRow) eRow.style.display = (p === 'elevenlabs') ? '' : 'none';
     refreshModelChoices();
     try { saveSettings(); } catch (_) {}
     if (reinitialize === false) return;
@@ -6938,10 +7000,29 @@ html.reader-open #qvtDock { display:none !important; }
     return (getWsUrl()).replace(/^ws/, 'http').replace(/\/ws$/, '');
   }
 
+  window.setSttApiKey = function (provider, value, reinitialize) {
+    provider = sanitizeProvider(provider);
+    var settingNames = {
+      groq: 'groqApiKey',
+      soniox: 'sonioxApiKey',
+      elevenlabs: 'elevenlabsApiKey',
+    };
+    var settingName = settingNames[provider];
+    if (!settingName) return;
+    var key = String(value || '').trim();
+    var changed = key !== (S.settings[settingName] || '');
+    S.settings[settingName] = key;
+    saveSettings();
+    if (reinitialize === false || !changed) return;
+    if (provider === sanitizeProvider(S.settings.transcriptionProvider)) {
+      scheduleReinit(providerLabel(provider) + ' key updated');
+    }
+  };
+
   window.testSttKey = async function (provider) {
     provider = sanitizeProvider(provider);
-    var inputIds = { groq: 'settingGroqKey', openai: 'settingOpenAIKey' };
-    var resultIds = { groq: 'groqTestResult', openai: 'openaiTestResult' };
+    var inputIds = { groq: 'settingGroqKey', soniox: 'settingSonioxKey', elevenlabs: 'settingElevenLabsKey' };
+    var resultIds = { groq: 'groqTestResult', soniox: 'sonioxTestResult', elevenlabs: 'elevenlabsTestResult' };
     var keyEl = document.getElementById(inputIds[provider]);
     var resultEl = document.getElementById(resultIds[provider]);
     if (!resultEl) return;
@@ -6965,6 +7046,10 @@ html.reader-open #qvtDock { display:none !important; }
         resultEl.style.color = '#e53e3e';
         return;
       }
+      // A successful test is also an explicit request to use this key. Persist
+      // it now so the active pipeline does not keep the previous/empty value
+      // until the whole settings sheet is closed.
+      setSttApiKey(provider, key, true);
       resultEl.textContent = '\u2713 Valid';
       resultEl.style.color = '#2d9e4f';
     } catch (e) {
@@ -6973,7 +7058,8 @@ html.reader-open #qvtDock { display:none !important; }
     }
   };
   window.testGroqKey = function () { return testSttKey('groq'); };
-  window.testOpenAIKey = function () { return testSttKey('openai'); };
+  window.testSonioxKey = function () { return testSttKey('soniox'); };
+  window.testElevenLabsKey = function () { return testSttKey('elevenlabs'); };
 
   window.compareSttProviders = async function () {
     var out = document.getElementById('compareSttResult');
@@ -7571,8 +7657,9 @@ html.reader-open #qvtDock { display:none !important; }
   window.openRecognitionSettings=function(focusKey=false){
     showSettings();selectSettingsSection('live');
     document.getElementById('recognitionSettings').open=true;
+    const keyTargets={groq:'settingGroqKey',soniox:'settingSonioxKey',elevenlabs:'settingElevenLabsKey'};
     const target=document.getElementById(focusKey
-      ?sanitizeProvider(S.settings.transcriptionProvider)==='openai'?'settingOpenAIKey':'settingGroqKey'
+      ?keyTargets[sanitizeProvider(S.settings.transcriptionProvider)]
       :'settingTranscribeProvider');
     target.focus({preventScroll:true});
     if(focusKey)target.scrollIntoView({block:'center',behavior:'instant'});
@@ -7595,8 +7682,10 @@ html.reader-open #qvtDock { display:none !important; }
     updateSurahScope();
     document.getElementById('settingPipeline').value = sanitizePipelineVersion(S.settings.pipelineVersion || 'v4');
     document.getElementById('settingGroqKey').value = S.settings.groqApiKey || '';
-    var oaiInput = document.getElementById('settingOpenAIKey');
-    if (oaiInput) oaiInput.value = S.settings.openaiApiKey || '';
+    var sonioxInput = document.getElementById('settingSonioxKey');
+    if (sonioxInput) sonioxInput.value = S.settings.sonioxApiKey || '';
+    var elevenLabsInput = document.getElementById('settingElevenLabsKey');
+    if (elevenLabsInput) elevenLabsInput.value = S.settings.elevenlabsApiKey || '';
     var bUrlEl = document.getElementById('settingBackendUrl');
     if (bUrlEl) bUrlEl.value = S.settings.backendUrl || '';
     var bHint = document.getElementById('backendUrlHint');
@@ -7676,8 +7765,10 @@ html.reader-open #qvtDock { display:none !important; }
       S.settings.backendUrl = /^https?:\/\/[^\s]+$/i.test(raw) ? raw : '';
     }
     S.settings.groqApiKey = (document.getElementById('settingGroqKey').value || '').trim();
-    var oaiEl = document.getElementById('settingOpenAIKey');
-    S.settings.openaiApiKey = oaiEl ? (oaiEl.value || '').trim() : (S.settings.openaiApiKey || '');
+    var sonioxEl = document.getElementById('settingSonioxKey');
+    S.settings.sonioxApiKey = sonioxEl ? (sonioxEl.value || '').trim() : (S.settings.sonioxApiKey || '');
+    var elevenLabsEl = document.getElementById('settingElevenLabsKey');
+    S.settings.elevenlabsApiKey = elevenLabsEl ? (elevenLabsEl.value || '').trim() : (S.settings.elevenlabsApiKey || '');
     // setProvider() is the source of truth for the engine; the dropdown only
     // ever contributes a model, and only one this engine actually offers.
     S.settings.transcriptionProvider = sanitizeProvider(S.settings.transcriptionProvider);
@@ -7724,20 +7815,20 @@ html.reader-open #qvtDock { display:none !important; }
   function updateMicStatus() {
     var el = document.getElementById('micStatusHint');
     if (!el) return;
-    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
-    if (!useBrowserMic && S.isG2) {
-      if (!S.startupPageCreated) {
+    if (S.isG2) {
+      const phone=!!S.settings.forcePhoneMic,label=phone?'Phone':'G2',state=S[phone?'phoneMicPermissionState':'g2MicPermissionState'];
+      if (!phone&&!S.startupPageCreated) {
         el.textContent = 'G2 startup not ready yet';
         return;
       }
-      if (S.g2MicPermissionState === 'granted') {
-        el.textContent = '✓ G2 mic ready';
+      if (state === 'granted') {
+        el.textContent = '✓ '+label+' mic ready';
         el.style.color = 'var(--tc-green)';
-      } else if (S.g2MicPermissionState === 'denied') {
-        el.textContent = '✕ G2 mic permission blocked';
+      } else if (state === 'denied') {
+        el.textContent = '✕ '+label+' mic permission blocked';
         el.style.color = 'var(--tc-red)';
       } else {
-        el.textContent = 'Tap "Request mic" to grant G2 mic permission';
+        el.textContent = 'Tap "Request mic" to grant '+label+' mic permission';
         el.style.color = '';
       }
       return;
@@ -7756,15 +7847,14 @@ html.reader-open #qvtDock { display:none !important; }
 
   function requestMicFromSettings() {
     var el = document.getElementById('micStatusHint');
-    var useBrowserMic = S.settings.forcePhoneMic || !S.isG2;
-    if (!useBrowserMic && S.isG2) {
-      if (el) el.textContent = 'Requesting G2 mic...';
-      requestG2MicPermission().then(function () {
-        if (el) { el.textContent = '✓ G2 mic ready'; el.style.color = 'var(--tc-green)'; }
+    if (S.isG2) {
+      const label=S.settings.forcePhoneMic?'Phone':'G2';
+      if (el) el.textContent = 'Requesting '+label+' mic...';
+      return requestHubMicPermission().then(function () {
+        if (el) { el.textContent = '✓ '+label+' mic ready'; el.style.color = 'var(--tc-green)'; }
       }).catch(function (err) {
-        if (el) { el.textContent = '✕ ' + (err && err.message ? err.message : 'G2 mic blocked'); el.style.color = 'var(--tc-red)'; }
+        if (el) { el.textContent = '✕ ' + (err && err.message ? err.message : label+' mic blocked'); el.style.color = 'var(--tc-red)'; }
       });
-      return;
     }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       if (el) el.textContent = 'Microphone API not available';

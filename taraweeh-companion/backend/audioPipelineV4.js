@@ -152,7 +152,6 @@ const LEADING_EDGE_MAX_ADVANCE = parseInt(process.env.LEADING_EDGE_MAX_ADVANCE |
 // trailing by one. 1 = no padding. Measured across the sync bench, dropping this
 // below ~1.15 buys accuracy on steady recitation but overshoots on slow, long-
 // breath recitation, so it stays conservative until tuned on real recordings.
-const GROQ_TIMER_CUSHION = parseFloat(process.env.GROQ_TIMER_CUSHION || '1.2');
 // Whisper says the reciter is exactly one ayah past the display. Rather than
 // snapping (jittery) or ignoring it (the display then stays behind for the rest
 // of the ayah), compress the remaining timer to this so it closes the gap
@@ -171,6 +170,12 @@ const REPHASE_FLOOR_MS = parseInt(process.env.REPHASE_FLOOR_MS || '400', 10);
 // separately and add it.
 const PAUSE_EST_START_MS = parseInt(process.env.PAUSE_EST_START_MS || '900', 10);
 const PAUSE_EST_MAX_MS = parseInt(process.env.PAUSE_EST_MAX_MS || '6000', 10);
+// Fast is an explicit request to run ahead of the conservative learned clock.
+// Keep learning and ASR re-phasing active, but bias the learned speech and
+// breath estimates down so one pace sample does not silently turn Fast back
+// into Normal.
+const FAST_LEARNED_PACE_FACTOR = parseFloat(process.env.FAST_LEARNED_PACE_FACTOR || '0.72');
+const FAST_LEARNED_PAUSE_FACTOR = parseFloat(process.env.FAST_LEARNED_PAUSE_FACTOR || '0.5');
 // Hold the display while the mic hears nothing. Above a normal inter-word gap so
 // it does not trip mid-ayah, and bounded so it can never freeze the display.
 const DISPLAY_HOLD_SILENCE_MS = parseInt(process.env.DISPLAY_HOLD_SILENCE_MS || '1200', 10);
@@ -183,8 +188,9 @@ const SILENCE_THRESHOLD        = parseFloat(process.env.SILENCE_THRESHOLD       
 const READ_ADVANCE_CONFIDENCE  = parseInt(process.env.READ_ADVANCE_CONFIDENCE    || '40',    10);
 const READ_WORDS_PER_SEC       = parseFloat(process.env.READ_WORDS_PER_SEC       || '1.15');
 const READ_ADVANCE_MIN_MS      = parseInt(process.env.READ_ADVANCE_MIN_MS        || '4000',  10);
-// No hard cap — transliteration + pace mode determine duration. 90s safety only for bugs.
-const READ_ADVANCE_MAX_MS      = parseInt(process.env.READ_ADVANCE_MAX_MS        || '30000', 10);
+// No hard cap — verse length + pace determine duration. 90s is a safety bound,
+// not the old 30s ceiling that truncated Ayat al-Kursi and other long ayahs.
+const READ_ADVANCE_MAX_MS      = parseInt(process.env.READ_ADVANCE_MAX_MS        || '90000', 10);
 const READ_ADVANCE_CONFIRM_BUMP_MS = parseInt(process.env.READ_ADVANCE_CONFIRM_BUMP_MS || '2500', 10);
 const SMOOTH_ADVANCE_STEP_MS   = parseInt(process.env.SMOOTH_ADVANCE_STEP_MS     || '1200',  10);
 // By first lock we've matched 3–6s of audio — reciter is near end of ayah; advance quickly
@@ -210,6 +216,40 @@ const MANUAL_ADJUST_COOLDOWN_MS = parseInt(process.env.MANUAL_ADJUST_COOLDOWN_MS
 
 const BASE_DISPLAY_LEAD = 2;
 const BLOCKED_FORCE_UNBLOCK_MS = parseInt(process.env.BLOCKED_FORCE_UNBLOCK_MS || '8000', 10);
+
+// Search calls use overlapping audio windows. Joining their transcripts
+// verbatim duplicates the overlap and turns one ordered verse into a bag of
+// repeated fragments. That especially hurts long ayahs such as 2:255. Merge
+// the exact suffix/prefix overlap while retaining genuinely new, split text.
+export function mergeSearchTranscripts(texts) {
+  let merged = [];
+  for (const text of texts) {
+    const next = normalizeArabic(text).split(/\s+/).filter(Boolean);
+    if (!next.length) continue;
+    if (!merged.length) {
+      merged = next;
+      continue;
+    }
+    let overlap = 0;
+    const maxOverlap = Math.min(merged.length, next.length);
+    for (let size = maxOverlap; size >= 2; size--) {
+      let mismatches = 0;
+      const allowedMismatches = size >= 3 ? Math.max(1, Math.floor(size * 0.20)) : 0;
+      for (let i = 0; i < size; i++) {
+        if (merged[merged.length - size + i] !== next[i]) {
+          mismatches++;
+          if (mismatches > allowedMismatches) break;
+        }
+      }
+      if (mismatches <= allowedMismatches) {
+        overlap = size;
+        break;
+      }
+    }
+    merged.push(...next.slice(overlap));
+  }
+  return merged.join(' ');
+}
 
 function computeRms(pcm) {
   const n = Math.floor(pcm.length / 2);
@@ -292,7 +332,7 @@ export class AudioPipeline {
     // 20 RPM is not exceeded *after* lock; search is not starved.
     const _keys = collectKeys(this.whisperOpts || {});
     const _provider = resolveProvider(this.whisperOpts?.provider, _keys);
-    const _fastSet = new Set(['groq', 'openai', 'deepgram', 'elevenlabs']);
+    const _fastSet = new Set(['groq', 'openai', 'soniox', 'deepgram', 'elevenlabs']);
     this.resolvedProvider = _provider;
     this.hasFailover      = false;
     this.isGroqMode       = _provider === 'groq';
@@ -324,6 +364,10 @@ export class AudioPipeline {
     // Dual position model: Whisper = ground truth, display = animation
     this._whisperSurah = 0;
     this._whisperAyah  = 0;
+    // Latest real Quran identification for the UI. Unlike the forward-only
+    // progression ratchet, this follows repeats and backward recitation too.
+    this._heardSurah   = 0;
+    this._heardAyah    = 0;
     this._displaySurah = 0;
     this._displayAyah  = 0;
 
@@ -398,7 +442,6 @@ export class AudioPipeline {
     this._measuredMsPerWord = this._restoredPace || 0;   // 0 = no data yet, use default
     this._msPerWordSamples  = [];  // last 6 samples for rolling average
     this._whisperClockSamples = 0; // count of Whisper clock measurements (no manual data)
-    this._wordPaceSamples = 0;     // count of pace measurements from word timestamps
     this._measuredPauseMs = PAUSE_EST_START_MS;  // learned end-of-ayah breath
     this._forwardJumpAyah = 0;     // far-ahead candidate awaiting a second sighting
     this._forwardJumpCount = 0;
@@ -598,7 +641,7 @@ export class AudioPipeline {
     if (err.quotaExhausted) {
       this._rateLimitedUntilMs = Infinity;
       this.onStatus({component:'model',status:'error',httpStatus:err.status || 429,
-        provider:this.resolvedProvider || this.whisperOpts?.provider || 'groq',
+        provider:this.resolvedProvider || this.whisperOpts?.provider || 'soniox',
         message:'Provider quota exhausted. Check the selected API project quota or change your key/provider. Automatic retries stopped.',
         quotaExhausted:true});
       return;
@@ -608,7 +651,7 @@ export class AudioPipeline {
       this.onStatus({
         component: 'model',
         status: 'error',
-        provider: this.resolvedProvider || this.whisperOpts?.provider || 'groq',
+        provider: this.resolvedProvider || this.whisperOpts?.provider || 'soniox',
         message: String(err.message || 'transcription failed').slice(0, 160),
         httpStatus: err.status || 0,
       });
@@ -623,7 +666,7 @@ export class AudioPipeline {
     this.onStatus({
       component: 'model',
       status: 'error',
-      provider: this.resolvedProvider || this.whisperOpts?.provider || 'groq',
+      provider: this.resolvedProvider || this.whisperOpts?.provider || 'soniox',
       message: `Rate limit — waiting ${Math.round(waitMs / 1000)}s`,
       retryAfterMs: waitMs,
       httpStatus: 429,
@@ -694,6 +737,8 @@ export class AudioPipeline {
     }
     this._whisperSurah = 0;
     this._whisperAyah  = 0;
+    this._heardSurah   = 0;
+    this._heardAyah    = 0;
     this._displaySurah = 0;
     this._displayAyah  = 0;
     this._lockedInFlight = 0;
@@ -732,6 +777,8 @@ export class AudioPipeline {
     this.state = createState();
     this._whisperSurah = 0;
     this._whisperAyah  = 0;
+    this._heardSurah   = 0;
+    this._heardAyah    = 0;
     this._displaySurah = 0;
     this._displayAyah  = 0;
     this._emitState(null, null);
@@ -801,6 +848,8 @@ export class AudioPipeline {
     const confPct = this._practiceConfPct(score);
     this._whisperSurah = surah;
     this._whisperAyah  = ayah;
+    this._heardSurah   = surah;
+    this._heardAyah    = ayah;
     const changed = surah !== this._displaySurah || ayah !== this._displayAyah;
     if (changed) {
       this._displaySurah = surah;
@@ -988,10 +1037,10 @@ export class AudioPipeline {
       console.log(`[Pipeline] Pace ignored: ${wc}w in ${(elapsedMs/1000).toFixed(1)}s = ${sample}ms/w (outside 700-4000 range)`);
       return;
     }
-    // Once speech timings have established the current tempo, old manual
-    // samples belong to an earlier calibration. A new correction must not
-    // replace that tempo with their stale median.
-    if (this._wordPaceSamples > 0) this._msPerWordSamples = [];
+    // Once Quran-position progression established a current tempo, a fresh
+    // manual correction starts a new calibration window. Do not combine it
+    // with manual samples from before that observed progression.
+    if (this._whisperClockSamples > 0) this._msPerWordSamples = [];
     this._msPerWordSamples.push(sample);
     if (this._msPerWordSamples.length > 10) this._msPerWordSamples.shift();
     // Weighted median: sort samples, take middle value. More robust than mean
@@ -1439,6 +1488,7 @@ export class AudioPipeline {
     this.state = createState();
     this._displaySurah = this._displayAyah = 0;
     this._whisperSurah = this._whisperAyah = 0;
+    this._heardSurah = this._heardAyah = 0;
     this._whisperLastConfirmMs = 0;
     this._userSearchingDisplay = false;
     this._completedSurah = this._completedAt = 0;
@@ -1651,7 +1701,7 @@ export class AudioPipeline {
       // split the refrain; combined "فبأي آلاء" + "ربكما تكذبان" scores better.
       this._lastSearchTexts.push(cleaned);
       if (this._lastSearchTexts.length > 3) this._lastSearchTexts.shift();
-      const combined = this._lastSearchTexts.join(' ');
+      const combined = mergeSearchTranscripts(this._lastSearchTexts);
 
       // Ar-Rahman (55): once we detect the refrain "فأي الأء ربكما تكذبان", we know surah 55.
       // Ignore WEAK content matches (they cause false locks); but allow STRONG content matches
@@ -1728,6 +1778,8 @@ export class AudioPipeline {
 
         this._whisperSurah = this.state.surah;
         this._whisperAyah  = this.state.ayah;
+        this._heardSurah   = this.state.surah;
+        this._heardAyah    = this.state.ayah;
 
         // If re-locking on the same surah and display is only slightly ahead,
         // don't move display backward — it was already ahead on its timer.
@@ -1756,21 +1808,17 @@ export class AudioPipeline {
         if (displayKeptAhead) {
           // The Whisper words that produced this lock belong to an EARLIER
           // ayah than the display kept — snapping them onto the display's
-          // ayah planted its word highlight mid-word. Its own clock keeps
-          // running; learn pace from the timestamps but touch nothing else.
-          if (words.length > 0) {
-            this._wordTimestamps = words;
-            this._learnWordPaceFromTimestamps();
-          }
+          // ayah would plant its word highlight mid-word. Touch nothing.
         } else {
-          this._currentWordIndex = 0;  // V4: default; snap from Whisper words if available
+          this._currentWordIndex = 0;
           const ayah = getAyah(this.state.surah, this.state.ayah);
           const totalWords = ayah ? (ayah.canonicalWordCount || ayah.words?.length || 0) : 0;
-          if (totalWords > 0 && words.length > 0) {
-            this._wordTimestamps = words;
-            this._learnWordPaceFromTimestamps();
-            this._currentWordIndex = Math.min(words.length, totalWords) - 1;
-            const msPerWord = this._measuredMsPerWord || 700;
+          const heardPos = ayahWordsCovered(this.state.surah, this.state.ayah, text);
+          if (totalWords > 0 && heardPos.covered > 0) {
+            // Position comes from Quran text coverage, never from a provider's
+            // timestamp/token count. STT identifies the recited words only.
+            this._currentWordIndex = Math.min(heardPos.covered, totalWords) - 1;
+            const msPerWord = this._measuredMsPerWord || 1400;
             this._lockTime = Date.now() - this._currentWordIndex * msPerWord;
           } else {
             this._lockTime = this._ayahStartTime;
@@ -2124,6 +2172,10 @@ export class AudioPipeline {
         fatihaEnd: confirmedSurah === 1 && confirmedAyah >= 6,
       });
     }
+    if (realMatch) {
+      this._heardSurah = confirmedSurah;
+      this._heardAyah = confirmedAyah;
+    }
     const sameSurah = confirmedSurah === this._displaySurah;
 
     // ── Ratchet _whisperAyah forward only on REAL matches ──────────────────
@@ -2158,8 +2210,8 @@ export class AudioPipeline {
     }
 
     // ── Rule 1: Whisper behind display ─────────────────────────────────
-    // Prefer wait/catch-up: slow the timer (drift) so reciter catches up.
-    // Only back-correct on strong repeat evidence (4× same ayah, conf≥55%).
+    // Prefer wait/catch-up for a one-ayah lead: slow the timer so the reciter
+    // catches up. At 2+ ayahs, repeated strong evidence triggers a resync.
     // Skip entirely if user recently manual-advanced to catch up — don't snap back.
     if (sameSurah && confirmedAyah < this._displayAyah) {
       if (this._lastManualAdjustMs && (Date.now() - this._lastManualAdjustMs) < MANUAL_ADJUST_COOLDOWN_MS) {
@@ -2171,6 +2223,40 @@ export class AudioPipeline {
       }
       const refrainVerse = isRefrain(confirmedSurah, confirmedAyah);
       const lag = this._displayAyah - confirmedAyah;
+
+      // Continuous ahead-of-reciter feedback. Do not wait for a large error:
+      // even a one-ayah lead means the prediction clock is too aggressive.
+      // Accumulate a slowdown while Soniox keeps reporting the display ahead,
+      // lengthen the countdown already on screen, and let the multiplier decay
+      // only after confirmations catch up. Translate never jumps backward.
+      const driftStep = Math.min(0.45, 0.10 + lag * 0.08);
+      this._driftMult = Math.min(2.5, this._driftMult + driftStep);
+      if (!this.taraweehMode && this._displayAdvanceTimer && this._timerStartedAt && this._nextAdvanceMs > 0) {
+        const elapsed = Date.now() - this._timerStartedAt;
+        const remaining = Math.max(0, this._nextAdvanceMs - elapsed);
+        const extensionMs = Math.min(3000, 650 + lag * 450);
+        const adjusted = Math.min(READ_ADVANCE_MAX_MS,
+          Math.max(remaining + extensionMs, Math.round(remaining * (1 + Math.min(0.5, lag * 0.14)))));
+        this._cancelReadAdvance();
+        this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE), 0, 1.0, adjusted);
+        console.log(`[Pipeline] Adaptive slowdown: display :${this._displayAyah} ahead of heard :${confirmedAyah} — ${Math.round(remaining)}ms → ${adjusted}ms, drift=${this._driftMult.toFixed(2)}x`);
+      }
+
+      // One ayah can be the rolling transcription window rather than real
+      // drift. Preserve the displayed verse and retard its clock. Two or more
+      // ayahs continue into the repeated-confirmation resync gate below.
+      if (!this.taraweehMode && lag === 1) {
+        // A nearer result breaks any pending 2+-ayah resync sequence. The two
+        // strong confirmations must be consecutive, not merely observed at
+        // unrelated times in the rolling transcription window.
+        this._behindRepeatCount = 0;
+        this._behindRepeatAyah = 0;
+        if (!this._displayAdvanceTimer) {
+          this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
+        }
+        this._emitState(text, rms);
+        return;
+      }
       // Post-back-correction cooldown: don't snap back again right away —
       // UNLESS the drift has grown worse since the last correction (e.g. we
       // snapped at lag=2, drift is now lag=3+). Escalating drift should break
@@ -2181,16 +2267,13 @@ export class AudioPipeline {
         this._emitState(text, rms);
         return;
       }
-      // Snap-back disabled for lag ≤ 2. Field feedback: display snapping back
-      // ~1s after every ayah (aggressive Groq lag=2 trigger) hurt readability
-      // more than it helped. Normal 1-2 ayah drift is within Whisper latency
-      // and resolves itself as the reciter continues. Only genuine drift
-      // (lag ≥ 3 with repeat-count confirmations) still snaps below.
-      if (lag <= 2) {
+      // Never snap a one-ayah disagreement. It is within the rolling-window
+      // latency and is handled by the continuous slowdown above.
+      if (lag <= 1) {
         this._emitState(text, rms);
         return;
       }
-      // lag≥3 still follows the repeat-count gate — real drift, not jitter.
+      // lag≥2 follows the repeat-count gate — real drift, not one bad match.
       const REPEAT_BACK_CORRECT_WINS = score >= 80 ? 2 : 3;
       const REPEAT_BACK_CORRECT_MIN_CONF = this.isFastProvider ? 45 : 65;
 
@@ -2199,7 +2282,7 @@ export class AudioPipeline {
         this._behindRepeatCount++;
       } else {
         this._behindRepeatAyah  = confirmedAyah;
-        this._behindRepeatCount = refrainVerse ? 0 : 1;
+        this._behindRepeatCount = !refrainVerse && score >= REPEAT_BACK_CORRECT_MIN_CONF ? 1 : 0;
       }
 
       if (this._behindRepeatCount >= REPEAT_BACK_CORRECT_WINS) {
@@ -2230,11 +2313,9 @@ export class AudioPipeline {
       // for confirmation before resuming. This prevents runaway drift during repeats.
       if (this.taraweehMode && score >= REPEAT_BACK_CORRECT_MIN_CONF) {
         this._cancelReadAdvance();
-        this._driftMult = Math.min(2.5, this._driftMult + 0.25);
         console.log(`[Pipeline] Timer paused: Whisper :${confirmedAyah} behind display :${this._displayAyah} (lag=${lag}, conf=${score}%, repeat=${this._behindRepeatCount}/${REPEAT_BACK_CORRECT_WINS}${refrainVerse ? ', refrain' : ''})`);
       } else {
         // Low confidence — keep timer running with drift multiplier
-        this._driftMult = Math.min(2.5, this._driftMult + 0.25);
         if (!this.taraweehMode && !this._displayAdvanceTimer) {
           this._scheduleReadAdvance(Math.max(score, READ_ADVANCE_CONFIDENCE));
         }
@@ -2263,7 +2344,6 @@ export class AudioPipeline {
 
     // ── Rule 3: Whisper at display position → on track ──
     if (confirmedAyah === this._displayAyah) {
-      this._driftMult = 1.0;
       if (realMatch) this._sameAyahStreak++;
       // V4: karaoke sync — advance the word position from what Whisper
       // actually heard OF THIS AYAH. ayahWordsCovered counts from the ayah's
@@ -2273,7 +2353,6 @@ export class AudioPipeline {
       if (realMatch) {
         if (words.length > 0) {
           this._wordTimestamps = words;
-          this._learnWordPaceFromTimestamps();
         }
         const heardPos = ayahWordsCovered(confirmedSurah, confirmedAyah, text);
         if (heardPos.total > 0 && heardPos.covered > 0) {
@@ -2430,47 +2509,24 @@ export class AudioPipeline {
         if (totalWords === 0) totalWords = 4; // safety fallback for single-ayah jump
         const rawWps = totalWords / (elapsedMs / 1000);
         const clampedWps = Math.max(0.5, Math.min(5.0, rawWps));
-        // Blend: HF uses 0.7 old / 0.3 new (conservative — HF clock is noisy).
-        // Groq uses 0.4 old / 0.6 new — Groq confirms are accurate, so the pacer
-        // should follow reciter speed changes quickly (taraweeh tempo shifts).
-        const oldWeight = this.isFastProvider ? 0.4 : 0.7;
+        // Provider-neutral closed loop: STT supplies only the confirmed Quran
+        // position. Elapsed wall time between positions belongs to our pacing
+        // algorithm and is blended identically for every transcription engine.
+        const oldWeight = 0.6;
         const newWeight = 1 - oldWeight;
         this._measuredWps = this._measuredWps * oldWeight + clampedWps * newWeight;
-        // Sync _measuredMsPerWord from Whisper clock.
-        //  - No manual samples: always sync.
-        //  - Manual samples exist + Groq mode: still sync, Groq is accurate enough
-        //    to override stale manual pace from earlier in the session.
-        //  - Manual samples exist + HF mode: keep manual (historical behaviour —
-        //    HF clock is noisier and user's manual taps are more trustworthy).
-        const whisperMsPerWord = Math.round(1000 / this._measuredWps);
-        // This clock divides words by the gap between CONFIRMATIONS, which is
-        // quantised to the spot-check interval and includes breaths, so it reads
-        // far slower than the reciter actually speaks. Word timestamps measure
-        // speaking rate directly, so once we have those, never let this override
-        // them — doing so is what stretched every timer and made the display lag.
-        const haveWordPace = (this._wordPaceSamples || 0) > 0;
-        const shouldSync = !haveWordPace
-          && (this._msPerWordSamples.length === 0 || this.isFastProvider);
+        const progressMsPerWord = Math.round(1000 / this._measuredWps);
+        // Explicit manual calibration wins. Otherwise learn from Quran verse
+        // progression, never from ASR token timestamp cadence.
+        const shouldSync = this._msPerWordSamples.length === 0;
         if (shouldSync) {
-          this._measuredMsPerWord = whisperMsPerWord;
+          this._measuredMsPerWord = progressMsPerWord;
           this._whisperClockSamples++;
         }
         const syncTag = shouldSync
-          ? (this._msPerWordSamples.length > 0 ? ' [Groq override: synced]' : '')
-          : ` [${haveWordPace ? 'word-timestamp' : 'manual'} pace kept: ${this._measuredMsPerWord}ms/w]`;
-        console.log(`[Pipeline] Whisper clock: ${totalWords}w in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps (${whisperMsPerWord}ms/w)${syncTag}`);
-
-        // Whatever this interval contained beyond the words themselves was the
-        // reciter breathing. That is the one thing the confirmation clock does
-        // measure well, and the timer needs it as an additive term.
-        const ayahsAdvanced = toAyah - fromAyah;
-        if (haveWordPace && ayahsAdvanced >= 1 && ayahsAdvanced <= 3) {
-          const speechMs = totalWords * this._measuredMsPerWord;
-          const perAyahPause = (elapsedMs - speechMs) / ayahsAdvanced;
-          const clamped = Math.max(0, Math.min(PAUSE_EST_MAX_MS, perAyahPause));
-          this._measuredPauseMs = Math.round(this._measuredPauseMs * 0.7 + clamped * 0.3);
-          console.log(`[Pipeline] Ayah pause: ${Math.round(perAyahPause)}ms observed over ${ayahsAdvanced} ayah(s) → ${this._measuredPauseMs}ms`);
-        }
+          ? ''
+          : ` [manual pace kept: ${this._measuredMsPerWord}ms/w]`;
+        console.log(`[Pipeline] Recitation progress: ${totalWords} Quran words in ${(elapsedMs/1000).toFixed(1)}s = ${rawWps.toFixed(2)} wps → measured=${this._measuredWps.toFixed(2)} wps (${progressMsPerWord}ms/w)${syncTag}`);
 
         this._updatePace(clampedWps, now);
       }
@@ -2489,51 +2545,10 @@ export class AudioPipeline {
     }
   }
 
-  // V4: Learn pace from word-level timestamps
+  // Kept as a hard no-op for compatibility with older tests/callers. Provider
+  // token timestamps are transport metadata, never a pacing input.
   _learnWordPaceFromTimestamps() {
-    if (this._wordTimestamps.length < 2) return;
-
-    // Pace is the onset-to-onset PERIOD, not how long a word is voiced for.
-    // Measuring (end - start) omits the gap before the next word, so it always
-    // reads faster than the reciter and the two errors have to be cancelled out
-    // elsewhere. Take the interval between successive word onsets instead.
-    const onsets = this._wordTimestamps
-      .map(w => (typeof w.start === 'number' ? w.start
-        : (Array.isArray(w.timestamp) ? w.timestamp[0] : NaN)))
-      .filter(Number.isFinite)
-      .sort((a, b) => a - b);
-    if (onsets.length < 2) {
-      console.log(`[Pipeline] Word pace skipped: no valid timestamps in ${this._wordTimestamps.length} words`);
-      return;
-    }
-
-    // Drop malformed frames and end-of-ayah breaths: a breath is not part of the
-    // speaking rate, and including it stretches every subsequent timer.
-    const periods = [];
-    for (let i = 1; i < onsets.length; i++) {
-      const d = (onsets[i] - onsets[i - 1]) * 1000;
-      if (d >= 120 && d <= 2500) periods.push(d);
-    }
-    if (periods.length === 0) return;
-
-    // Median, not mean — one long madd or a missed word should not move the pace.
-    periods.sort((a, b) => a - b);
-    const medianMs = periods[Math.floor(periods.length / 2)];
-    if (!Number.isFinite(medianMs) || medianMs <= 0) return;
-
-    // Groq/OpenAI timestamps are reliable, so follow tempo shifts quickly.
-    const oldWeight = this.isFastProvider ? 0.6 : 0.75;
-    this._measuredMsPerWord = this._measuredMsPerWord > 0
-      ? Math.round(this._measuredMsPerWord * oldWeight + medianMs * (1 - oldWeight))
-      : Math.round(medianMs);
-    this._measuredWps = 1000 / this._measuredMsPerWord;
-    this._wordPaceSamples = (this._wordPaceSamples || 0) + 1;
-
-    console.log(
-      `[Pipeline] Word pace from timestamps: median ${medianMs.toFixed(0)}ms/word ` +
-      `(${periods.length} intervals of ${onsets.length} words) → ${this._measuredMsPerWord}ms/w ` +
-      `(${this._measuredWps.toFixed(2)} wps)`
-    );
+    return false;
   }
 
   // V4: Update word progress and emit to frontend
@@ -2568,7 +2583,8 @@ export class AudioPipeline {
     if (totalWords === 0) return;
 
     const elapsedMs = Date.now() - this._lockTime;
-    const msPerWord = this._measuredMsPerWord || 700;
+    const msPerWord = this._measuredMsPerWord
+      || (this.fastMode ? 700 : this.slowMode ? 1800 : 1400);
     // Forward-only within an ayah: a Whisper snap places the index on the
     // uniform clock, and the weighted mapping below can land one word earlier
     // for the same elapsed time — without this floor the highlight stepped
@@ -2838,11 +2854,21 @@ export class AudioPipeline {
     const verse = getVerseData(this._displaySurah, this._displayAyah, this.translationLang);
     const translit = verse?.transliteration || '';
     const charCount = translit.length || (verse?.arabic ? verse.arabic.length : 30);
-    const wordCount = Math.max(1, translit ? translit.split(/\s+/).length : (verse?.arabic ? verse.arabic.split(/\s+/).length : 4));
 
     // Corpus-based word weights: each word has a weight based on morphology + tajweed
     // totalWeight replaces simple wordCount — heavier words (madd, ghunnah, verb forms) get more time
     const wordData = getWordData(this._displaySurah, this._displayAyah);
+    // Transliteration joins some Quran words (2:255 is 41 tokens there but 50
+    // canonical words). The corpus is the authoritative word count when present.
+    const fallbackWordCount = translit
+      ? translit.split(/\s+/).filter(Boolean).length
+      : (verse?.arabic ? verse.arabic.split(/\s+/).filter(Boolean).length : 4);
+    const wordCount = Math.max(1, wordData?.words?.length || fallbackWordCount);
+    const normalizedArabic = normalizeArabic(verse?.arabic || '').replace(/\s+/g, '');
+    const isMuqattaatAyah = new Set([
+      'الم', 'المص', 'الر', 'المر', 'كهيعص', 'طه', 'طسم', 'طس',
+      'يس', 'ص', 'حم', 'عسق', 'ق', 'ن',
+    ]).has(normalizedArabic);
     // Blend corpus weight (80%) with plain word count (20%) — pure weights add ~5s extra per ayah
     const rawWeight = wordData?.tw || wordCount;
     const totalWeight = wordData ? (rawWeight * 0.8 + wordCount * 0.2) : wordCount;
@@ -2856,32 +2882,50 @@ export class AudioPipeline {
 
     // Word-weight-based timer derived from measured reciter pace.
     // Live data shows ~1.9s/word for slow reciters, ~0.9s for normal, ~0.5s for fast.
-    // Whisper confirms hold/extend if reciter is still on the ayah.
+    // Confirmed Quran positions hold/extend if the reciter is still on the ayah.
     // Use learned pace if available, otherwise fallback defaults
     // Base default 1400ms/w. Fast/slow nudge it ±30%. Learned pace overrides.
     // Fast mode ~700ms/word (half again faster than normal) so tight khatam-pace
     // recitation doesn't lag the display. Slow mode extends. Normal = 1400.
     const defaultMsPerWord = this.fastMode ? 700 : this.slowMode ? 1800 : 1400;
-    // Trust manual pace after 1 sample (direct user feedback). Word timestamps
-    // come straight from the ASR and measure the reciter's actual speaking rate,
-    // so one sample is enough there too — waiting on the confirmation-interval
-    // clock (3 samples) meant the first several ayahs always ran at the 1400ms
-    // default, which is far slower than most reciters and put the display behind
-    // before tracking had a chance to settle.
+    // Trust manual pace after one direct correction. Otherwise require three
+    // Quran-position progression samples before replacing the corpus default.
+    // Provider timestamps never participate.
     const paceLearned = this._msPerWordSamples.length >= 1
-      || (this._wordPaceSamples || 0) >= 1
       || this._whisperClockSamples >= 3;
+    const learnedMsPerWord = this.fastMode
+      ? this._measuredMsPerWord * FAST_LEARNED_PACE_FACTOR
+      : this._measuredMsPerWord;
     const msPerWord = (this._measuredMsPerWord > 0 && paceLearned)
-      ? this._measuredMsPerWord : defaultMsPerWord;
-    // Corpus weights spread a *generic* rate across heavy and light words, which
-    // is only useful while msPerWord is still the default. A pace measured from
-    // real word timestamps already contains this reciter's elongations, so
-    // multiplying by the weights again double-counts them and stretches every
-    // timer. Once pace is learned, time plain words and add the learned breath.
+      ? learnedMsPerWord : defaultMsPerWord;
+    // Corpus weights spread a generic rate across heavy and light words while
+    // the model is at its default. Once Quran-position progression or a manual
+    // correction learns a real pace, plain canonical words are sufficient.
     const timingUnits = paceLearned ? wordCount : totalWeight;
-    const rawMs = Math.round(timingUnits * msPerWord)
-      + (paceLearned ? 0 : elongBonusMs)
-      + this._measuredPauseMs;
+    const learnedPauseMs = this.fastMode && paceLearned
+      ? Math.round(this._measuredPauseMs * FAST_LEARNED_PAUSE_FACTOR)
+      : this._measuredPauseMs;
+    const wordBasedMs = Math.round(timingUnits * msPerWord)
+      + (paceLearned ? 0 : elongBonusMs);
+    // Restore the earlier V2 character-length inference, blended with the newer
+    // corpus/tajweed word model until real timestamps teach us this reciter's
+    // pace. This prevents a long ayah made of dense words from inheriting the
+    // same timer as an ordinary 21-word verse.
+    const paceRatio = paceLearned
+      ? Math.max(0.45, Math.min(3.0, (1000 / Math.max(1, msPerWord)) / READ_WORDS_PER_SEC))
+      : 1;
+    const trendMult = this._paceTrend > 0 ? 1.10 : this._paceTrend < 0 ? 0.90 : 1.0;
+    const charsPerSecond = (this.fastMode ? 14 : 11) * paceRatio * trendMult;
+    const charBasedMs = Math.round(((charCount / charsPerSecond) * 1000) + elongBonusMs) * 1.2;
+    // Character length is a useful cross-check, but Quran recitation is not
+    // ordinary 11-characters/second speech. In Normal/Slow it was dominating
+    // the corpus word estimate and making every compact Arabic ayah race. Keep
+    // the more aggressive blend only for the explicit Fast preference.
+    const characterBlend = this.fastMode ? 0.55 : this.slowMode ? 0.20 : 0.25;
+    const inferredMs = paceLearned
+      ? wordBasedMs
+      : Math.round(charBasedMs * characterBlend + wordBasedMs * (1 - characterBlend));
+    const rawMs = inferredMs + learnedPauseMs;
     // Short ayahs (≤4 words, common in juz 30 khatam) get a lower floor — 1.5s instead
     // of 2.5s. On khatam nights the imam races through these; 2.5s floor causes the
     // display to lag behind by 2-3 ayahs, making tracking useless.
@@ -2892,7 +2936,14 @@ export class AudioPipeline {
     // A floor longer than the ayah itself is pure lag. Once pace is measured we
     // know how long this ayah takes, so never stretch past that — a khatam-pace
     // ayah can genuinely be shorter than the 2.5s default floor.
-    const fixedFloor = this.slowMode ? 6000 : (this.fastMode ? fastFloor : shortAyahFloor);
+    // Muqatta'at are written as one Quran token but recited as several long
+    // letter names. Counting "الم" as one ordinary word gave 2:1 a 2.2s
+    // timer. Give each written letter its spoken duration instead.
+    const muqattaatFloor = isMuqattaatAyah
+      ? normalizedArabic.length * (this.fastMode ? 1000 : this.slowMode ? 2200 : 1600)
+      : 0;
+    const fixedFloor = Math.max(muqattaatFloor,
+      this.slowMode ? 6000 : (this.fastMode ? fastFloor : shortAyahFloor));
     const floorMs = Math.max(afterPauseMinMs,
       paceLearned && !this.slowMode ? Math.min(fixedFloor, rawMs) : fixedFloor);
     const baseDurationMs = Math.max(rawMs, floorMs);
@@ -2907,43 +2958,50 @@ export class AudioPipeline {
       : wordCount <= 20 ? 16000
       : 25000;
     // These absolute ceilings existed to contain a pace estimate that drifted
-    // slow. Once pace comes from word timestamps and the breath is measured, they
-    // become the binding constraint on any genuinely slow reciter: a 9-word ayah
+    // slow. Once pace comes from observed Quran progression, they become the
+    // binding constraint on any genuinely slow reciter: a 9-word ayah
     // with a 4s breath needs ~9.7s and was being cut to 8s, so the display ran
     // ahead for the rest of the surah. Keep them as a sanity bound on our own
     // estimate rather than an absolute one.
-    const perCountCap = paceLearned ? Math.max(fixedCap, Math.round(rawMs * 1.25)) : fixedCap;
+    // Long ayahs must never be squeezed into the old 25s bucket. Their own
+    // inferred length supplies the cap even before pace learning is available.
+    const longAyahCap = wordCount > 20 ? Math.round(rawMs * 1.10) : fixedCap;
+    const perCountCap = paceLearned
+      ? Math.max(fixedCap, Math.round(rawMs * 1.25))
+      // The 5/8/16s buckets are Fast-mode safety caps, not Normal-mode
+      // durations. At Normal pace they cut 2:2 from its inferred ~11s to 8s
+      // before the reciter had supplied any pace evidence.
+      : this.fastMode
+        ? Math.max(fixedCap, longAyahCap)
+        : Math.max(fixedCap, Math.round(rawMs * 1.10), longAyahCap);
     durationMs = Math.min(Math.round(baseDurationMs), perCountCap, READ_ADVANCE_MAX_MS);
-    // Groq cushion: pad by 20% so display naturally lingers toward Groq's heard
-    // position instead of racing 1 ayah ahead on slow recitations. Groq will
-    // snap us forward if we truly fall behind. Skip entirely in fast mode —
-    // fast reciters need the opposite (shorter, not padded).
-    // Kept flat on purpose. Scaling this by word pace was tried and measured
-    // worse: two imams can share a word pace and differ entirely in how long
-    // they pause, and pause length is already modelled additively above. Tying
-    // the cushion to words-per-second made long-breath recitation overshoot
-    // (74.9% -> 25.3% exact) while barely helping khatam pace.
-    if (this.isGroqMode && !this.fastMode && GROQ_TIMER_CUSHION !== 1) {
-      durationMs = Math.min(Math.round(durationMs * GROQ_TIMER_CUSHION), READ_ADVANCE_MAX_MS);
-    }
     // Slow-mode user override: explicit "stretch everything" multiplier that
     // rides on top of learned pace. Cap the caps — perCountCap becomes 2x too.
     if (this.slowMode) {
       durationMs = Math.min(Math.round(durationMs * 1.5), perCountCap * 2, READ_ADVANCE_MAX_MS);
+    }
+    // Closed-loop pace correction. Repeated evidence that prediction is ahead
+    // increases this multiplier; aligned confirmations decay it gradually.
+    // Apply it after the selected speed so Fast remains a preference, not a
+    // one-shot fixed rate that can outrun the reciter indefinitely.
+    if (this._driftMult > 1.0) {
+      durationMs = Math.min(Math.round(durationMs * this._driftMult), READ_ADVANCE_MAX_MS);
     }
     if (durationFactor < 1.0) {
       // Whisper data is ~6s old. Subtract pipeline lag — but never more than half
       // the timer. Short ayahs (3-6 words) shouldn't get crushed to 1s.
       const PIPELINE_LAG_MS = 6000;
       const maxSubtract = Math.floor(durationMs * 0.5);
-      const minAfterLag = wordCount <= 4 ? 1500 : 3000;
+      const minAfterLag = isMuqattaatAyah
+        ? Math.max(3000, Math.round(muqattaatFloor * 0.65))
+        : wordCount <= 4 ? 1500 : 3000;
       durationMs = Math.max(minAfterLag, durationMs - Math.min(PIPELINE_LAG_MS, maxSubtract));
     }
 
     const modeTag = this.fastMode ? ' [FAST]' : this.slowMode ? ' [SLOW]' : '';
     const halfTag = durationFactor < 1.0 ? (durationFactor <= FIRST_LOCK_DURATION_FACTOR + 0.05 ? ' [first-lock]' : ' [corrected]') : '';
     const weightTag = wordData ? ` wt=${totalWeight.toFixed(1)}` : '';
-    console.log(`[Pipeline] Read-advance in ${durationMs}ms (${wordCount}w${weightTag} × ${msPerWord}ms/w, conf=${confidence}%${modeTag}${halfTag})`);
+    console.log(`[Pipeline] Read-advance in ${durationMs}ms (${charCount}ch ${wordCount}w${weightTag} × ${msPerWord}ms/w, char=${Math.round(charBasedMs)}ms, conf=${confidence}%${modeTag}${halfTag})`);
 
     } // end of normal (non-override) duration calculation
 
@@ -3261,6 +3319,10 @@ export class AudioPipeline {
     const candidates = matches.map(m => ({
       surah: m.surah, ayah: m.ayah,
       score: Math.round(m.score * 100),
+      // Keep the ranking score for diagnostics, but show users how much of
+      // what was actually heard matches this ayah. Partial recitation of a
+      // long ayah should not look like low ASR accuracy.
+      matchConfidence: Math.round((m.heardCoverage ?? m.score) * 100),
       arabic: m.arabic?.substring(0, 60),
     }));
 
@@ -3287,6 +3349,9 @@ export class AudioPipeline {
     const topMatch    = this.state._matches?.[0];
     const secondMatch = this.state._matches?.[1];
     const topScore    = topMatch?.score ?? 0;
+    const topMatchConfidence = topMatch
+      ? Math.round((topMatch.heardCoverage ?? topScore) * 100)
+      : 0;
     const topMargin   = secondMatch ? Math.round((topScore - secondMatch.score) * 100) : 100;
     const SHOW_THRESHOLD = 0.35;
     const SHOW_MARGIN    = 5;
@@ -3338,6 +3403,7 @@ export class AudioPipeline {
 
     const candidates = (this.state._matches || []).map(m => ({
       surah: m.surah, ayah: m.ayah, score: +(m.score || 0).toFixed(3),
+      matchConfidence: Math.round((m.heardCoverage ?? m.score ?? 0) * 100),
       arabic: m.arabic?.substring(0, 60),
       matchedWords: m.matchedWords || [],
     }));
@@ -3362,10 +3428,11 @@ export class AudioPipeline {
         confidence: this.state.confidence <= 1
           ? this.state.confidence
           : (this.state.confidence || 0) / 100,
+        matchConfidence: topMatch ? topMatchConfidence : undefined,
         timerMs: this.practiceMode ? undefined : (timerMs || undefined),
         syncing: this._syncingDisplay || undefined,
         isCandidate:     isCandidate || false,
-        candidateScore:  isCandidate ? Math.round(topScore * 100) : undefined,
+        candidateScore:  isCandidate ? topMatchConfidence : undefined,
         candidateMargin: isCandidate ? topMargin : undefined,
         practiceMode:    !!this.practiceMode,
         completedSurah:     this._completedSurah || undefined,
@@ -3386,6 +3453,8 @@ export class AudioPipeline {
         wordIndex: stateWordIndex,
         whisperSurah: this._whisperSurah || undefined,
         whisperAyah: this._whisperAyah || undefined,
+        heardSurah: this._heardSurah || undefined,
+        heardAyah: this._heardAyah || undefined,
       },
       whisperText: whisperText ?? null,
       rms: rms != null ? +rms.toFixed(4) : null,

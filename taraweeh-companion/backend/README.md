@@ -1,6 +1,6 @@
 # Quran Verse Translator Backend
 
-WebSocket server for prayer-aware tracking. Receives PCM audio, runs Whisper ASR via **Groq** or **OpenAI**, fuzzy match, state machine.
+WebSocket server for prayer-aware tracking. Receives PCM audio, runs Arabic ASR via **Groq**, **OpenAI**, or **Soniox**, then fuzzy match and state machine.
 
 ## Setup
 
@@ -10,12 +10,13 @@ npm install
 
 ## API Keys
 
-Transcription uses **Groq** or **OpenAI** independently. Pick one engine; it must lock verses on its own (nothing is a backup).
+Transcription uses **Groq**, **OpenAI**, or **Soniox** independently. Pick one engine; it must lock verses on its own (nothing is a backup).
 
 | Variable | Required | Where to get |
 |----------|----------|--------------|
 | `SHARED_GROQ_KEY` | For free/shared Groq | [console.groq.com/keys](https://console.groq.com/keys) |
 | `SHARED_OPENAI_KEY` | For free/shared OpenAI | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `SHARED_SONIOX_KEY` | For shared Soniox | [console.soniox.com](https://console.soniox.com) |
 | `SHARED_DEEPGRAM_KEY` | Optional extra engine | [console.deepgram.com](https://console.deepgram.com/) |
 | `SHARED_ELEVENLABS_KEY` | Optional extra engine | [elevenlabs.io API keys](https://elevenlabs.io/app/settings/api-keys) |
 | `GEMINI_API_KEY` | No (Pro) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
@@ -28,13 +29,14 @@ Transcription uses **Groq** or **OpenAI** independently. Pick one engine; it mus
 # With shared keys (PowerShell)
 $env:SHARED_GROQ_KEY = "gsk_your_key"
 $env:SHARED_OPENAI_KEY = "sk_your_key"
+$env:SHARED_SONIOX_KEY = "your_soniox_key"
 npm run start
 
 # Or one-liner
 SHARED_GROQ_KEY=gsk_xxx SHARED_OPENAI_KEY=sk_xxx npm run start
 ```
 
-Without shared keys, users must enter their own Groq, Deepgram, ElevenLabs, or OpenAI key in **Settings → Use my own key**.
+Without shared keys, users must enter their own Groq, OpenAI, Soniox, Deepgram, or ElevenLabs key in **Settings → Live recitation → Speech recognition**.
 
 ## Data
 

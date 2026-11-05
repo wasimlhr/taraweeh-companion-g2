@@ -311,28 +311,54 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // Until exclusive words like "تأخذه", "سنة", "كرسيه" appear, we can't tell them apart.
   // → disable single-win locks; require 2 consecutive wins (the next chunk will disambiguate).
   const topMatchedWords  = top.matchedWords ?? [];
-  const secondMatchedSet = new Set(second?.matchedWords ?? []);
-  const topHasExclusiveWord = secondMatchedSet.size === 0
-    || topMatchedWords.some(w => !secondMatchedSet.has(w));
-  // High-confidence bypass: even without an exclusive word, a very high IDF score (≥0.80)
-  // with solid coverage (≥40%) and ≥3 matched words strongly favours the top candidate.
-  // At this confidence level the disambiguating word was almost certainly just misheard,
-  // and requiring 2 wins would mean waiting another full 10-30s buffer cycle.
-  const isHighConfidenceBypass = top.score >= 0.80
-    && coverage >= 0.40
-    && matchedWordCount >= 3
-    && !isBismillahAmbiguous;  // bismillah is always too ambiguous regardless
+  // The containing verse is not always ranked #2. Short unrelated ayahs can
+  // slip between a short-prefix candidate and the real long verse, so inspect
+  // every returned contender for one that contains all of the top evidence.
+  const containsTopEvidence = (candidate) => {
+    if ((candidate.score ?? 0) < 0.30) return false;
+    const candidateWords = new Set(candidate.matchedWords ?? []);
+    return topMatchedWords.length > 0 && topMatchedWords.every((w) => candidateWords.has(w));
+  };
+  const topCanonicalWords = top.normalizedWords ?? [];
+  const rankedStrictPrefixCompetitor = matches.slice(1).find((candidate) => {
+    const candidateWords = candidate.normalizedWords ?? [];
+    return topCanonicalWords.length > 0
+      && candidateWords.length > topCanonicalWords.length
+      && topCanonicalWords.every((word, i) => candidateWords[i] === word);
+  });
+  // The longer verse may not rank in the top five at all: a complete short
+  // ayah naturally outscores a partial 50-word ayah. keywordMatcher therefore
+  // supplies Quran-wide prefix relationships computed from the corpus.
+  const corpusStrictPrefixCompetitor = top.strictPrefixTargets?.[0];
+  const strictPrefixCompetitor = rankedStrictPrefixCompetitor || corpusStrictPrefixCompetitor;
+  // Preserve the original #2 ambiguity check for ordinary shared phrases, but
+  // scan all five results for an actual full-ayah prefix. This catches 3:2 →
+  // 2:255 even when an unrelated short ayah temporarily ranks between them,
+  // without making every common Fatiha phrase globally ambiguous.
+  const ambiguityCompetitor = strictPrefixCompetitor
+    || (second && containsTopEvidence(second) ? second : undefined);
+  const ambiguityMatchedSet = new Set(ambiguityCompetitor?.matchedWords ?? []);
+  // Require near-complete canonical evidence. A noisy fragment that happens
+  // to favor the short ayah is not the dangerous case; the dangerous case is
+  // a clean recitation of the entire text shared by both verses.
+  const corpusPrefixAmbiguity = !!corpusStrictPrefixCompetitor && coverage >= 0.80;
+  const topHasExclusiveWord = !corpusPrefixAmbiguity && (ambiguityMatchedSet.size === 0
+    || topMatchedWords.some(w => !ambiguityMatchedSet.has(w)));
+  // A high score is not evidence of identity when every heard word also occurs
+  // in another candidate. In particular, 3:2 is a complete prefix of Ayat
+  // al-Kursi. The old confidence bypass locked 3:2 before the reciter reached
+  // "لا تأخذه سنة". Wait for an exclusive word instead.
+  const isHighConfidenceBypass = false;
   // After Fatiha, prefix-ambiguity is expected (short ayahs share words across surahs)
   // and we have no sequential context to disambiguate — rely on margin instead.
   // Context bypass: if we were tracking a surah and one candidate is in it, prefer it
   const hasContextSurah = lastSurah > 0;
   const topInContext = hasContextSurah && top.surah === lastSurah;
-  const secondInContext = hasContextSurah && second && second.surah === lastSurah;
+  const secondInContext = hasContextSurah && ambiguityCompetitor && ambiguityCompetitor.surah === lastSurah;
   // If top is in our context surah but second isn't, treat as unambiguous
   const contextBypass = topInContext && !secondInContext;
   const isPrefixAmbiguous = !topHasExclusiveWord
-    && second !== undefined
-    && second.score >= 0.30
+    && ambiguityCompetitor !== undefined
     && !isHighConfidenceBypass
     && !postFatiha
     && !contextBypass;
@@ -345,7 +371,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   const refrainBypass = isPrefixAmbiguous && isRefrainPair;
 
   if (isPrefixAmbiguous && !refrainBypass) {
-    console.log(`[Anchor] Prefix-ambiguous: [${top.surah}:${top.ayah}] vs [${second.surah}:${second.ayah}] — top has no exclusive words yet, require 2 wins`);
+    console.log(`[Anchor] Prefix-ambiguous: [${top.surah}:${top.ayah}] vs [${ambiguityCompetitor.surah}:${ambiguityCompetitor.ayah}] — top has no exclusive words yet, waiting for distinguishing words`);
   } else if (refrainBypass) {
     console.log(`[Anchor] Refrain bypass: [${top.surah}:${top.ayah}] vs [${second.surah}:${second.ayah}] — identical refrain, locking on first instance`);
   } else if (!topHasExclusiveWord && isHighConfidenceBypass) {
@@ -392,7 +418,8 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // still need confirmation (more wins) before we consider it a proper stable lock
   const isSeqLock = top.seqBoosted
     && (top.rawScore ?? top.score) >= 0.25
-    && wins >= 1;
+    && wins >= 1
+    && !prefixBlocksLock;
 
   // Standard ambiguity-aware lock: 2 consecutive wins + clear margin + enough coverage
   // With 2+ wins AND good coverage (>=40%), lower the score threshold to 0.40 — repeated
@@ -404,7 +431,8 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && margin   >= LOCK_MARGIN_MIN
     && coverage >= covThreshold
     && hasEnoughWords
-    && !isBismillahAmbiguous;   // overlapping windows made the win count meaningless here
+    && !isBismillahAmbiguous    // overlapping windows made the win count meaningless here
+    && !prefixBlocksLock;
 
   // Sequential-carry lock: 3+ wins accumulated via sequential advancement in the same
   // surah. Each window pointed at the next verse — that's strong directional evidence
@@ -413,7 +441,8 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && top.score >= 0.30       // don't lock on near-zero scores
     && coverage >= covThreshold
     && matchedWordCount >= LOCK_MIN_WORDS
-    && !isBismillahAmbiguous;
+    && !isBismillahAmbiguous
+    && !prefixBlocksLock;
 
   // High-score lock: score >= 0.80 with 2+ wins and good coverage is unambiguous
   // even if margin is low (e.g. "بما كانوا يعملون" appears in multiple surahs with
@@ -423,7 +452,8 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && top.score >= 0.80
     && coverage >= covThreshold
     && matchedWordCount >= 2
-    && !isBismillahAmbiguous;
+    && !isBismillahAmbiguous
+    && !prefixBlocksLock;
 
   // Same-surah unanimous lock: ALL top candidates are in the same surah we were
   // already tracking.  Classic case: Ar-Rahman "فَبِأَيِّ آلَاءِ رَبِّكُمَا تُكَذِّبَانِ"
@@ -438,7 +468,8 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
     && top.score >= SINGLE_WIN_SCORE
     && coverage  >= LOCK_COVERAGE_MIN
     && wins      >= LOCK_WINS_REQUIRED
-    && !isBismillahAmbiguous;
+    && !isBismillahAmbiguous
+    && !prefixBlocksLock;
   if (isSameSurahLock) {
     console.log(`[Anchor] Same-surah unanimous: all top-3 in ${top.surah}, locking on closest (${top.surah}:${top.ayah})`);
   }
@@ -471,7 +502,7 @@ function handleSearching(whisperText, state, preferredSurah, opts = {}) {
   // "Auto locking 1/2 wins" at 90%/100% because garbled 36:3 tokens added a
   // weak 37:133 competitor and the 3-word gate refused a 2-word ayah.
   const isStrongScoreLock = top.score >= 0.80
-    && coverage >= 0.50
+    && coverage >= covThreshold
     && matchedWordCount >= 2
     && wins >= 1
     && !isBismillahAmbiguous
